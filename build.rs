@@ -333,7 +333,7 @@ fn main() {
     )
     .expect("failed to write builtin_proxy_gen.rs");
 
-    let full_ver = env::var("AG_FULL_VERSION").unwrap_or_else(|_| "1.0.0".to_string());
+    let full_ver = env::var("AG_FULL_VERSION").unwrap_or_else(|_| "1.1.0".to_string());
     let trimmed = full_ver.trim();
     if !trimmed.is_empty() {
         println!("cargo:rustc-env=AG_FULL_VERSION={}", trimmed);

@@ -35,7 +35,7 @@ jobs:
           elif [[ "${{ github.ref }}" =~ ^refs/tags/v ]]; then
             V="${GITHUB_REF#refs/tags/v}"
           else
-            V="1.0.0"
+            V="1.1.0"
           fi
           echo "VERSION=$V" >> "$GITHUB_OUTPUT"
           echo "Building Linux version: $V"
@@ -108,7 +108,7 @@ jobs:
           elif [[ "${{ github.ref }}" =~ ^refs/tags/v ]]; then
             V="${GITHUB_REF#refs/tags/v}"
           else
-            V="1.0.0"
+            V="1.1.0"
           fi
           echo "VERSION=$V" >> "$GITHUB_OUTPUT"
           echo "Building Windows version: $V"
@@ -206,7 +206,7 @@ jobs:
           elif [[ "${{ github.ref }}" =~ ^refs/tags/v ]]; then
             V="${GITHUB_REF#refs/tags/v}"
           else
-            V="1.0.0"
+            V="1.1.0"
           fi
           echo "VERSION=$V" >> "$GITHUB_OUTPUT"
 

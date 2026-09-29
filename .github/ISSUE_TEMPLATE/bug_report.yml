@@ -11,8 +11,8 @@ body:
     id: version
     attributes:
       label: Версия Open Antigravity
-      description: Какую версию вы используете (например, v1.0.0, AppImage, Portable .zip)?
-      placeholder: v1.0.0
+      description: Какую версию вы используете (например, v1.1.0, AppImage, Portable .zip)?
+      placeholder: v1.1.0
     validations:
       required: true
   - type: dropdown

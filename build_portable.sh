@@ -23,7 +23,7 @@ export AG_BUILTIN_PROXY="${AG_BUILTIN_PROXY:-}"
 export AG_PORTABLE=1
 
 # --- VERSION REPORTED BY THE BUILD (SemVer: 1.0.0, 1.0.1, ...) ---
-export AG_FULL_VERSION="${AG_FULL_VERSION:-1.0.0}"
+export AG_FULL_VERSION="${AG_FULL_VERSION:-1.1.0}"
 
 # --- UPDATE CHECK FEED (edit me, or pass as env) ----------------
 # The binary fetches this JSON and shows a banner when its "version"

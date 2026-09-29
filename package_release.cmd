@@ -36,7 +36,7 @@ if "%VERSION%"=="" (
     if defined AG_FULL_VERSION (
         set "VERSION=%AG_FULL_VERSION%"
     ) else (
-        set "VERSION=1.0.0"
+        set "VERSION=1.1.0"
     )
 )
 

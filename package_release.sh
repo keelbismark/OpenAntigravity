@@ -73,7 +73,7 @@ if [ -z "$VERSION" ]; then
     done
 fi
 if [ -z "$VERSION" ]; then
-    VERSION="1.0.0"
+    VERSION="1.1.0"
     echo "Версия не определена — используется $VERSION по умолчанию." >&2
 fi
 
