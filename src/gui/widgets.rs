@@ -95,25 +95,32 @@ pub fn section_header(ui: &mut egui::Ui, text: &str) {
 }
 
 /// A compact status/metric chip (e.g. "⚡ 38 мс", "🌐 127.0.0.1:45318").
-pub fn metric_chip(ui: &mut egui::Ui, icon: &str, text: &str) {
+pub fn metric_chip(ui: &mut egui::Ui, icon: &str, text: &str) -> egui::Response {
     let font_id = egui::FontId::proportional(11.5);
-    let full = format!("{icon} {text}");
-    let galley = ui.painter().layout_no_wrap(full.clone(), font_id, theme::MUTED);
+    let full = if icon.is_empty() {
+        text.to_string()
+    } else {
+        format!("{icon} {text}")
+    };
+    let galley = ui.painter().layout_no_wrap(full, font_id, theme::MUTED);
     let padding = egui::vec2(8.0, 3.5);
     let desired_size = egui::vec2(galley.size().x + padding.x * 2.0, galley.size().y + padding.y * 2.0);
-    let (rect, _) = ui.allocate_exact_size(desired_size, Sense::hover());
+    let (rect, resp) = ui.allocate_exact_size(desired_size, Sense::click());
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
+        let fill = if resp.hovered() { theme::ACCENT_SUBTLE } else { theme::SUNKEN };
         painter.rect(
             rect,
             CornerRadius::same(theme::RADIUS_SMALL),
-            theme::SUNKEN,
+            fill,
             Stroke::new(1.0, theme::LINE),
             egui::StrokeKind::Inside,
         );
         let text_pos = egui::pos2(rect.left() + padding.x, rect.top() + padding.y);
-        painter.galley(text_pos, galley, theme::MUTED);
+        let color = if resp.hovered() { theme::TEXT } else { theme::MUTED };
+        painter.galley(text_pos, galley, color);
     }
+    resp
 }
 
 /// Clean navigation tabs matching the website (active tab has white text and underline).

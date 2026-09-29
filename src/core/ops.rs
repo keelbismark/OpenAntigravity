@@ -222,6 +222,8 @@ pub struct Status {
     /// at all. Reported, never acted on: the stand-down decision is still the
     /// client's (D13, P34).
     pub relay_egress: Option<crate::egress::ClientEgress>,
+    /// Saved proxy profiles / presets
+    pub proxy_profiles: Vec<crate::settings::ProxyProfile>,
 }
 
 impl Status {
@@ -311,6 +313,9 @@ pub enum Cmd {
     AddPath(PathBuf),
     ForgetPath(PathBuf),
     SetOwnProxy(String),
+    SaveProxyProfile { name: String, address: String },
+    DeleteProxyProfile(usize),
+    SelectProxyProfile(usize),
     SetProvider(String, bool),
     /// The whole pool in the order the user dragged it into.
     ReorderProviders(Vec<String>),
@@ -564,6 +569,35 @@ fn run_worker(
                 ctx.settings.save();
                 push_status(&mut ctx, Scan::System);
                 ctx.busy(None);
+            }
+            Cmd::SaveProxyProfile { name, address } => {
+                let name = name.trim().to_string();
+                let address = address.trim().to_string();
+                if !name.is_empty() && !address.is_empty() {
+                    if let Some(pos) = ctx.settings.proxy_profiles.iter().position(|p| p.name == name) {
+                        ctx.settings.proxy_profiles[pos].address = address;
+                    } else {
+                        ctx.settings.proxy_profiles.push(crate::settings::ProxyProfile { name, address });
+                    }
+                    ctx.settings.save();
+                    push_status(&mut ctx, Scan::System);
+                }
+            }
+            Cmd::DeleteProxyProfile(index) => {
+                if index < ctx.settings.proxy_profiles.len() {
+                    ctx.settings.proxy_profiles.remove(index);
+                    ctx.settings.save();
+                    push_status(&mut ctx, Scan::System);
+                }
+            }
+            Cmd::SelectProxyProfile(index) => {
+                if let Some(profile) = ctx.settings.proxy_profiles.get(index).cloned() {
+                    ctx.busy(Some("Переключение прокси"));
+                    set_own_proxy(&mut ctx, &profile.address);
+                    ctx.settings.save();
+                    push_status(&mut ctx, Scan::System);
+                    ctx.busy(None);
+                }
             }
             Cmd::EnableAll => {
                 ctx.busy(Some("Включаю"));
@@ -845,6 +879,7 @@ impl Status {
                 enabled: s.provider_enabled(n),
             })
             .collect();
+        self.proxy_profiles = s.proxy_profiles.clone();
         self
     }
 }
@@ -931,6 +966,7 @@ fn read_status(ctx: &mut Ctx, deep: bool) -> Status {
         rules: dns_probe.0,
         relay_egress: ctx.relay_egress,
         providers: Vec::new(),
+        proxy_profiles: Vec::new(),
         installs,
     }
     .with_settings_switches(&ctx.settings)
@@ -2198,6 +2234,7 @@ mod tests {
             relay_running: false,
             rules: false,
             providers: Vec::new(),
+            proxy_profiles: Vec::new(),
             relay_egress: None,
         }
     }

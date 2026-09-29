@@ -108,9 +108,19 @@ pub struct Settings {
     pub own_proxy: String,
     pub own_proxy_enabled: bool,
 
+    /// Saved proxy profiles / presets for quick switching.
+    #[serde(default)]
+    pub proxy_profiles: Vec<ProxyProfile>,
+
     /// Installs the user pointed at by hand, on top of the ones found by the
     /// scan (the pencil next to each path).
     pub manual_paths: Vec<PathBuf>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProxyProfile {
+    pub name: String,
+    pub address: String,
 }
 
 impl Default for Settings {
@@ -136,6 +146,7 @@ impl Default for Settings {
             // это не управляет — оно читается из upstream.txt / builtin_proxy().
             own_proxy: crate::upstream::builtin_proxy().unwrap_or_default(),
             own_proxy_enabled: crate::upstream::builtin_proxy().is_some(),
+            proxy_profiles: Vec::new(),
             manual_paths: Vec::new(),
         }
     }

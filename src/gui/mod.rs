@@ -114,6 +114,14 @@ pub struct App {
     pub last_rtt: Option<u32>,
     /// Active tab in the UI.
     pub current_tab: Tab,
+    /// Last received diagnostic report for Doctor view.
+    pub last_diag_report: Option<crate::diag::DiagReport>,
+    /// Buffer for creating a new proxy profile name.
+    pub new_profile_name: String,
+    /// UI toggle for adding a new profile.
+    pub show_add_profile: bool,
+    /// Last time an automatic background ping check ran.
+    pub last_ping_time: Option<std::time::Instant>,
     frames: u8,
 }
 
@@ -203,6 +211,10 @@ impl App {
             latency_history: Vec::new(),
             last_rtt: None,
             current_tab: Tab::Main,
+            last_diag_report: None,
+            new_profile_name: String::new(),
+            show_add_profile: false,
+            last_ping_time: None,
             frames: 0,
         }
     }
@@ -230,7 +242,7 @@ impl App {
             .ok();
     }
 
-    fn start_diagnostics(&mut self, ctx: &egui::Context) {
+    pub fn start_diagnostics(&mut self, ctx: &egui::Context) {
         if self.diag_running {
             return;
         }
@@ -379,6 +391,7 @@ impl App {
                 crate::platform::notify::send("Open Antigravity: Тест сети", verdict);
             }
             self.diag_summary = Some((std::time::Instant::now(), status, verdict.to_string()));
+            self.last_diag_report = Some(report);
         }
         // The footer message is a receipt, not a fixture: it clears itself.
         if let Some((_, at)) = &self.manual_result {
@@ -388,6 +401,14 @@ impl App {
         }
         while let Ok(res) = self.proxy_test_rx.try_recv() {
             self.proxy_test_running = false;
+            if let Ok((rtt, _)) = &res {
+                let ms = *rtt as u32;
+                self.last_rtt = Some(ms);
+                self.latency_history.push(ms);
+                if self.latency_history.len() > 30 {
+                    self.latency_history.remove(0);
+                }
+            }
             self.proxy_test_result = Some((res, std::time::Instant::now()));
         }
         if let Some((_, at)) = &self.proxy_test_result {
@@ -502,6 +523,16 @@ impl eframe::App for App {
         // When the user clicks the window's [X], let it close cleanly and exit.
         if ctx.input(|i| i.viewport().close_requested()) {
             self.tray_items = None;
+        }
+
+        // Live proxy ping check: runs automatically every 25 seconds if proxy is configured
+        let need_ping = match self.last_ping_time {
+            Some(t) => t.elapsed() > std::time::Duration::from_secs(25),
+            None => true,
+        };
+        if need_ping && !self.proxy_test_running && !self.own_proxy_input.trim().is_empty() {
+            self.last_ping_time = Some(std::time::Instant::now());
+            self.start_proxy_test(ctx);
         }
     }
 

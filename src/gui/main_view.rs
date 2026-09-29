@@ -101,6 +101,9 @@ fn main_screen(app: &mut App, ui: &mut egui::Ui) {
     hero_status_card(app, ui);
 
     ui.add_space(14.0);
+    doctor_section(app, ui);
+
+    ui.add_space(14.0);
     proxy_section(app, ui);
 
     ui.add_space(14.0);
@@ -208,13 +211,25 @@ fn hero_status_card(app: &mut App, ui: &mut egui::Ui) {
             });
 
             // Middle: Metrics / Status strip (when connected or telemetry available)
-            if is_active || app.last_rtt.is_some() {
+            if is_active || app.last_rtt.is_some() || app.proxy_test_running {
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
-                    if let Some(rtt) = app.last_rtt {
-                        widgets::metric_chip(ui, "⚡", &format!("{rtt} мс"));
+
+                    let ping_label = if app.proxy_test_running {
+                        "⚡ замер…".to_string()
+                    } else if let Some(rtt) = app.last_rtt {
+                        format!("⚡ {rtt} мс")
+                    } else {
+                        "⚡ проверить пинг".to_string()
+                    };
+
+                    let chip_resp = widgets::metric_chip(ui, "", &ping_label)
+                        .on_hover_text("Нажмите для повторной проверки задержки к Google API");
+                    if chip_resp.clicked() && !app.proxy_test_running {
+                        app.start_proxy_test(ui.ctx());
                     }
+
                     let gw = format!("Локальный шлюз: {}:{}", crate::proxy::LISTEN_IP, crate::proxy::port());
                     widgets::metric_chip(ui, "🌐", &gw);
                 });
@@ -289,6 +304,134 @@ fn hero_status_card(app: &mut App, ui: &mut egui::Ui) {
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Section: Doctor / Environment Diagnostics
+// ---------------------------------------------------------------------------
+
+fn doctor_section(app: &mut App, ui: &mut egui::Ui) {
+    let busy = app.is_busy();
+
+    ui.horizontal(|ui| {
+        widgets::section_header(ui, "ДИАГНОСТИКА ОКРУЖЕНИЯ (DOCTOR)");
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let running = app.diag_running || app.proxy_test_running;
+            let btn_text = if running { "Тестирование…" } else { "🩺 Проверить всё" };
+            let run_btn = egui::Button::new(
+                egui::RichText::new(btn_text)
+                    .size(11.5)
+                    .color(if running { theme::MUTED } else { egui::Color32::WHITE }),
+            )
+            .fill(theme::SUNKEN)
+            .stroke(Stroke::new(1.0, theme::LINE))
+            .corner_radius(CornerRadius::same(theme::RADIUS_SMALL));
+
+            if ui.add_enabled(!busy && !running, run_btn).clicked() {
+                app.start_diagnostics(ui.ctx());
+                app.start_proxy_test(ui.ctx());
+            }
+        });
+    });
+    ui.add_space(4.0);
+
+    widgets::card(ui, |ui| {
+        let status = app.status.as_ref();
+        let installs = status.map(|s| s.installs.as_slice()).unwrap_or(&[]);
+        let ide_found = !installs.is_empty();
+        let client_patched = status.map(|s| s.client_patch.is_on()).unwrap_or(false);
+        let proxy_on = status.map(|s| s.local_proxy.is_on()).unwrap_or(false);
+        let port = crate::proxy::port();
+
+        let items: [(&str, String, bool, Option<&str>); 4] = [
+            (
+                "Google Antigravity IDE",
+                if ide_found {
+                    format!("Обнаружено ({})", installs.len())
+                } else {
+                    "Не найдено в системе".to_string()
+                },
+                ide_found,
+                if ide_found { None } else { Some("Установите IDE или укажите путь") },
+            ),
+            (
+                "Патч Language Server",
+                if client_patched {
+                    "Активен (патч применён)".to_string()
+                } else {
+                    "Требуется разблокировка".to_string()
+                },
+                client_patched,
+                if client_patched { None } else { Some("Нажмите «Активировать» выше") },
+            ),
+            (
+                "Локальный шлюз",
+                format!("127.0.0.1:{port} ({})", if proxy_on { "слушает" } else { "остановлен" }),
+                proxy_on,
+                None,
+            ),
+            (
+                "Облако Google AI / Апстрим",
+                if app.proxy_test_running || app.diag_running {
+                    "Проверка соединения…".to_string()
+                } else if let Some(rtt) = app.last_rtt {
+                    format!("Связь в норме ({rtt} мс)")
+                } else if let Some((res, _)) = &app.proxy_test_result {
+                    match res {
+                        Ok((rtt, loc)) => match loc {
+                            Some(l) => format!("Доступно ({rtt} мс · {l})"),
+                            None => format!("Доступно ({rtt} мс)"),
+                        },
+                        Err(e) => format!("Сбой: {e}"),
+                    }
+                } else {
+                    "Готов к проверке".to_string()
+                },
+                app.last_rtt.is_some() || app.proxy_test_result.as_ref().map(|(r, _)| r.is_ok()).unwrap_or(false),
+                None,
+            ),
+        ];
+
+        for (idx, (name, val, ok, hint)) in items.iter().enumerate() {
+            if idx > 0 {
+                ui.add_space(4.0);
+            }
+            ui.horizontal(|ui| {
+                let (dot, dot_col) = if *ok {
+                    ("●", theme::OK)
+                } else {
+                    ("○", theme::MUTED)
+                };
+                ui.label(egui::RichText::new(dot).color(dot_col).size(12.0));
+                ui.label(egui::RichText::new(*name).size(12.0).strong().color(theme::TEXT));
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let val_col = if *ok { theme::OK } else { theme::MUTED };
+                    ui.label(egui::RichText::new(val).size(11.5).color(val_col));
+                });
+            });
+            if let Some(h) = hint {
+                ui.horizontal(|ui| {
+                    ui.add_space(16.0);
+                    ui.label(egui::RichText::new(*h).size(11.0).color(theme::SUBTLE));
+                });
+            }
+        }
+
+        if let Some((_, diag_status, text)) = &app.diag_summary {
+            ui.add_space(6.0);
+            let badge_col = match diag_status {
+                crate::diag::DiagStatus::Ok => theme::OK,
+                crate::diag::DiagStatus::Warn => egui::Color32::from_rgb(230, 180, 50),
+                crate::diag::DiagStatus::Fail => theme::BAD,
+                crate::diag::DiagStatus::Info => theme::TEXT,
+            };
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("Результат:").size(11.5).color(theme::SUBTLE));
+                ui.label(egui::RichText::new(text).size(11.5).color(badge_col));
+            });
+        }
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -374,6 +517,94 @@ fn proxy_section(app: &mut App, ui: &mut egui::Ui) {
                 }
             });
         });
+
+        // Proxy Profiles / Presets
+        let profiles = app.status.as_ref().map(|s| s.proxy_profiles.clone()).unwrap_or_default();
+        ui.add_space(8.0);
+        ui.separator();
+        ui.add_space(6.0);
+
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("Профили:")
+                    .size(12.0)
+                    .color(theme::MUTED),
+            );
+
+            let mut delete_idx: Option<usize> = None;
+            let mut select_idx: Option<usize> = None;
+
+            for (idx, prof) in profiles.iter().enumerate() {
+                let is_selected = app.own_proxy_input.trim() == prof.address.trim();
+                let prof_btn = egui::Button::new(
+                    egui::RichText::new(&prof.name)
+                        .size(11.5)
+                        .color(if is_selected { egui::Color32::BLACK } else { theme::TEXT }),
+                )
+                .fill(if is_selected { egui::Color32::WHITE } else { theme::SUNKEN })
+                .stroke(Stroke::new(1.0, theme::LINE))
+                .corner_radius(CornerRadius::same(theme::RADIUS_SMALL));
+
+                if ui.add_enabled(!busy, prof_btn).on_hover_text(&prof.address).clicked() {
+                    select_idx = Some(idx);
+                }
+
+                let del_btn = egui::Button::new(egui::RichText::new("×").size(11.0).color(theme::MUTED))
+                    .fill(theme::SUNKEN)
+                    .corner_radius(CornerRadius::same(theme::RADIUS_SMALL));
+                if ui.add_enabled(!busy, del_btn).on_hover_text("Удалить профиль").clicked() {
+                    delete_idx = Some(idx);
+                }
+            }
+
+            if let Some(i) = select_idx {
+                if let Some(p) = profiles.get(i) {
+                    app.own_proxy_input = p.address.clone();
+                }
+                app.worker.send(Cmd::SelectProxyProfile(i));
+            }
+            if let Some(i) = delete_idx {
+                app.worker.send(Cmd::DeleteProxyProfile(i));
+            }
+
+            let add_btn = egui::Button::new(
+                egui::RichText::new(if app.show_add_profile { "− Скрыть" } else { "+ Сохранить как профиль" })
+                    .size(11.5)
+                    .color(theme::TEXT),
+            )
+            .fill(theme::SUNKEN)
+            .stroke(Stroke::new(1.0, theme::LINE))
+            .corner_radius(CornerRadius::same(theme::RADIUS_SMALL));
+
+            if ui.add_enabled(!busy, add_btn).clicked() {
+                app.show_add_profile = !app.show_add_profile;
+            }
+        });
+
+        if app.show_add_profile {
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("Название:").size(12.0).color(theme::MUTED));
+                ui.add(
+                    egui::TextEdit::singleline(&mut app.new_profile_name)
+                        .desired_width(140.0)
+                        .hint_text("Нидерланды"),
+                );
+                let can_add = !app.new_profile_name.trim().is_empty() && !app.own_proxy_input.trim().is_empty();
+                let save_prof_btn = egui::Button::new(egui::RichText::new("Добавить").size(12.0).color(theme::TEXT))
+                    .fill(theme::SUNKEN)
+                    .stroke(Stroke::new(1.0, theme::LINE))
+                    .corner_radius(CornerRadius::same(theme::RADIUS_SMALL));
+
+                if ui.add_enabled(!busy && can_add, save_prof_btn).clicked() {
+                    let name = app.new_profile_name.trim().to_string();
+                    let address = app.own_proxy_input.trim().to_string();
+                    app.worker.send(Cmd::SaveProxyProfile { name, address });
+                    app.new_profile_name.clear();
+                    app.show_add_profile = false;
+                }
+            });
+        }
 
         ui.add_space(8.0);
         ui.separator();
