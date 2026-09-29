@@ -20,8 +20,8 @@ permissions:
 
 jobs:
   build-linux:
-    name: Build Linux Portable
-    runs-on: ubuntu-latest
+    name: Build Linux Portable & AppImage
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -63,7 +63,10 @@ jobs:
             libx11-dev \
             libxkbcommon-dev \
             libwayland-dev \
-            libasound2-dev
+            libasound2-dev \
+            libfuse2 \
+            ffmpeg \
+            curl
 
       - name: Build portable Linux distribution
         env:
@@ -74,20 +77,19 @@ jobs:
         run: |
           bash build_portable.sh
 
-      - name: Package Linux release
+      - name: Package Linux release & AppImage
         env:
           VERSION: ${{ steps.ver.outputs.VERSION }}
         run: |
           bash package_release.sh --skip-build --version "$VERSION"
-          bash build_appimage.sh || echo "AppImage build skipped"
+          bash build_appimage.sh
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux-dist
           path: |
-            release/OpenAntigravity_linux_v*.tar.gz
-            release/OpenAntigravity_linux_v*.tar.gz.sha256
+            release/OpenAntigravity_linux_v*.tar.gz*
             release/OpenAntigravity*.AppImage*
 
   build-windows:
@@ -204,7 +206,7 @@ jobs:
           elif [[ "${{ github.ref }}" =~ ^refs/tags/v ]]; then
             V="${GITHUB_REF#refs/tags/v}"
           else
-            V="2.17.0.3"
+            V="1.0.0"
           fi
           echo "VERSION=$V" >> "$GITHUB_OUTPUT"
 
@@ -220,7 +222,7 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           mkdir -p dist_release
-          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.sha256" -o -name "*.AppImage*" \) -exec cp {} dist_release/ \;
+          find artifacts -type f \( -name "*.tar.gz*" -o -name "*.zip*" -o -name "*.AppImage*" \) -exec cp {} dist_release/ \;
 
           TAG="v${VERSION}"
           RELEASE_URL="https://github.com/${REPO}/releases/tag/${TAG}"
@@ -237,28 +239,30 @@ jobs:
           ENDJSON
 
           cd dist_release
-          sha256sum OpenAntigravity_windows_v*.zip OpenAntigravity_linux_v*.tar.gz OpenAntigravity*.AppImage > SHA256SUMS.txt 2>/dev/null || sha256sum OpenAntigravity_windows_v*.zip OpenAntigravity_linux_v*.tar.gz > SHA256SUMS.txt || true
+          sha256sum OpenAntigravity_windows_v*.zip OpenAntigravity_linux_v*.tar.gz OpenAntigravity*.AppImage > SHA256SUMS.txt 2>/dev/null || true
 
           {
-            echo "Первый публичный релиз Open Antigravity."
+            echo "## Open Antigravity v${VERSION}"
             echo ""
-            echo "### Возможности"
-            echo "- Избирательное проксирование: через прокси идут только запросы к языковым моделям Google, остальной трафик системы и IDE идёт напрямую."
-            echo "- Поддержка собственного HTTP/HTTPS прокси (включая авторизацию) и формата \`основной;резервный\` с автоматическим переключением при сбоях."
-            echo "- Портативный режим: настройки, логи и кэш хранятся в каталоге \`data/\` рядом с бинарником."
-            echo "- Блокировка повторного запуска (single instance) для предотвращения конфликта процессов."
-            echo "- Сворачивание в трей при закрытии окна и поддержка автозапуска."
-            echo "- Сборки для Windows (x86_64) и Linux (AppImage, tar.gz и консольный TUI)."
+            echo "Портативная модифицированная сборка для Antigravity 2.0 (Google IDE)."
             echo ""
-            echo "Google Antigravity устанавливается отдельно: https://antigravity.google/download"
+            echo "### 📦 Скачать сборку"
+            echo "- 🐧 **Linux (AppImage, рекомендуется для Steam Deck / Ubuntu / Fedora):** [OpenAntigravity-x86_64.AppImage](${DL_URL}/OpenAntigravity-x86_64.AppImage)"
+            echo "- 🐧 **Linux (архив .tar.gz):** [OpenAntigravity_linux_v${VERSION}.tar.gz](${DL_URL}/OpenAntigravity_linux_v${VERSION}.tar.gz)"
+            echo "- 🪟 **Windows (архив .zip):** [OpenAntigravity_windows_v${VERSION}.zip](${DL_URL}/OpenAntigravity_windows_v${VERSION}.zip)"
             echo ""
-            echo "### Контрольные суммы (SHA256)"
+            echo "### 🚀 Особенности"
+            echo "- **Избирательное проксирование:** через прокси идут только вызовы моделей Google, остальной трафик системы и IDE не затрагивается."
+            echo "- **Свой прокси:** поддержка формата \`логин:пароль@хост:порт\` или цепочки резервирования \`основной;резервный\`."
+            echo "- **Полная портативность:** все настройки хранятся в каталоге \`data/\` рядом с приложением."
+            echo "- **Поддержка Steam Deck:** готовый AppImage с интеграцией иконки и добавлением ярлыка в библиотеку Steam в 1 клик."
+            echo "- **Двойной интерфейс:** современный графический интерфейс (GUI) + терминальный текстовый режим (TUI)."
+            echo ""
+            echo "### 🔒 Контрольные суммы (SHA256)"
             echo "\`\`\`"
             cat SHA256SUMS.txt
             echo "\`\`\`"
           } > RELEASE_NOTES.md
-
-          ls -la
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -274,3 +278,13 @@ jobs:
             dist_release/OpenAntigravity*.AppImage*
             dist_release/version.json
             dist_release/SHA256SUMS.txt
+
+      - name: Sync docs/version.json
+        shell: bash
+        run: |
+          cp dist_release/version.json docs/version.json
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/version.json
+          git commit -m "chore(release): update docs/version.json to v${{ steps.ver.outputs.VERSION }}" || true
+          git push origin main || true
