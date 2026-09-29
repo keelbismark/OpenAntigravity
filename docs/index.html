@@ -436,7 +436,7 @@
     </nav>
 
     <section class="hero">
-      <div class="pill-badge">
+      <div class="pill-badge" id="hero-version-badge">
         <span class="dot"></span>
         Релиз v1.0.0 · Доступ из любого региона
       </div>
@@ -448,15 +448,15 @@
       </p>
 
       <div class="cta-group">
-        <a href="https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity_windows_v1.0.0.zip" class="btn btn-primary">
+        <a id="dl-win" href="https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity_windows_v1.0.0.zip" class="btn btn-primary">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.949-1.801"/></svg>
           Скачать для Windows (.zip)
         </a>
-        <a href="https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity-x86_64.AppImage" class="btn btn-secondary">
+        <a id="dl-appimage" href="https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity-x86_64.AppImage" class="btn btn-secondary">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l6 4.5-6 4.5z"/></svg>
           Linux AppImage (1-Click)
         </a>
-        <a href="https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity_linux_v1.0.0.tar.gz" class="btn btn-secondary">
+        <a id="dl-linux" href="https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity_linux_v1.0.0.tar.gz" class="btn btn-secondary">
           Linux Portable (.tar.gz)
         </a>
       </div>
@@ -552,6 +552,27 @@
       label.innerText = 'Скопировано!';
       setTimeout(() => { label.innerText = orig; }, 1800);
     }
+
+    // Auto-sync latest release info from version.json
+    fetch('version.json')
+      .then(r => r.json())
+      .then(data => {
+        if (data && data.version) {
+          const badge = document.getElementById('hero-version-badge');
+          if (badge) {
+            badge.innerHTML = `<span class="dot"></span>Релиз v${data.version} · Доступ из любого региона`;
+          }
+          const winBtn = document.getElementById('dl-win');
+          if (winBtn && data.url_windows) winBtn.href = data.url_windows;
+          const appImageBtn = document.getElementById('dl-appimage');
+          if (appImageBtn) {
+            appImageBtn.href = `https://github.com/keelbismark/OpenAntigravity/releases/download/v${data.version}/OpenAntigravity-x86_64.AppImage`;
+          }
+          const linuxBtn = document.getElementById('dl-linux');
+          if (linuxBtn && data.url_linux) linuxBtn.href = data.url_linux;
+        }
+      })
+      .catch(() => {});
   </script>
 </body>
 </html>
