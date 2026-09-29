@@ -1,0 +1,44 @@
+# Rust build artifacts
+target/
+**/*.rs.bk
+*.pdb
+
+# Local runtime data & settings
+data/
+**/data/
+settings.json
+renderer.txt
+*.log
+*.tmp
+*.bak
+
+# Environment variables & secrets
+.env
+*.env
+.secret*
+*.pem
+*.key
+
+# Agent workspace & scratch directories
+.antigravity/
+.gemini/
+scratch/
+
+# Release packages (keep version.json)
+release/*.tar.gz
+release/*.tar.gz.sha256
+release/*.zip
+release/*.zip.sha256
+release/*.AppImage*
+dist_portable_windows/
+dist_portable_linux/open_antigravity
+dist_portable_linux/data/
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
