@@ -553,26 +553,65 @@
       setTimeout(() => { label.innerText = orig; }, 1800);
     }
 
-    // Auto-sync latest release info from version.json
-    fetch('version.json')
-      .then(r => r.json())
-      .then(data => {
-        if (data && data.version) {
-          const badge = document.getElementById('hero-version-badge');
-          if (badge) {
-            badge.innerHTML = `<span class="dot"></span>Релиз v${data.version} · Доступ из любого региона`;
+    // Auto-sync latest release info from GitHub Releases API with fallback
+    async function syncLatestRelease() {
+      let version = null;
+      let winUrl = null;
+      let appImageUrl = null;
+      let linuxUrl = null;
+
+      try {
+        const res = await fetch('https://api.github.com/repos/keelbismark/OpenAntigravity/releases/latest');
+        if (res.ok) {
+          const data = await res.json();
+          version = data.tag_name;
+          if (data.assets && Array.isArray(data.assets)) {
+            for (const asset of data.assets) {
+              const name = asset.name || '';
+              if (name.endsWith('.zip') && !name.endsWith('.sha256')) winUrl = asset.browser_download_url;
+              if (name.endsWith('.AppImage') && !name.endsWith('.sha256')) appImageUrl = asset.browser_download_url;
+              if (name.endsWith('.tar.gz') && !name.endsWith('.sha256')) linuxUrl = asset.browser_download_url;
+            }
           }
-          const winBtn = document.getElementById('dl-win');
-          if (winBtn && data.url_windows) winBtn.href = data.url_windows;
-          const appImageBtn = document.getElementById('dl-appimage');
-          if (appImageBtn) {
-            appImageBtn.href = `https://github.com/keelbismark/OpenAntigravity/releases/download/v${data.version}/OpenAntigravity-x86_64.AppImage`;
-          }
-          const linuxBtn = document.getElementById('dl-linux');
-          if (linuxBtn && data.url_linux) linuxBtn.href = data.url_linux;
         }
-      })
-      .catch(() => {});
+      } catch (e) {
+        // Ignore API network errors and fallback
+      }
+
+      if (!version) {
+        try {
+          const res = await fetch('version.json?t=' + Date.now());
+          if (res.ok) {
+            const data = await res.json();
+            version = data.version ? ('v' + data.version.replace(/^v/, '')) : null;
+            winUrl = data.url_windows;
+            linuxUrl = data.url_linux;
+          }
+        } catch (e) {}
+      }
+
+      if (version) {
+        const cleanVer = version.startsWith('v') ? version : 'v' + version;
+        const badge = document.getElementById('hero-version-badge');
+        if (badge) {
+          badge.innerHTML = `<span class="dot"></span>Релиз ${cleanVer} · Доступ из любого региона`;
+        }
+        document.title = `Open Antigravity ${cleanVer} — Среда комфортной работы с Google Antigravity`;
+        if (winUrl) {
+          const btn = document.getElementById('dl-win');
+          if (btn) btn.href = winUrl;
+        }
+        if (appImageUrl) {
+          const btn = document.getElementById('dl-appimage');
+          if (btn) btn.href = appImageUrl;
+        }
+        if (linuxUrl) {
+          const btn = document.getElementById('dl-linux');
+          if (btn) btn.href = linuxUrl;
+        }
+      }
+    }
+    syncLatestRelease();
   </script>
 </body>
 </html>
