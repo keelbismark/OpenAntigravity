@@ -1,0 +1,7 @@
+{
+  "version": "1.0.0",
+  "notes": "Open Antigravity v1.0.0 — первый стабильный релиз: портативный режим, поддержка прокси с резервным сервером, новый UI, трей, AppImage",
+  "page": "https://keelbismark.github.io/OpenAntigravity/",
+  "url_windows": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.0.0/OpenAntigravity_windows_v1.0.0.zip",
+  "url_linux": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.0.0/OpenAntigravity-x86_64.AppImage"
+}

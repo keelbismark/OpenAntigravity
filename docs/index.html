@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Open Antigravity v1.0.0 — Среда комфортной работы с Google Antigravity</title>
+  <meta name="description" content="Open Antigravity — инструмент для комфортной работы с Antigravity 2.0 (Google IDE) из любого региона: настройка в один клик, работа без VPN и прозрачный мониторинг соединения.">
+  <link rel="icon" type="image/png" href="icon.png">
+  <style>
+    :root {
+      --bg: #000000;
+      --card-bg: rgba(14, 14, 14, 0.72);
+      --card-border: rgba(255, 255, 255, 0.12);
+      --accent: #ffffff;
+      --accent-glow: rgba(255, 255, 255, 0.35);
+      --accent-hover: #e2e8f0;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --ok: #ffffff;
+      --radius: 16px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      background-image:
+        radial-gradient(ellipse 90% 55% at 50% -10%, rgba(255, 255, 255, 0.08), transparent 70%),
+        radial-gradient(ellipse 70% 45% at 15% 25%, rgba(255, 255, 255, 0.04), transparent 60%),
+        radial-gradient(ellipse 60% 40% at 85% 45%, rgba(255, 255, 255, 0.05), transparent 55%),
+        radial-gradient(circle 500px at 50% 75%, rgba(255, 255, 255, 0.03), transparent 70%),
+        radial-gradient(ellipse 75% 45% at 10% 90%, rgba(255, 255, 255, 0.03), transparent 60%);
+      background-attachment: fixed;
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+      line-height: 1.6;
+      position: relative;
+    }
+
+    /* Black and white galaxy star layers */
+    .galaxy-viewport {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      min-height: 100vh;
+      overflow: hidden;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    @keyframes twinkle {
+      0% { opacity: 0.25; transform: scale(0.9); }
+      50% { opacity: 1.0; transform: scale(1.15); }
+      100% { opacity: 0.35; transform: scale(1.0); }
+    }
+
+    
+    .stars-sm {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 1px;
+      height: 1px;
+      background: transparent;
+      box-shadow: 487px 1308px rgba(255,255,255,0.2), 2096px 2650px #ffffff, 914px 2461px rgba(255,255,255,0.2), 1722px 2345px rgba(255,255,255,0.2), 2010px 2402px rgba(255,255,255,0.4), 982px 10px #ffffff, 453px 1176px #ffffff, 1841px 47px rgba(255,255,255,0.4), 1287px 861px rgba(255,255,255,0.7), 1030px 1424px rgba(255,255,255,0.9), 1541px 2103px #ffffff, 1394px 367px rgba(255,255,255,0.2), 2203px 1196px #e2e8f0, 1873px 577px #e2e8f0, 101px 2911px rgba(255,255,255,0.9), 1489px 1888px rgba(255,255,255,0.7), 371px 1633px rgba(255,255,255,0.2), 2041px 476px rgba(255,255,255,0.7), 2074px 2458px rgba(255,255,255,0.4), 1630px 2148px #e2e8f0, 1720px 2310px rgba(255,255,255,0.4), 2101px 2121px #ffffff, 2357px 919px #f8fafc, 200px 2886px rgba(255,255,255,0.2), 420px 2938px rgba(255,255,255,0.7), 1925px 583px rgba(255,255,255,0.4), 937px 499px rgba(255,255,255,0.4), 1922px 2926px rgba(255,255,255,0.2), 1028px 2292px rgba(255,255,255,0.7), 1260px 2245px rgba(255,255,255,0.2), 1961px 1646px rgba(255,255,255,0.7), 829px 1205px #e2e8f0, 37px 135px #f8fafc, 1876px 2141px rgba(255,255,255,0.4), 1474px 818px #e2e8f0, 1988px 1911px rgba(255,255,255,0.2), 2036px 1778px rgba(255,255,255,0.2), 137px 1188px rgba(255,255,255,0.9), 1874px 402px rgba(255,255,255,0.4), 2110px 1060px rgba(255,255,255,0.4), 749px 1743px rgba(255,255,255,0.4), 263px 2656px #e2e8f0, 2041px 1516px #ffffff, 797px 1684px #f8fafc, 1840px 57px #ffffff, 0px 1848px rgba(255,255,255,0.2), 340px 2499px #f1f5f9, 1015px 494px #ffffff, 2238px 1099px rgba(255,255,255,0.9), 633px 21px rgba(255,255,255,0.9), 2388px 2352px rgba(255,255,255,0.4), 552px 2235px #f1f5f9, 1937px 2408px #f8fafc, 2067px 1190px #ffffff, 1711px 2738px #f8fafc, 554px 2400px #e2e8f0, 2079px 1687px rgba(255,255,255,0.7), 608px 2130px #f1f5f9, 1540px 57px #ffffff, 1594px 300px #ffffff, 1421px 2647px rgba(255,255,255,0.9), 105px 104px rgba(255,255,255,0.2), 1949px 1342px #e2e8f0, 1843px 1335px #ffffff, 2038px 1911px #f8fafc, 630px 2421px rgba(255,255,255,0.2), 847px 1776px rgba(255,255,255,0.9), 1879px 2450px #f1f5f9, 284px 2241px rgba(255,255,255,0.7), 139px 800px #f8fafc, 185px 2655px rgba(255,255,255,0.2), 197px 1850px #f1f5f9, 1981px 2912px #ffffff, 528px 2644px rgba(255,255,255,0.2), 895px 2117px #f8fafc, 656px 2708px #f8fafc, 1597px 1117px rgba(255,255,255,0.7), 2183px 1696px #ffffff, 1569px 1248px #f8fafc, 1409px 715px #e2e8f0, 1900px 2038px rgba(255,255,255,0.7), 1178px 1915px #f8fafc, 1334px 2127px rgba(255,255,255,0.4), 1821px 491px rgba(255,255,255,0.2), 2149px 1121px #ffffff, 877px 947px #ffffff, 381px 1860px rgba(255,255,255,0.9), 1671px 2232px #f8fafc, 111px 1441px #f8fafc, 1440px 2301px rgba(255,255,255,0.2), 886px 449px #e2e8f0, 2276px 2326px #f1f5f9, 2334px 1207px #e2e8f0, 2276px 543px #ffffff, 1080px 394px rgba(255,255,255,0.7), 701px 434px #ffffff, 1459px 2958px #f8fafc, 435px 2075px rgba(255,255,255,0.9), 1133px 2408px #ffffff, 1192px 1288px #f8fafc, 1068px 1049px #ffffff, 56px 1686px #e2e8f0, 1697px 63px #ffffff, 395px 963px #ffffff, 1269px 503px #ffffff, 2298px 2361px rgba(255,255,255,0.9), 1290px 1867px #ffffff, 1655px 1294px #f1f5f9, 1895px 1745px #ffffff, 1532px 2053px #e2e8f0, 1593px 1195px rgba(255,255,255,0.9), 236px 2929px rgba(255,255,255,0.7), 96px 1152px rgba(255,255,255,0.9), 1186px 2978px #ffffff, 1216px 1706px rgba(255,255,255,0.9), 2398px 83px rgba(255,255,255,0.2), 1402px 808px rgba(255,255,255,0.2), 229px 2955px #ffffff, 664px 2535px #ffffff, 484px 152px #f8fafc, 2140px 1450px #e2e8f0, 117px 1739px #f8fafc, 1458px 1701px rgba(255,255,255,0.7), 1544px 980px rgba(255,255,255,0.7), 899px 512px #f8fafc, 2223px 116px rgba(255,255,255,0.2), 2272px 1625px #e2e8f0, 604px 934px #ffffff, 67px 1133px rgba(255,255,255,0.2), 1961px 1711px #e2e8f0, 1289px 567px #ffffff, 734px 2265px #ffffff, 2105px 1086px rgba(255,255,255,0.9), 2131px 1300px #ffffff, 46px 2571px #f1f5f9, 1927px 238px #f1f5f9, 2083px 617px rgba(255,255,255,0.7), 1474px 952px rgba(255,255,255,0.2), 1129px 1407px #f1f5f9, 1534px 1470px rgba(255,255,255,0.4), 1874px 2247px rgba(255,255,255,0.4), 2378px 1278px #f1f5f9, 648px 2572px rgba(255,255,255,0.7), 629px 1985px #ffffff, 1451px 2143px rgba(255,255,255,0.7), 153px 2617px #f8fafc, 344px 1224px rgba(255,255,255,0.9), 2239px 2994px #e2e8f0, 565px 2927px #ffffff, 75px 2184px #f1f5f9, 2385px 1256px #ffffff, 1610px 1558px rgba(255,255,255,0.2), 2115px 2638px #f8fafc, 2083px 429px #ffffff, 581px 3000px rgba(255,255,255,0.7), 1366px 2242px #e2e8f0, 1271px 170px #f1f5f9, 664px 1199px #e2e8f0, 2216px 1169px rgba(255,255,255,0.9), 548px 1591px #f1f5f9, 38px 2481px rgba(255,255,255,0.4), 1731px 1456px rgba(255,255,255,0.2), 699px 2957px rgba(255,255,255,0.2), 120px 735px rgba(255,255,255,0.9), 2208px 592px #f8fafc, 116px 477px rgba(255,255,255,0.2), 8px 1534px #ffffff, 1507px 1239px #f1f5f9, 2179px 631px #f1f5f9, 518px 435px rgba(255,255,255,0.9), 1984px 439px #ffffff, 1561px 1075px #e2e8f0, 481px 1424px rgba(255,255,255,0.4), 2042px 495px rgba(255,255,255,0.2), 2125px 1011px rgba(255,255,255,0.9), 1867px 2397px rgba(255,255,255,0.9), 338px 282px #ffffff, 2026px 1278px #e2e8f0, 925px 689px rgba(255,255,255,0.9), 1771px 2073px rgba(255,255,255,0.2), 1358px 1321px rgba(255,255,255,0.4), 1650px 1284px #f8fafc, 804px 1896px #f1f5f9, 1427px 1434px rgba(255,255,255,0.7), 1563px 871px #f8fafc, 1809px 2320px #f8fafc, 1766px 1096px rgba(255,255,255,0.9), 482px 1310px #e2e8f0, 1820px 1079px #f8fafc, 2232px 2567px #e2e8f0, 959px 1358px #f8fafc, 2299px 504px #e2e8f0, 1202px 2352px rgba(255,255,255,0.4), 1643px 1636px #ffffff, 2251px 2934px rgba(255,255,255,0.9), 1677px 1379px #ffffff, 2026px 2777px rgba(255,255,255,0.2), 2116px 859px rgba(255,255,255,0.7), 1442px 2655px rgba(255,255,255,0.9), 245px 1637px #f8fafc, 43px 1093px rgba(255,255,255,0.2), 1032px 534px rgba(255,255,255,0.9), 2371px 2639px rgba(255,255,255,0.7), 1949px 1978px rgba(255,255,255,0.9), 48px 153px #f1f5f9, 494px 2706px #e2e8f0, 1337px 72px #f1f5f9, 1872px 2109px #e2e8f0, 1513px 323px rgba(255,255,255,0.2), 768px 2207px #ffffff, 391px 638px rgba(255,255,255,0.9), 898px 1898px #f1f5f9, 699px 2889px #e2e8f0, 345px 2324px rgba(255,255,255,0.7), 2137px 2789px rgba(255,255,255,0.2), 545px 442px #ffffff, 1109px 1718px #ffffff, 758px 2253px rgba(255,255,255,0.2), 947px 1928px rgba(255,255,255,0.9), 1407px 1423px rgba(255,255,255,0.9);
+      z-index: 0;
+      pointer-events: none;
+    }
+    .stars-md {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 2px;
+      height: 2px;
+      border-radius: 50%;
+      background: transparent;
+      box-shadow: 1964px 1045px rgba(255,255,255,0.4), 1339px 1024px #ffffff, 2007px 545px #ffffff, 1968px 1499px #e2e8f0, 1909px 814px rgba(255,255,255,0.9), 1120px 2098px rgba(255,255,255,0.7), 1245px 894px #ffffff, 1682px 264px rgba(255,255,255,0.2), 2180px 1223px rgba(255,255,255,0.4), 371px 2087px rgba(255,255,255,0.2), 1331px 2003px rgba(255,255,255,0.9), 1391px 1474px #f8fafc, 319px 2302px #f8fafc, 1054px 2162px rgba(255,255,255,0.2), 1568px 2582px #ffffff, 879px 118px rgba(255,255,255,0.4), 986px 858px rgba(255,255,255,0.7), 2080px 2156px #f8fafc, 2104px 865px #e2e8f0, 2001px 559px rgba(255,255,255,0.2), 1334px 1489px rgba(255,255,255,0.7), 2181px 2520px rgba(255,255,255,0.2), 774px 622px rgba(255,255,255,0.2), 627px 2984px #f8fafc, 537px 2690px #ffffff, 141px 1148px #e2e8f0, 733px 570px #e2e8f0, 2213px 2838px rgba(255,255,255,0.9), 524px 1873px #f8fafc, 764px 2838px #ffffff, 760px 2784px #f8fafc, 1695px 2626px rgba(255,255,255,0.4), 2236px 118px #e2e8f0, 904px 2107px rgba(255,255,255,0.9), 2223px 376px rgba(255,255,255,0.4), 1666px 634px rgba(255,255,255,0.9), 596px 2927px rgba(255,255,255,0.2), 164px 1928px #ffffff, 238px 387px rgba(255,255,255,0.9), 2400px 2886px #e2e8f0, 1346px 115px #f8fafc, 2061px 783px #ffffff, 1731px 2717px rgba(255,255,255,0.7), 816px 699px #f1f5f9, 920px 2710px rgba(255,255,255,0.4), 871px 1525px #f8fafc, 2194px 1728px rgba(255,255,255,0.7), 1881px 1487px #f1f5f9, 1264px 2577px rgba(255,255,255,0.4), 2289px 2484px rgba(255,255,255,0.4), 375px 864px #f1f5f9, 474px 322px rgba(255,255,255,0.9), 647px 471px #f8fafc, 833px 2625px rgba(255,255,255,0.7), 775px 1752px #ffffff, 2240px 593px #e2e8f0, 1176px 1495px rgba(255,255,255,0.7), 39px 1952px rgba(255,255,255,0.2), 1884px 1118px rgba(255,255,255,0.9), 1999px 565px #ffffff, 589px 2292px #f1f5f9, 1470px 1867px rgba(255,255,255,0.7), 197px 2859px rgba(255,255,255,0.2), 1336px 1043px #ffffff, 1888px 1919px rgba(255,255,255,0.9), 2236px 2152px rgba(255,255,255,0.2), 402px 1130px #e2e8f0, 152px 329px #ffffff, 287px 2161px rgba(255,255,255,0.4), 2311px 445px rgba(255,255,255,0.7), 2355px 1871px rgba(255,255,255,0.4), 2215px 89px #f8fafc, 1304px 550px #ffffff, 430px 1604px #ffffff, 688px 2190px #e2e8f0, 74px 189px #ffffff, 2133px 490px rgba(255,255,255,0.9), 627px 1257px rgba(255,255,255,0.4), 991px 1319px rgba(255,255,255,0.4), 993px 1638px #f1f5f9;
+      animation: twinkle 4.5s ease-in-out infinite alternate;
+      z-index: 0;
+      pointer-events: none;
+    }
+    .stars-lg {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 3px;
+      height: 3px;
+      border-radius: 50%;
+      background: transparent;
+      box-shadow: 2105px 1280px rgba(255,255,255,0.7), 169px 2002px #f1f5f9, 754px 1796px #f1f5f9, 465px 2409px rgba(255,255,255,0.4), 1563px 1977px rgba(255,255,255,0.2), 66px 2043px #f1f5f9, 1575px 2991px #ffffff, 2168px 1906px #f8fafc, 1206px 987px rgba(255,255,255,0.2), 1285px 1094px rgba(255,255,255,0.7), 2377px 107px rgba(255,255,255,0.9), 2129px 681px rgba(255,255,255,0.2), 500px 2305px rgba(255,255,255,0.9), 888px 2402px #ffffff, 2271px 696px rgba(255,255,255,0.4), 1660px 454px #ffffff, 1703px 1642px #ffffff, 1000px 805px #ffffff, 1075px 692px rgba(255,255,255,0.2), 1091px 1532px #ffffff, 1045px 686px #ffffff, 895px 2894px rgba(255,255,255,0.2), 473px 1832px rgba(255,255,255,0.2), 145px 1456px rgba(255,255,255,0.4), 2111px 2582px #ffffff, 778px 2664px rgba(255,255,255,0.4), 192px 1193px #ffffff, 689px 2670px #ffffff, 1143px 838px #ffffff, 1175px 2530px #ffffff;
+      filter: drop-shadow(0 0 4px #ffffff);
+      animation: twinkle 3s ease-in-out infinite alternate-reverse;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 0 24px;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Hero Section */
+    .hero {
+      text-align: center;
+      padding: 70px 0 50px;
+    }
+
+    .pill-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #e2e8f0;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 24px;
+      backdrop-filter: blur(8px);
+    }
+
+    .pill-badge span.dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #ffffff;
+      box-shadow: 0 0 8px #ffffff;
+    }
+
+    h1 {
+      font-size: 3.2rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+      margin-bottom: 20px;
+      background: linear-gradient(135deg, #ffffff 40%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero p {
+      font-size: 1.2rem;
+      color: var(--muted);
+      max-width: 640px;
+      margin: 0 auto 36px;
+    }
+
+    .cta-group {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 28px;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 1.05rem;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+
+    .btn-primary {
+      background: #ffffff;
+      color: #000000;
+      box-shadow: 0 4px 20px rgba(255, 255, 255, 0.25);
+      border: 1px solid #ffffff;
+    }
+
+    .btn-primary:hover {
+      background: #e2e8f0;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 28px rgba(255, 255, 255, 0.4);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      backdrop-filter: blur(12px);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.12);
+      border-color: rgba(255, 255, 255, 0.35);
+      transform: translateY(-2px);
+    }
+
+    /* Clean Specs Grid */
+    .specs-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 36px 48px;
+      margin: 64px 0 56px;
+      padding: 40px 0;
+      border-top: 1px solid rgba(255, 255, 255, 0.12);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .spec-item {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .spec-title {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: #ffffff;
+      letter-spacing: -0.01em;
+    }
+
+    .spec-desc {
+      color: #94a3b8;
+      font-size: 0.95rem;
+      line-height: 1.6;
+    }
+
+    /* Command Snippet */
+    .command-box {
+      max-width: 760px;
+      margin: 40px auto 60px;
+      background: rgba(14, 14, 14, 0.75);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      overflow: hidden;
+      backdrop-filter: blur(12px);
+    }
+
+    .command-tabs {
+      display: flex;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(0, 0, 0, 0.4);
+      padding: 0 8px;
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      padding: 12px 16px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s ease;
+    }
+
+    .tab-btn:hover {
+      color: #ffffff;
+    }
+
+    .tab-btn.active {
+      color: #ffffff;
+      border-bottom-color: #ffffff;
+    }
+
+    .command-content {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 16px 20px;
+    }
+
+    .command-code {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.9rem;
+      color: #f8fafc;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+
+    .command-prompt {
+      color: #64748b;
+      user-select: none;
+      font-weight: 600;
+    }
+
+    .copy-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #e2e8f0;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      flex-shrink: 0;
+    }
+
+    .copy-btn:hover {
+      background: rgba(255, 255, 255, 0.12);
+      color: #ffffff;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 40px 0;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    footer a {
+      color: #ffffff;
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    footer a:hover {
+      text-decoration: underline;
+    }
+
+    /* Header / Nav */
+    .top-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 24px 0 10px;
+    }
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: #fff;
+    }
+    .nav-logo {
+      border-radius: 8px;
+    }
+    .nav-title {
+      font-weight: 700;
+      font-size: 1.15rem;
+      letter-spacing: -0.02em;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+    .nav-link {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+    .nav-link:hover {
+      color: #ffffff;
+    }
+    .nav-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 14px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #ffffff;
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .nav-btn:hover {
+      background: rgba(255, 255, 255, 0.18);
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+
+    @media (max-width: 768px) {
+      .specs-grid { grid-template-columns: 1fr; gap: 24px; }
+    }
+
+    @media (max-width: 640px) {
+      h1 { font-size: 2.2rem; }
+      .top-nav { flex-direction: column; gap: 14px; text-align: center; }
+      .nav-links { flex-wrap: wrap; justify-content: center; }
+      .hero { padding: 30px 0 24px; }
+      .btn { width: 100%; justify-content: center; }
+      .command-tabs { overflow-x: auto; white-space: nowrap; }
+      .command-content { flex-direction: column; align-items: stretch; gap: 12px; }
+      .command-code { width: 100%; }
+      .copy-btn { justify-content: center; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="galaxy-viewport">
+    <div class="stars-sm"></div>
+    <div class="stars-md"></div>
+    <div class="stars-lg"></div>
+  </div>
+
+  <div class="container">
+    <nav class="top-nav">
+      <a href="https://keelbismark.github.io/OpenAntigravity/" class="nav-brand">
+        <img src="icon.png" width="32" height="32" alt="Logo" class="nav-logo">
+        <span class="nav-title">Open Antigravity</span>
+      </a>
+      <div class="nav-links">
+        <a href="https://antigravity.google/download" target="_blank" rel="noopener" class="nav-link">Google Antigravity</a>
+        <a href="https://github.com/keelbismark/OpenAntigravity/releases" target="_blank" rel="noopener" class="nav-link">Релизы</a>
+        <a href="https://github.com/keelbismark/OpenAntigravity" target="_blank" rel="noopener" class="nav-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          GitHub
+        </a>
+      </div>
+    </nav>
+
+    <section class="hero">
+      <div class="pill-badge">
+        <span class="dot"></span>
+        Релиз v1.0.0 · Доступ из любого региона
+      </div>
+
+      <h1>Чистый и свободный<br>Google Antigravity 2.0</h1>
+      <p>
+        Всё необходимое для комфортной работы в Google Antigravity:
+        запуск в один клик, избирательная маршрутизация без сторонних VPN и полный контроль над соединением.
+      </p>
+
+      <div class="cta-group">
+        <a href="https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity_windows_v1.0.0.zip" class="btn btn-primary">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.949-1.801"/></svg>
+          Скачать для Windows (.zip)
+        </a>
+        <a href="https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity-x86_64.AppImage" class="btn btn-secondary">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l6 4.5-6 4.5z"/></svg>
+          Linux AppImage (1-Click)
+        </a>
+        <a href="https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity_linux_v1.0.0.tar.gz" class="btn btn-secondary">
+          Linux Portable (.tar.gz)
+        </a>
+      </div>
+
+      <div style="margin-top: 18px; font-size: 0.95rem; color: var(--muted); text-align: center;">
+        Официальный дистрибутив редактора: <a href="https://antigravity.google/download" target="_blank" rel="noopener" style="color: #fff; text-decoration: underline; text-underline-offset: 3px;">Скачать Google Antigravity</a>
+      </div>
+    </section>
+
+    <div class="specs-grid">
+      <div class="spec-item">
+        <div class="spec-title">Быстрый запуск</div>
+        <div class="spec-desc">Подготовка Antigravity к работе в один клик. Программа настраивает компоненты среды без необходимости вручную менять файлы конфигурации.</div>
+      </div>
+
+      <div class="spec-item">
+        <div class="spec-title">Изолированный трафик</div>
+        <div class="spec-desc">Перенаправляются исключительно обращения к AI-моделям. Браузер, git, терминал и система продолжают работать напрямую на полной скорости сети.</div>
+      </div>
+
+      <div class="spec-item">
+        <div class="spec-title">Резервирование прокси</div>
+        <div class="spec-desc">Поддержка основного и запасного серверов. При недоступности канала связь мгновенно переключается на резервный адрес.</div>
+      </div>
+
+      <div class="spec-item">
+        <div class="spec-title">Автоконтроль при обновлениях</div>
+        <div class="spec-desc">Фоновый сторож (Watchdog) отслеживает обновления Antigravity и автоматически восстанавливает рабочее состояние среды.</div>
+      </div>
+
+      <div class="spec-item">
+        <div class="spec-title">Живой статус и RTT</div>
+        <div class="spec-desc">В интерфейсе отображаются реальный ответ модели, текущее состояние компонентов и график задержки соединения в реальном времени.</div>
+      </div>
+
+      <div class="spec-item">
+        <div class="spec-title">Полная портативность</div>
+        <div class="spec-desc">Никаких записей в реестр или скрытых служб. Все настройки и отчёты изолированы в рабочей папке <code>data/</code> рядом с программой.</div>
+      </div>
+    </div>
+
+    <div class="command-box">
+      <div class="command-tabs">
+        <button class="tab-btn active" onclick="setCommand('linux_tui', this)">Linux & Steam Deck (TUI)</button>
+        <button class="tab-btn" onclick="setCommand('win_tui', this)">Windows PowerShell</button>
+        <button class="tab-btn" onclick="setCommand('appimage', this)">Linux AppImage</button>
+      </div>
+      <div class="command-content">
+        <div class="command-code">
+          <span class="command-prompt" id="cmd-prompt">$</span>
+          <span id="cmd-text">curl -fsSL https://raw.githubusercontent.com/keelbismark/OpenAntigravity/main/tui.sh | sh</span>
+        </div>
+        <button class="copy-btn" id="copy-btn" onclick="copyCode()" title="Скопировать в буфер">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          <span id="copy-btn-text">Скопировать</span>
+        </button>
+      </div>
+    </div>
+
+    <footer>
+      <p style="margin-bottom: 10px; display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
+        <a href="https://github.com/keelbismark/OpenAntigravity" target="_blank" rel="noopener">GitHub</a> · 
+        <a href="https://github.com/keelbismark/OpenAntigravity/releases" target="_blank" rel="noopener">Релизы</a> · 
+        <a href="https://antigravity.google/download" target="_blank" rel="noopener">Google Antigravity</a> · 
+        <a href="https://t.me/bismark_dev" target="_blank" rel="noopener">Telegram</a>
+      </p>
+      <p style="font-size: 0.82rem; opacity: 0.65;">
+        Open Antigravity распространяется под лицензией MIT и не аффилирован с Google LLC. Все товарные знаки принадлежат их владельцам.
+      </p>
+    </footer>
+  </div>
+
+  <script>
+    const commands = {
+      linux_tui: "curl -fsSL https://raw.githubusercontent.com/keelbismark/OpenAntigravity/main/tui.sh | sh",
+      win_tui: "irm https://raw.githubusercontent.com/keelbismark/OpenAntigravity/main/tui.ps1 | iex",
+      appimage: "chmod +x OpenAntigravity-x86_64.AppImage && ./OpenAntigravity-x86_64.AppImage"
+    };
+
+    function setCommand(key, btn) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('cmd-text').innerText = commands[key];
+      const prompt = document.getElementById('cmd-prompt');
+      prompt.innerText = (key === 'win_tui') ? '>' : '$';
+    }
+
+    function copyCode() {
+      const text = document.getElementById('cmd-text').innerText;
+      navigator.clipboard.writeText(text);
+      const label = document.getElementById('copy-btn-text');
+      const orig = label.innerText;
+      label.innerText = 'Скопировано!';
+      setTimeout(() => { label.innerText = orig; }, 1800);
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,1011 @@
+// Keeping the DNS relay alive across reboots.
+//
+// The Windows implementation is a logon-triggered scheduled task; the Linux
+// implementation is, for now, a set of honest stubs - the DNS/relay layer is the
+// last part of the port (kb/patch.md), and until it lands the binary/JS patch is
+// what lifts the gate on a permitted exit (kb/rivals.md Fact 2). The stubs report
+// "not running / nothing to do" so menu 1's DNS branch is simply skipped rather
+// than half-run.
+
+/// Hidden flag that turns the binary into the relay. Handled before any UI.
+pub const FORWARDER_FLAG: &str = "--dns-forwarder";
+/// Hidden flag that runs ONLY the update watchdog - no relay, no DNS, no network.
+/// Handled before any UI, same as the relay flag.
+pub const WATCHDOG_FLAG: &str = "--watchdog";
+/// Hidden flag that runs ONLY the local CONNECT proxy (`proxy::run`) - the Linux
+/// phase-2 region route. No DNS listener, so no systemd-resolved conflict.
+pub const PROXY_FLAG: &str = "--proxy";
+
+#[cfg(target_os = "windows")]
+pub use windows_impl::*;
+
+#[cfg(not(target_os = "windows"))]
+pub use unix_impl::*;
+
+#[cfg(target_os = "windows")]
+mod windows_impl {
+    use std::env;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+    use std::thread;
+    use std::time::Duration;
+
+    use super::{FORWARDER_FLAG, WATCHDOG_FLAG};
+    use crate::dns_forwarder;
+    use crate::utils::{bounded_output, no_window, powershell};
+
+    // A scheduled task rather than a real service: a Windows service has to
+    // implement StartServiceCtrlDispatcher and a control handler or the SCM kills
+    // the process after ~30 seconds, which is a protocol to maintain for exactly
+    // the same result. A logon-triggered task is a plain background process, and
+    // enable/disable is one cmdlet each.
+    //
+    // Registered through the ScheduledTasks cmdlets, not schtasks.exe: the
+    // defaults of the latter are wrong here in two ways that only surface on a
+    // laptop weeks later - a task is stopped when the machine goes on battery, and
+    // it is killed after a 72-hour execution limit. Both are switched off below.
+    //
+    // It also restarts on failure. The relay is compiled with `panic = "abort"`,
+    // so any thread that goes down takes the whole process with it - and with it
+    // the DNS the routed names depend on, until the next logon. A restart policy
+    // is the only backstop available for that, since the panic cannot be caught.
+
+    const TASK_NAME: &str = "Open Antigravity DNS";
+    const LEGACY_TASK_NAME: &str = "AG Unlocker DNS";
+    /// The watchdog's own logon task, separate from the relay's. Decoupling the
+    /// re-patch survival from the relay is what lets it keep working when the relay
+    /// is stopped (menu 4), has died, or was never installed (a future patch-only
+    /// machine) - the case G9 describes today, where no relay means no watchdog.
+    const WATCHDOG_TASK_NAME: &str = "Open Antigravity Watchdog";
+    const LEGACY_WATCHDOG_TASK_NAME: &str = "AG Unlocker Watchdog";
+    const EXE_NAME: &str = "ag_dns.exe";
+
+    /// ProgramData, **not** LOCALAPPDATA. Measured on a real machine: a scheduled
+    /// task launching anything out of `%LOCALAPPDATA%` fails with 0x80070002, and a
+    /// stock `ping.exe` copied there fails identically - it is an anti-persistence
+    /// heuristic (a task autostarting an exe from AppData is the classic malware
+    /// shape), not something about our binary. The same probe from ProgramData and
+    /// Program Files starts cleanly.
+    pub fn install_dir() -> PathBuf {
+        PathBuf::from(env::var("ProgramData").unwrap_or_else(|_| "C:\\ProgramData".to_string()))
+            .join("OpenAntigravity")
+    }
+
+    pub fn installed_exe() -> PathBuf {
+        install_dir().join(EXE_NAME)
+    }
+
+    // ------------------------------------------------------------------
+    // Портативный режим (флешка): никакой задачи в планировщике и никакой
+    // копии в %ProgramData%. Релей — это тот же exe, запущенный из той же
+    // папки с --dns-forwarder; его номер процесса лежит в data\relay.pid.
+    // Поиск чужих процессов ведётся строго по командной строке, чтобы
+    // никогда не убить само окно: у него тот же образ, но другой пид.
+    // ------------------------------------------------------------------
+
+    fn relay_pid_path() -> PathBuf {
+        crate::dns_forwarder::log_dir().join("relay.pid")
+    }
+
+    fn read_relay_pid() -> Option<u32> {
+        fs::read_to_string(relay_pid_path())
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+    }
+
+    /// Имя образа этого exe. В обычной сборке релей называется ag_dns.exe,
+    /// в портативной — как файл на флешке, поэтому имя не константа.
+    fn relay_image_name() -> String {
+        env::current_exe()
+            .ok()
+            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .unwrap_or_else(|| EXE_NAME.to_string())
+    }
+
+    fn pid_alive(pid: u32) -> bool {
+        let name = relay_image_name();
+        let mut cmd = Command::new("tasklist");
+        cmd.args(["/FI", &format!("PID eq {}", pid), "/NH"]);
+        bounded_output(no_window(&mut cmd), HELPER_LIMIT).is_some_and(|o| {
+            String::from_utf8_lossy(&o.stdout).contains(&name)
+        })
+    }
+
+    /// Пиды процессов этого образа, чья командная строка содержит
+    /// --dns-forwarder. Дороже tasklist (PowerShell), поэтому вызывается
+    /// либо на редком пути (остановка), либо как запасной детект, когда
+    /// файла с пидом нет.
+    fn relay_pids_by_cmdline() -> Vec<u32> {
+        let name = relay_image_name().replace('\'', "''");
+        let ps = format!(
+            "Get-CimInstance Win32_Process -Filter \"Name = '{}'\" -ErrorAction SilentlyContinue | \
+             Where-Object {{ $_.CommandLine -like '*{}*' }} | \
+             ForEach-Object {{ $_.ProcessId }}",
+            name, FORWARDER_FLAG
+        );
+        let Some(out) = powershell(&ps) else {
+            return Vec::new();
+        };
+        String::from_utf8_lossy(&out.stdout)
+            .split_whitespace()
+            .filter_map(|t| t.parse().ok())
+            .collect()
+    }
+
+    fn is_running_portable() -> bool {
+        match read_relay_pid() {
+            // Свой пид в файле — ошибка записи, не признак жизни.
+            Some(pid) => pid != std::process::id() && pid_alive(pid),
+            None => !relay_pids_by_cmdline().is_empty(),
+        }
+    }
+
+    /// Останавливает портативный релей: по пиду из файла и по всем
+    /// процессам с --dns-forwarder в командной строке. Само окно и другие
+    /// его копии не трогаются — у них нет флага релея.
+    fn stop_portable() {
+        let me = std::process::id();
+        let mut pids = read_relay_pid().into_iter().collect::<Vec<_>>();
+        pids.extend(relay_pids_by_cmdline());
+        let mut killed = false;
+        for pid in pids {
+            if pid == me {
+                continue;
+            }
+            let mut cmd = Command::new("taskkill");
+            cmd.args(["/F", "/PID", &pid.to_string()]);
+            bounded_output(no_window(&mut cmd), HELPER_LIMIT);
+            killed = true;
+        }
+        if killed {
+            for _ in 0..STOP_WAIT_TRIES {
+                if !read_relay_pid().is_some_and(|pid| pid != me && pid_alive(pid)) {
+                    break;
+                }
+                thread::sleep(STOP_SETTLE);
+            }
+        }
+        fs::remove_file(relay_pid_path()).ok();
+    }
+
+    /// Портативная установка релея: запустить собственный exe с флагом
+    /// релея, записать пид, дождаться, пока процесс реально жив.
+    /// Автозапуска после перезагрузки нет — это цена отсутствия установки.
+    fn enable_portable() -> Result<(), String> {
+        let exe = env::current_exe().map_err(|e| format!("не найден путь к exe: {}", e))?;
+        stop_portable();
+
+        let dir = crate::dns_forwarder::log_dir();
+        fs::create_dir_all(&dir).map_err(|e| format!("не создать {}: {}", dir.display(), e))?;
+
+        let mut cmd = Command::new(&exe);
+        cmd.arg(FORWARDER_FLAG);
+        no_window(&mut cmd);
+        let child = cmd
+            .spawn()
+            .map_err(|e| format!("не запустить релей: {}", e))?;
+        let pid = child.id();
+        fs::write(relay_pid_path(), pid.to_string()).ok();
+        dns_forwarder::record_version();
+
+        for _ in 0..RELAY_START_TRIES {
+            thread::sleep(RELAY_START_SETTLE);
+            if pid_alive(pid) {
+                return Ok(());
+            }
+        }
+        Err("релей не запустился — см. forwarder.log в папке data".to_string())
+    }
+
+    /// Limit for the small helpers here (`tasklist`, `taskkill`). Short, because
+    /// they answer in milliseconds when they answer at all - and this runs on the
+    /// path a user is watching.
+    const HELPER_LIMIT: Duration = Duration::from_secs(15);
+
+    /// Whether the scheduled task exists, asked of `schtasks.exe` rather than of
+    /// PowerShell.
+    ///
+    /// Same question, same answer, roughly a tenth of the wall clock: starting
+    /// PowerShell costs several hundred milliseconds before it reads the first
+    /// character of the script, and this is asked twice on every status refresh —
+    /// which is a large part of why flipping a switch took seconds. `schtasks` is
+    /// a plain Win32 binary shipped with every Windows since XP; it exits 0 when
+    /// the task is there and non-zero when it is not, and the task is registered
+    /// in the root folder, so the bare name is the whole query.
+    fn task_exists(task_name: &str) -> bool {
+        let mut cmd = Command::new("schtasks");
+        cmd.args(["/Query", "/TN", task_name]);
+        bounded_output(no_window(&mut cmd), HELPER_LIMIT).is_some_and(|o| o.status.success())
+    }
+
+    /// True when the logon task exists. Says nothing about whether the relay is
+    /// running right now - `is_running` answers that.
+    pub fn is_enabled() -> bool {
+        if crate::portable::enabled() {
+            // Плановой задачи нет и не будет: «включено» = релей жив.
+            return is_running_portable();
+        }
+        task_exists(TASK_NAME) || task_exists(LEGACY_TASK_NAME)
+    }
+
+    /// True when the watchdog's own logon task exists.
+    #[allow(dead_code)]
+    pub fn is_watchdog_enabled() -> bool {
+        if crate::portable::enabled() {
+            return false;
+        }
+        task_exists(WATCHDOG_TASK_NAME) || task_exists(LEGACY_WATCHDOG_TASK_NAME)
+    }
+
+    pub fn is_running() -> bool {
+        if crate::portable::enabled() {
+            return is_running_portable();
+        }
+        let mut cmd = Command::new("tasklist");
+        cmd.args(["/FI", &format!("IMAGENAME eq {}", EXE_NAME), "/NH"]);
+        bounded_output(no_window(&mut cmd), HELPER_LIMIT).map_or(false, |o| {
+            String::from_utf8_lossy(&o.stdout).contains(EXE_NAME)
+        })
+    }
+
+    /// Kills the running relay and waits for it to actually let go.
+    ///
+    /// `taskkill /F` returns once the kill is *requested*, not once the process
+    /// has exited and released its image file. Copying over it immediately then
+    /// fails with os error 32 - "the file is in use by another process" - which is
+    /// what a user upgrading from an older relay saw instead of an install.
+    /// Reported from a real machine, never reproduced here, because it only
+    /// happens when a relay is already running.
+    fn stop_process() {
+        let mut cmd = Command::new("taskkill");
+        cmd.args(["/F", "/IM", EXE_NAME]);
+        bounded_output(no_window(&mut cmd), HELPER_LIMIT);
+
+        for _ in 0..STOP_WAIT_TRIES {
+            if !is_running() {
+                // Even gone from the task list, the image handle can outlive the
+                // process by a moment. Cheaper to pause once than to explain a
+                // failed upgrade.
+                thread::sleep(STOP_SETTLE);
+                return;
+            }
+            thread::sleep(STOP_SETTLE);
+        }
+    }
+
+    const STOP_SETTLE: Duration = Duration::from_millis(300);
+    const STOP_WAIT_TRIES: usize = 10;
+
+    /// Copies this exe next to its log and registers the logon task. The copy is
+    /// what makes autostart survive the user moving or deleting the download; it is
+    /// removed again by `disable`.
+    pub fn enable() -> Result<(), String> {
+        if crate::portable::enabled() {
+            return enable_portable();
+        }
+        let src = env::current_exe().map_err(|e| format!("не найден путь к exe: {}", e))?;
+        let dir = install_dir();
+        let dst = installed_exe();
+
+        fs::create_dir_all(&dir).map_err(|e| format!("не создать {}: {}", dir.display(), e))?;
+        // The file cannot be replaced while the previous relay holds it open.
+        stop_process();
+        if src != dst {
+            copy_over(&src, &dst)?;
+        }
+
+        // S4U is what keeps the logon silent. A task action run under the default
+        // Interactive principal is handed a *visible* console (measured), so the
+        // relay flashes a window on every logon during the moment before it can
+        // call FreeConsole. S4U runs it outside any interactive session - same
+        // user, no password stored, and the console it gets is hidden. It needs
+        // the "log on as a batch job" right, so a machine that refuses falls back
+        // to the old principal rather than ending up with no task at all.
+        let cmd = format!(
+            "Stop-ScheduledTask -TaskName '{task}' -ErrorAction SilentlyContinue; \
+             $a=New-ScheduledTaskAction -Execute '{exe}' -Argument '{flag}'; \
+             $t=New-ScheduledTaskTrigger -AtLogOn; \
+             $s=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries \
+                  -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew \
+                  -ExecutionTimeLimit ([TimeSpan]::Zero) \
+                  -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1); \
+             $d='Open Antigravity: локальный DNS-релей'; \
+             try {{ \
+               $p=New-ScheduledTaskPrincipal -UserId \"$env:USERDOMAIN\\$env:USERNAME\" \
+                    -LogonType S4U -RunLevel Limited; \
+               Register-ScheduledTask -TaskName '{task}' -Action $a -Trigger $t -Settings $s \
+                    -Principal $p -Description $d -Force -ErrorAction Stop | Out-Null }} \
+             catch {{ \
+               Register-ScheduledTask -TaskName '{task}' -Action $a -Trigger $t -Settings $s \
+                    -Description $d -Force -ErrorAction Stop | Out-Null }}; \
+             Start-ScheduledTask -TaskName '{task}'",
+            exe = dst.display(),
+            flag = FORWARDER_FLAG,
+            task = TASK_NAME
+        );
+
+        let out = powershell(&cmd).ok_or_else(|| "не удалось запустить PowerShell".to_string())?;
+        if !out.status.success() {
+            let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            return Err(if stderr.is_empty() {
+                "не удалось зарегистрировать задачу".to_string()
+            } else {
+                stderr
+            });
+        }
+        // Stamped here rather than left to the relay: the answer has to be right
+        // the moment the upgrade finishes, not a second later when the new process
+        // gets around to writing it, or the menu redraws still saying "outdated".
+        dns_forwarder::record_version();
+
+        // Registering the task is not the same as the relay running. It is a
+        // console process that exits 1 when it cannot bind 127.0.0.53:53, and the
+        // previous one can still be holding the socket for a moment after
+        // `stop_process()` returned - the task then sits at Ready with
+        // LastTaskResult 1 and there is no relay, while this function has already
+        // reported success. Observed exactly once, which is once more than a
+        // silent one should happen.
+        for attempt in 0..RELAY_START_TRIES {
+            thread::sleep(RELAY_START_SETTLE);
+            if is_running() {
+                return Ok(());
+            }
+            if attempt + 1 < RELAY_START_TRIES {
+                powershell(&format!("Start-ScheduledTask -TaskName '{}'", TASK_NAME));
+            }
+        }
+        Err("задача создана, но релей не запустился".to_string())
+    }
+
+    /// How long to give the relay to appear before trying again. Generous enough
+    /// for a UPX-packed exe to unpack and bind, short enough not to stall the menu.
+    const RELAY_START_SETTLE: Duration = Duration::from_millis(1200);
+    const RELAY_START_TRIES: usize = 3;
+
+    /// Replaces `dst` with `src`, retrying while the old file is still held.
+    ///
+    /// Belt and braces on top of `stop_process`: whatever it is that holds the
+    /// image open - antivirus reading it, the loader unmapping it - is transient,
+    /// and a second of patience beats an upgrade that silently does not happen.
+    fn copy_over(src: &Path, dst: &Path) -> Result<(), String> {
+        let mut last = String::new();
+        for attempt in 0..COPY_TRIES {
+            match fs::copy(src, dst) {
+                Ok(_) => return Ok(()),
+                Err(e) => {
+                    last = e.to_string();
+                    if attempt + 1 < COPY_TRIES {
+                        thread::sleep(STOP_SETTLE);
+                    }
+                }
+            }
+        }
+        Err(format!("не скопировать exe: {}", last))
+    }
+
+    const COPY_TRIES: usize = 6;
+
+    fn same_file_bytes(a: &Path, b: &Path) -> bool {
+        match (fs::read(a), fs::read(b)) {
+            (Ok(x), Ok(y)) => x == y,
+            _ => false,
+        }
+    }
+
+    /// True when the installed relay is byte for byte this build.
+    ///
+    /// Without this check an upgrade is a no-op: a task exists and a process is
+    /// alive, so `ensure_running` would leave the *previous* exe installed. That
+    /// is how a build that fixes a background bug would keep reproducing it - the
+    /// running relay is still the old one.
+    fn installed_copy_is_current() -> bool {
+        match env::current_exe() {
+            Ok(src) => same_file_bytes(&src, &installed_exe()),
+            Err(_) => false,
+        }
+    }
+
+    /// True when a relay is installed and it is an older generation than this build
+    /// ships - the case the user has to be told about, because the relay keeps
+    /// running from `%ProgramData%` across reboots and a newer version on its own
+    /// changes nothing about it.
+    ///
+    /// Deliberately two cheap filesystem calls and no PowerShell: the menu redraws
+    /// around this, and `is_enabled()` costs a few hundred milliseconds. The exe
+    /// being there is what makes "no version file" mean "a relay from before
+    /// versioning" rather than "no relay at all".
+    pub fn relay_is_outdated() -> bool {
+        if crate::portable::enabled() {
+            // Копии в %ProgramData% нет — сравнивать не с чем. Портативный
+            // релей всегда запускается из этого же exe.
+            return false;
+        }
+        installed_exe().exists()
+            && dns_forwarder::installed_version() < dns_forwarder::RELAY_VERSION
+    }
+
+    /// Brings the relay up, reinstalling it whenever the installed copy is not this
+    /// build. Cheap when everything is already current, so the patch flow can call
+    /// it every time.
+    pub fn ensure_running() -> Result<(), String> {
+        if crate::portable::enabled() {
+            // Перезапускать живой релей не нужно: он уже этот же exe.
+            return if is_running_portable() {
+                Ok(())
+            } else {
+                enable()
+            };
+        }
+        if is_enabled() && is_running() && installed_copy_is_current() {
+            return Ok(());
+        }
+        enable()
+    }
+
+    /// Puts this build in `%ProgramData%` for the watchdog task **without**
+    /// starting the relay.
+    ///
+    /// Auto-patch is not the 400 bypass. It used to reach for `ensure_running`,
+    /// which registered and started the relay, and a running relay is the bypass
+    /// (it answers the gate hosts and writes the proxy variable) - so a user who
+    /// switched on only «Автопатч» found «Снять ошибку 400» on as well. With the
+    /// relay already wanted it is kept current the usual way; otherwise only the
+    /// file is copied, and stamped so the copy does not read as an outdated relay.
+    pub fn ensure_installed() -> Result<(), String> {
+        if crate::portable::enabled() {
+            // Ставить нечего: сторож живёт внутри релея, пока релей запущен.
+            return Ok(());
+        }
+        if is_enabled() {
+            return ensure_running();
+        }
+        if installed_copy_is_current() {
+            return Ok(());
+        }
+        let src = env::current_exe().map_err(|e| format!("не найден путь к exe: {}", e))?;
+        let dir = install_dir();
+        fs::create_dir_all(&dir).map_err(|e| format!("не создать {}: {}", dir.display(), e))?;
+        // An older watchdog may be running the copy about to be replaced.
+        disable_watchdog();
+        stop_process();
+        copy_over(&src, &installed_exe())?;
+        dns_forwarder::record_version();
+        Ok(())
+    }
+
+    /// Registers the standalone watchdog logon task, pointing at the same installed
+    /// exe as the relay but with `--watchdog`. Additive: it runs a second copy of
+    /// the re-patch loop that survives the relay being stopped or absent (G9). The
+    /// relay's own in-process watchdog is left in place as well; both are
+    /// idempotent and settle-guarded, so a double poll re-applies the same rename
+    /// harmlessly.
+    ///
+    /// Assumes the exe is already in `%ProgramData%` - the relay's `enable()` put
+    /// it there, and menu 1 always runs the relay first. Best-effort by design: a
+    /// failure here must not fail the patch (the relay's watchdog still covers the
+    /// common case), so the caller treats an error as non-fatal.
+    pub fn enable_watchdog() -> Result<(), String> {
+        if crate::portable::enabled() {
+            // Отдельной задачи сторожа в портативном режиме нет: его роль
+            // делает in-process сторож самого релея.
+            return Ok(());
+        }
+        let exe = installed_exe();
+        if !exe.exists() {
+            return Err("exe не установлен в %ProgramData%".to_string());
+        }
+        let cmd = format!(
+            "Stop-ScheduledTask -TaskName '{task}' -ErrorAction SilentlyContinue; \
+             $a=New-ScheduledTaskAction -Execute '{exe}' -Argument '{flag}'; \
+             $t=New-ScheduledTaskTrigger -AtLogOn; \
+             $s=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries \
+                  -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew \
+                  -ExecutionTimeLimit ([TimeSpan]::Zero) \
+                  -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1); \
+             $d='Open Antigravity: сторож патча'; \
+             try {{ \
+               $p=New-ScheduledTaskPrincipal -UserId \"$env:USERDOMAIN\\$env:USERNAME\" \
+                    -LogonType S4U -RunLevel Limited; \
+               Register-ScheduledTask -TaskName '{task}' -Action $a -Trigger $t -Settings $s \
+                    -Principal $p -Description $d -Force -ErrorAction Stop | Out-Null }} \
+             catch {{ \
+               Register-ScheduledTask -TaskName '{task}' -Action $a -Trigger $t -Settings $s \
+                    -Description $d -Force -ErrorAction Stop | Out-Null }}; \
+             Start-ScheduledTask -TaskName '{task}' -ErrorAction SilentlyContinue",
+            exe = exe.display(),
+            flag = WATCHDOG_FLAG,
+            task = WATCHDOG_TASK_NAME
+        );
+        let out = powershell(&cmd).ok_or_else(|| "не удалось запустить PowerShell".to_string())?;
+        if out.status.success() {
+            Ok(())
+        } else {
+            Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+        }
+    }
+
+    /// Removes the standalone watchdog task. `Stop-ScheduledTask` ends only this
+    /// task's own process instance, so it does not disturb the relay (which shares
+    /// the exe image name). Called by both undo paths alongside the relay teardown.
+    pub fn disable_watchdog() {
+        if crate::portable::enabled() {
+            return;
+        }
+        for task in [WATCHDOG_TASK_NAME, LEGACY_WATCHDOG_TASK_NAME] {
+            let cmd = format!(
+                "Stop-ScheduledTask -TaskName '{task}' -ErrorAction SilentlyContinue; \
+                 Unregister-ScheduledTask -TaskName '{task}' -Confirm:$false -ErrorAction SilentlyContinue",
+                task = task
+            );
+            powershell(&cmd);
+        }
+    }
+
+    pub fn disable() -> Result<(), String> {
+        if crate::portable::enabled() {
+            // Симметрично обычному disable: остановить релей и стереть всё,
+            // что нагородили, — в портативном случае это папка data целиком.
+            stop_portable();
+            fs::remove_dir(dns_forwarder::log_dir()).ok();
+            return Ok(());
+        }
+        for task in [TASK_NAME, LEGACY_TASK_NAME] {
+            let cmd = format!(
+                "Stop-ScheduledTask -TaskName '{task}' -ErrorAction SilentlyContinue; \
+                 Unregister-ScheduledTask -TaskName '{task}' -Confirm:$false -ErrorAction SilentlyContinue",
+                task = task
+            );
+            powershell(&cmd);
+        }
+        stop_process();
+        fs::remove_file(installed_exe()).ok();
+        fs::remove_file(dns_forwarder::log_path()).ok();
+        fs::remove_file(dns_forwarder::version_path()).ok();
+        // Both only succeed while the directory is empty, which is what we want.
+        fs::remove_dir(install_dir()).ok();
+        let legacy_dir = PathBuf::from(env::var("ProgramData").unwrap_or_else(|_| "C:\\ProgramData".to_string()))
+            .join("AGUnlocker");
+        fs::remove_file(legacy_dir.join(EXE_NAME)).ok();
+        fs::remove_dir(legacy_dir).ok();
+        fs::remove_dir(dns_forwarder::log_dir()).ok();
+        Ok(())
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// A name nothing could have registered must read as absent — i.e. a
+        /// non-zero exit from `schtasks` is "no such task", not "the query
+        /// failed". Deterministic on any machine.
+        #[test]
+        fn a_task_that_cannot_exist_reads_as_absent() {
+            assert!(!task_exists("Open Antigravity no-such-task 4f2b9c"));
+        }
+
+        /// Live: `schtasks` and PowerShell must give the same answer for the two
+        /// real task names.
+        ///
+        /// The point of the swap is speed (35 ms against 830 ms, and it is asked
+        /// twice per status refresh) and speed is only worth having if the answer
+        /// is the same one — a reader that silently says "no task" would draw both
+        /// switches off on a machine where they are on. Ignored because it can
+        /// only assert anything on a machine that has actually installed the
+        /// relay:
+        ///
+        ///     cargo test schtasks_and_powershell_agree -- --ignored --nocapture
+        #[test]
+        #[ignore = "needs the relay/watchdog tasks registered on this machine"]
+        fn schtasks_and_powershell_agree_about_the_tasks() {
+            for name in [TASK_NAME, WATCHDOG_TASK_NAME] {
+                let via_ps = powershell(&format!(
+                    "if (Get-ScheduledTask -TaskName '{}' -ErrorAction SilentlyContinue) \
+                     {{ 'yes' }} else {{ 'no' }}",
+                    name
+                ))
+                .map_or(false, |o| {
+                    String::from_utf8_lossy(&o.stdout).trim() == "yes"
+                });
+                let via_schtasks = task_exists(name);
+                println!("{name}: schtasks={via_schtasks} powershell={via_ps}");
+                assert_eq!(via_schtasks, via_ps, "readers disagree about {name}");
+            }
+        }
+
+        /// The exe must not sit under the user profile: a scheduled task cannot
+        /// launch anything from there on a machine with anti-persistence
+        /// heuristics.
+        #[test]
+        fn the_relay_is_installed_outside_the_user_profile() {
+            let exe = installed_exe();
+            assert_eq!(exe.parent(), Some(install_dir().as_path()));
+
+            let program_data = env::var("ProgramData").unwrap_or_default();
+            assert!(!program_data.is_empty());
+            assert!(exe.starts_with(&program_data), "got {}", exe.display());
+
+            if let Ok(local) = env::var("LOCALAPPDATA") {
+                assert!(
+                    !exe.starts_with(&local),
+                    "the task would refuse to start it"
+                );
+            }
+        }
+
+        /// The upgrade path depends on spotting a stale installed copy.
+        #[test]
+        fn a_differing_installed_copy_is_detected() {
+            let dir = env::temp_dir().join("ag_relay_copy_test");
+            fs::create_dir_all(&dir).expect("temp dir");
+            let (a, b) = (dir.join("a.bin"), dir.join("b.bin"));
+
+            fs::write(&a, b"build-one").unwrap();
+            fs::write(&b, b"build-one").unwrap();
+            assert!(
+                same_file_bytes(&a, &b),
+                "identical files must compare equal"
+            );
+
+            fs::write(&b, b"build-two").unwrap();
+            assert!(!same_file_bytes(&a, &b), "a new build must be spotted");
+
+            // A missing installation counts as "not current", so it gets installed.
+            assert!(!same_file_bytes(&a, &dir.join("nothing-here.bin")));
+
+            fs::remove_dir_all(&dir).ok();
+        }
+
+        /// The log goes the other way round - the relay runs unelevated and cannot
+        /// write next to an exe an administrator installed.
+        #[test]
+        fn the_log_stays_in_the_user_profile() {
+            let log = dns_forwarder::log_path();
+            let local = env::var("LOCALAPPDATA").unwrap_or_default();
+            assert!(!local.is_empty());
+            assert!(log.starts_with(&local), "got {}", log.display());
+            assert_eq!(log.parent(), Some(dns_forwarder::log_dir().as_path()));
+            assert_ne!(log.parent(), Some(install_dir().as_path()));
+        }
+    }
+}
+
+// Linux: phase 2 is the **proxy route**, not the DNS relay. This runs the local
+// CONNECT proxy (`proxy::run`, via `--proxy`) as a systemd **user** unit - no
+// root, no `:53` listener, so systemd-resolved is never touched. The DNS relay
+// (phase 5) would be a separate, privileged story; this is deliberately the
+// unprivileged half that already lifts the region gate through a permitted exit.
+#[cfg(not(target_os = "windows"))]
+mod unix_impl {
+    use std::fs;
+    use std::path::PathBuf;
+    use std::process::Command;
+
+    use super::PROXY_FLAG;
+
+    const UNIT_NAME: &str = "open-antigravity-proxy.service";
+    const LEGACY_UNIT_NAME: &str = "ag-unlocker-proxy.service";
+
+    fn home() -> String {
+        std::env::var("HOME").unwrap_or_default()
+    }
+
+    fn xdg(var: &str, default_suffix: &str) -> PathBuf {
+        let base = std::env::var(var)
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| format!("{}/{}", home(), default_suffix));
+        PathBuf::from(base)
+    }
+
+    /// The proxy's own copy of the exe, under the XDG data dir - a user unit needs
+    /// no root, so unlike Windows there is no `%ProgramData%` anti-persistence
+    /// dance.
+    pub fn install_dir() -> PathBuf {
+        xdg("XDG_DATA_HOME", ".local/share").join("openantigravity")
+    }
+
+    pub fn installed_exe() -> PathBuf {
+        install_dir().join("ag_proxy")
+    }
+
+    fn unit_path() -> PathBuf {
+        xdg("XDG_CONFIG_HOME", ".config")
+            .join("systemd/user")
+            .join(UNIT_NAME)
+    }
+
+    /// Runs `systemctl --user ...`; true on success. Best-effort: a machine
+    /// without a user systemd manager (rare on a desktop) just fails the enable.
+    fn systemctl(args: &[&str]) -> bool {
+        Command::new("systemctl")
+            .arg("--user")
+            .args(args)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+
+    fn proxy_pid_path() -> PathBuf {
+        crate::dns_forwarder::log_dir().join("proxy.pid")
+    }
+
+    fn read_proxy_pid() -> Option<u32> {
+        fs::read_to_string(proxy_pid_path())
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+    }
+
+    fn pid_alive(pid: u32) -> bool {
+        let Ok(cmdline) = fs::read(format!("/proc/{}/cmdline", pid)) else {
+            return false;
+        };
+        let s = String::from_utf8_lossy(&cmdline);
+        s.contains(PROXY_FLAG)
+    }
+
+    fn pids_by_cmdline() -> Vec<u32> {
+        let mut pids = Vec::new();
+        let Ok(entries) = fs::read_dir("/proc") else {
+            return pids;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let Some(s) = name.to_str() else { continue };
+            let Ok(pid) = s.parse::<u32>() else { continue };
+            if pid != std::process::id() && pid_alive(pid) {
+                pids.push(pid);
+            }
+        }
+        pids
+    }
+
+    fn is_running_portable() -> bool {
+        match read_proxy_pid() {
+            Some(pid) => pid != std::process::id() && pid_alive(pid),
+            None => !pids_by_cmdline().is_empty(),
+        }
+    }
+
+    fn stop_portable() {
+        let me = std::process::id();
+        let mut pids = read_proxy_pid().into_iter().collect::<Vec<_>>();
+        pids.extend(pids_by_cmdline());
+        pids.sort_unstable();
+        pids.dedup();
+
+        let mut killed = false;
+        for pid in pids {
+            if pid == me {
+                continue;
+            }
+            let _ = Command::new("kill").arg(pid.to_string()).status();
+            killed = true;
+        }
+
+        if killed {
+            for _ in 0..10 {
+                if !is_running_portable() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            for pid in pids_by_cmdline() {
+                if pid != me {
+                    let _ = Command::new("kill").args(["-9", &pid.to_string()]).status();
+                }
+            }
+        }
+        let _ = fs::remove_file(proxy_pid_path());
+    }
+
+    fn enable_portable() -> Result<(), String> {
+        let exe = crate::utils::app_executable()?;
+        stop_portable();
+
+        let dir = crate::dns_forwarder::log_dir();
+        fs::create_dir_all(&dir).map_err(|e| format!("не создать {}: {}", dir.display(), e))?;
+
+        let mut cmd = Command::new(&exe);
+        cmd.arg(PROXY_FLAG)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+
+        let child = cmd.spawn().map_err(|e| format!("не запустить прокси: {}", e))?;
+        let pid = child.id();
+        fs::write(proxy_pid_path(), pid.to_string()).ok();
+
+        for _ in 0..20 {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            if pid_alive(pid) {
+                return Ok(());
+            }
+        }
+        Err("прокси не запустился в портативном режиме".to_string())
+    }
+
+    /// The unit file existing is what "enabled" means here (or running in portable mode).
+    pub fn is_enabled() -> bool {
+        if crate::portable::enabled() {
+            is_running_portable()
+        } else {
+            unit_path().exists()
+        }
+    }
+
+    /// Linux does not have a separate watchdog task or systemd unit: the proxy
+    /// unit's own `Restart=` handles crash restarts, and auto-update does not
+    /// replace binaries out from under the running user on Linux.
+    #[allow(dead_code)]
+    pub fn is_watchdog_enabled() -> bool {
+        false
+    }
+
+    pub fn is_running() -> bool {
+        if crate::portable::enabled() {
+            is_running_portable()
+        } else {
+            let active = Command::new("systemctl")
+                .args(["--user", "is-active", "--quiet", UNIT_NAME])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if active {
+                return true;
+            }
+            Command::new("systemctl")
+                .args(["--user", "is-active", "--quiet", LEGACY_UNIT_NAME])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+        }
+    }
+
+    /// No versioned relay on Linux, so nothing to call outdated.
+    pub fn relay_is_outdated() -> bool {
+        false
+    }
+
+    /// Installs the exe under the XDG data dir, writes a systemd **user** unit that
+    /// runs it with `--proxy`, and starts it. No root: `systemctl --user` targets
+    /// the caller's own session manager, which is why the whole Linux flow runs
+    /// unprivileged (and "Run as a Program" works without a password prompt).
+    pub fn ensure_running() -> Result<(), String> {
+        if crate::portable::enabled() {
+            return enable_portable();
+        }
+        let src = crate::utils::app_executable()?;
+        let dir = install_dir();
+        let exe = installed_exe();
+        fs::create_dir_all(&dir).map_err(|e| format!("не создать {}: {}", dir.display(), e))?;
+        // Copy self so the unit survives the download folder being moved/removed.
+        //
+        // Never *over* the installed copy: Linux will not open a file a process
+        // is executing for writing - ETXTBSY, «Text file busy (os error 26)» -
+        // and that is exactly the state every upgrade finds, the previous
+        // version's unit being up. A new file beside it renamed over the name is
+        // allowed: the running process keeps the old inode, the name now points at
+        // the new one, and the restart below starts it. Skipped when the bytes are
+        // already the same, so switching the bypass on again does not cut the
+        // tunnels a running proxy is carrying.
+        let replaced = src != exe && !same_contents(&src, &exe);
+        if replaced {
+            use std::os::unix::fs::PermissionsExt;
+            let fresh = dir.join(".ag_proxy.new");
+            fs::copy(&src, &fresh).map_err(|e| format!("копия exe: {}", e))?;
+            let _ = fs::set_permissions(&fresh, fs::Permissions::from_mode(0o755));
+            fs::rename(&fresh, &exe).map_err(|e| {
+                let _ = fs::remove_file(&fresh);
+                format!("замена exe: {}", e)
+            })?;
+        }
+
+        let up = unit_path();
+        if let Some(p) = up.parent() {
+            fs::create_dir_all(p).map_err(|e| format!("не создать {}: {}", p.display(), e))?;
+        }
+        // The window finds the service's `gate.json` through `log_dir()`, which
+        // follows `XDG_DATA_HOME`. The systemd user manager does not always carry
+        // the desktop session's value, and a service writing into a different
+        // directory than the window reads leaves the card on «Служба запускается»
+        // for good - so the unit is given the directory the window uses.
+        let data_home = crate::dns_forwarder::log_dir()
+            .parent()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default()
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('%', "%%");
+        let unit = format!(
+            "[Unit]\n\
+             Description=Open Antigravity local proxy\n\
+             After=default.target\n\n\
+             [Service]\n\
+             Environment=\"XDG_DATA_HOME={data_home}\"\n\
+             ExecStart={exe} {flag}\n\
+             Restart=on-failure\n\
+             RestartSec=5\n\n\
+             [Install]\n\
+             WantedBy=default.target\n",
+            exe = exe.display(),
+            flag = PROXY_FLAG,
+        );
+        // A unit from an older build lacks the data-dir line; running on under
+        // it keeps the service writing where the window does not look.
+        let unit_changed = fs::read_to_string(&up).map_or(true, |old| old != unit);
+        fs::write(&up, unit).map_err(|e| format!("не записать юнит: {}", e))?;
+
+        systemctl(&["daemon-reload"]);
+        if !systemctl(&["enable", "--now", UNIT_NAME]) {
+            return Err("не удалось запустить systemd-юнит (systemctl --user)".to_string());
+        }
+        // `enable --now` leaves a unit that is already running alone, so a copy
+        // just replaced would sit unused until the next login.
+        if (replaced || unit_changed) && !systemctl(&["restart", UNIT_NAME]) {
+            return Err(
+                "новая версия прокси записана, но служба не перезапустилась (systemctl --user)"
+                    .to_string(),
+            );
+        }
+        Ok(())
+    }
+
+    /// Whether two files hold the same bytes. Unreadable counts as different, so
+    /// the copy is attempted and says what went wrong.
+    fn same_contents(a: &std::path::Path, b: &std::path::Path) -> bool {
+        match (fs::metadata(a), fs::metadata(b)) {
+            (Ok(ma), Ok(mb)) if ma.len() == mb.len() => {}
+            _ => return false,
+        }
+        match (fs::read(a), fs::read(b)) {
+            (Ok(x), Ok(y)) => x == y,
+            _ => false,
+        }
+    }
+
+    pub fn enable() -> Result<(), String> {
+        ensure_running()?;
+        if !crate::portable::enabled() {
+            let _ = systemctl(&["restart", UNIT_NAME]);
+        }
+        Ok(())
+    }
+
+    /// No separate watchdog on Linux yet - the proxy unit's own `Restart=` covers
+    /// the crash case, and there is no auto-updater story to fight here.
+    pub fn enable_watchdog() -> Result<(), String> {
+        Ok(())
+    }
+
+    /// Nothing to install for a watchdog Linux does not have - and starting the
+    /// proxy unit here would switch the 400 bypass on behind the user's back.
+    pub fn ensure_installed() -> Result<(), String> {
+        Ok(())
+    }
+
+    pub fn disable_watchdog() {}
+
+    /// Stops and removes the user unit and the installed copy. Quiet success even
+    /// when nothing was installed, so the undo menus never error.
+    pub fn disable() -> Result<(), String> {
+        if crate::portable::enabled() {
+            stop_portable();
+            return Ok(());
+        }
+        systemctl(&["disable", "--now", UNIT_NAME]);
+        systemctl(&["disable", "--now", LEGACY_UNIT_NAME]);
+        let _ = fs::remove_file(unit_path());
+        let legacy_unit_path = xdg("XDG_CONFIG_HOME", ".config")
+            .join("systemd/user")
+            .join(LEGACY_UNIT_NAME);
+        let _ = fs::remove_file(legacy_unit_path);
+        systemctl(&["daemon-reload"]);
+        let _ = fs::remove_file(installed_exe());
+        let _ = fs::remove_dir(install_dir());
+        let legacy_dir = xdg("XDG_DATA_HOME", ".local/share").join("agunlocker");
+        let _ = fs::remove_file(legacy_dir.join("ag_proxy"));
+        let _ = fs::remove_dir(legacy_dir);
+        Ok(())
+    }
+}

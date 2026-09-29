@@ -1,0 +1,28 @@
+name: 💡 Предложение улучшения
+description: Предложить новую возможность или оптимизацию для Open Antigravity
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Есть идея, как улучшить работу Open Antigravity? Опишите её ниже.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Какую проблему решает предложение?
+      description: Опишите сценарий использования или неудобство в текущей версии.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Предлагаемое решение
+      description: Как именно должна работать эта функция?
+    validations:
+      required: true
+  - type: textarea
+    id: additional
+    attributes:
+      label: Дополнительная информация
+      description: Скриншоты, ссылки или аналоги реализации в других инструментах.

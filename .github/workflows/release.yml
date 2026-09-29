@@ -1,0 +1,276 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (e.g. 2.17.0.3)'
+        required: false
+        type: string
+      notes:
+        description: 'Release notes'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    name: Build Linux Portable
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract version
+        id: ver
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            V="${{ github.event.inputs.version }}"
+          elif [[ "${{ github.ref }}" =~ ^refs/tags/v ]]; then
+            V="${GITHUB_REF#refs/tags/v}"
+          else
+            V="1.0.0"
+          fi
+          echo "VERSION=$V" >> "$GITHUB_OUTPUT"
+          echo "Building Linux version: $V"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libx11-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libasound2-dev
+
+      - name: Build portable Linux distribution
+        env:
+          AG_MUSL: "0"
+          AG_PORTABLE: "1"
+          AG_FULL_VERSION: ${{ steps.ver.outputs.VERSION }}
+          AG_BUILTIN_PROXY: ${{ secrets.AG_BUILTIN_PROXY }}
+        run: |
+          bash build_portable.sh
+
+      - name: Package Linux release
+        env:
+          VERSION: ${{ steps.ver.outputs.VERSION }}
+        run: |
+          bash package_release.sh --skip-build --version "$VERSION"
+          bash build_appimage.sh || echo "AppImage build skipped"
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-dist
+          path: |
+            release/OpenAntigravity_linux_v*.tar.gz
+            release/OpenAntigravity_linux_v*.tar.gz.sha256
+            release/OpenAntigravity*.AppImage*
+
+  build-windows:
+    name: Build Windows Portable
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract version
+        id: ver
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            V="${{ github.event.inputs.version }}"
+          elif [[ "${{ github.ref }}" =~ ^refs/tags/v ]]; then
+            V="${GITHUB_REF#refs/tags/v}"
+          else
+            V="1.0.0"
+          fi
+          echo "VERSION=$V" >> "$GITHUB_OUTPUT"
+          echo "Building Windows version: $V"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build Windows release binary
+        shell: pwsh
+        env:
+          AG_PORTABLE: "1"
+          AG_FULL_VERSION: ${{ steps.ver.outputs.VERSION }}
+          AG_BUILTIN_PROXY: ${{ secrets.AG_BUILTIN_PROXY }}
+        run: |
+          cargo build --release
+
+      - name: Assemble Windows portable distribution
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.ver.outputs.VERSION }}
+        run: |
+          $distDir = "dist_portable\OpenAntigravity_windows_v$env:VERSION"
+          New-Item -ItemType Directory -Force -Path $distDir | Out-Null
+          New-Item -ItemType Directory -Force -Path "release" | Out-Null
+
+          Copy-Item "target\release\open_antigravity.exe" "$distDir\OpenAntigravity.exe" -Force
+          New-Item -ItemType File -Force -Path "$distDir\portable.flag" | Out-Null
+
+          if (Test-Path "assets\icon.png") { Copy-Item "assets\icon.png" "$distDir\icon.png" -Force }
+          if (Test-Path "icon.ico") { Copy-Item "icon.ico" "$distDir\icon.ico" -Force }
+
+          Set-Content -Path "$distDir\Start Open Antigravity.bat" -Value '@start "" "%~dp0OpenAntigravity.exe"' -Encoding ASCII
+          Set-Content -Path "$distDir\Create Desktop Shortcut.bat" -Value "@echo off`necho Создание ярлыка на Рабочем столе...`n`"%~dp0OpenAntigravity.exe`" --shortcut`npause" -Encoding OEM
+          Set-Content -Path "$distDir\Check Diagnostics.bat" -Value "@echo off`n`"%~dp0OpenAntigravity.exe`" --check`npause" -Encoding OEM
+          Set-Content -Path "$distDir\Add to Steam.bat" -Value "@echo off`necho Добавление Open Antigravity в библиотеку Steam...`n`"%~dp0OpenAntigravity.exe`" --steam`npause" -Encoding OEM
+
+          $readme = @"
+          Portable Open Antigravity build v$env:VERSION
+
+          - Запуск:
+            OpenAntigravity.exe          (напрямую или через Start Open Antigravity.bat)
+            Check Diagnostics.bat        (проверка сети, прокси и компонентов)
+
+          - Ярлыки:
+            Create Desktop Shortcut.bat  (ярлык на Рабочем столе)
+            Add to Steam.bat             (добавление в библиотеку Steam)
+
+          - Скопируйте папку ЦЕЛИКОМ куда угодно (диск C, D, флешка).
+            Все данные лежат в папке "data" рядом с exe.
+            Удалить "data" = полный сброс. В систему ничего не ставится.
+          - Прокси вшит в сборку и работает сразу после запуска.
+          "@
+          Set-Content -Path "$distDir\README.txt" -Value $readme -Encoding UTF8
+
+          $zipPath = "release\OpenAntigravity_windows_v$env:VERSION.zip"
+          Compress-Archive -Path "$distDir" -DestinationPath $zipPath -Force
+
+          $hash = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLower()
+          Set-Content -Path "$zipPath.sha256" -Value $hash -Encoding ASCII
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-dist
+          path: |
+            release/OpenAntigravity_windows_v*.zip
+            release/OpenAntigravity_windows_v*.zip.sha256
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract version
+        id: ver
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            V="${{ github.event.inputs.version }}"
+          elif [[ "${{ github.ref }}" =~ ^refs/tags/v ]]; then
+            V="${GITHUB_REF#refs/tags/v}"
+          else
+            V="2.17.0.3"
+          fi
+          echo "VERSION=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release files and version.json
+        shell: bash
+        env:
+          VERSION: ${{ steps.ver.outputs.VERSION }}
+          REPO: ${{ github.repository }}
+        run: |
+          mkdir -p dist_release
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.sha256" -o -name "*.AppImage*" \) -exec cp {} dist_release/ \;
+
+          TAG="v${VERSION}"
+          RELEASE_URL="https://github.com/${REPO}/releases/tag/${TAG}"
+          DL_URL="https://github.com/${REPO}/releases/download/${TAG}"
+
+          cat > dist_release/version.json <<ENDJSON
+          {
+            "version": "${VERSION}",
+            "notes": "Open Antigravity v${VERSION}",
+            "page": "${RELEASE_URL}",
+            "url_windows": "${DL_URL}/OpenAntigravity_windows_v${VERSION}.zip",
+            "url_linux": "${DL_URL}/OpenAntigravity_linux_v${VERSION}.tar.gz"
+          }
+          ENDJSON
+
+          cd dist_release
+          sha256sum OpenAntigravity_windows_v*.zip OpenAntigravity_linux_v*.tar.gz OpenAntigravity*.AppImage > SHA256SUMS.txt 2>/dev/null || sha256sum OpenAntigravity_windows_v*.zip OpenAntigravity_linux_v*.tar.gz > SHA256SUMS.txt || true
+
+          {
+            echo "Первый публичный релиз Open Antigravity."
+            echo ""
+            echo "### Возможности"
+            echo "- Избирательное проксирование: через прокси идут только запросы к языковым моделям Google, остальной трафик системы и IDE идёт напрямую."
+            echo "- Поддержка собственного HTTP/HTTPS прокси (включая авторизацию) и формата \`основной;резервный\` с автоматическим переключением при сбоях."
+            echo "- Портативный режим: настройки, логи и кэш хранятся в каталоге \`data/\` рядом с бинарником."
+            echo "- Блокировка повторного запуска (single instance) для предотвращения конфликта процессов."
+            echo "- Сворачивание в трей при закрытии окна и поддержка автозапуска."
+            echo "- Сборки для Windows (x86_64) и Linux (AppImage, tar.gz и консольный TUI)."
+            echo ""
+            echo "Google Antigravity устанавливается отдельно: https://antigravity.google/download"
+            echo ""
+            echo "### Контрольные суммы (SHA256)"
+            echo "\`\`\`"
+            cat SHA256SUMS.txt
+            echo "\`\`\`"
+          } > RELEASE_NOTES.md
+
+          ls -la
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.VERSION }}
+          name: Open Antigravity v${{ steps.ver.outputs.VERSION }}
+          body_path: dist_release/RELEASE_NOTES.md
+          files: |
+            dist_release/OpenAntigravity_windows_v*.zip
+            dist_release/OpenAntigravity_windows_v*.zip.sha256
+            dist_release/OpenAntigravity_linux_v*.tar.gz
+            dist_release/OpenAntigravity_linux_v*.tar.gz.sha256
+            dist_release/OpenAntigravity*.AppImage*
+            dist_release/version.json
+            dist_release/SHA256SUMS.txt

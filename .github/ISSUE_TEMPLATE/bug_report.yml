@@ -1,0 +1,52 @@
+name: 🐛 Сообщение об ошибке
+description: Создать отчёт о проблеме или сбое в работе Open Antigravity
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо, что сообщаете о проблеме! Пожалуйста, заполните поля ниже.
+  - type: input
+    id: version
+    attributes:
+      label: Версия Open Antigravity
+      description: Какую версию вы используете (например, v1.0.0, AppImage, Portable .zip)?
+      placeholder: v1.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Операционная система
+      options:
+        - Windows 11
+        - Windows 10
+        - SteamOS (Steam Deck)
+        - Linux (Ubuntu / Debian / Mint)
+        - Linux (Arch / Manjaro / Fedora)
+        - Другая
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Описание проблемы
+      description: Что именно пошло не так? Что отображается в карточке статуса?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Шаги для воспроизведения
+      description: Последовательность действий, приводящая к ошибке.
+      placeholder: |
+        1. Запустил Open Antigravity
+        2. Нажал «Включить всё»
+        3. Запустил Antigravity...
+  - type: textarea
+    id: logs
+    attributes:
+      label: Отчёт диагностики
+      description: Вставьте отчёт (кнопка «Сохранить отчёт» в окне или вывод команды open_antigravity --check).
+      render: shell
