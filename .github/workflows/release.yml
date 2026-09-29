@@ -34,6 +34,8 @@ jobs:
             V="${{ github.event.inputs.version }}"
           elif [[ "${{ github.ref }}" =~ ^refs/tags/v ]]; then
             V="${GITHUB_REF#refs/tags/v}"
+          elif [ -f VERSION ]; then
+            V="$(tr -d '\r\n' < VERSION)"
           else
             V="1.1.0"
           fi
@@ -107,6 +109,8 @@ jobs:
             V="${{ github.event.inputs.version }}"
           elif [[ "${{ github.ref }}" =~ ^refs/tags/v ]]; then
             V="${GITHUB_REF#refs/tags/v}"
+          elif [ -f VERSION ]; then
+            V="$(tr -d '\r\n' < VERSION)"
           else
             V="1.1.0"
           fi
@@ -205,6 +209,8 @@ jobs:
             V="${{ github.event.inputs.version }}"
           elif [[ "${{ github.ref }}" =~ ^refs/tags/v ]]; then
             V="${GITHUB_REF#refs/tags/v}"
+          elif [ -f VERSION ]; then
+            V="$(tr -d '\r\n' < VERSION)"
           else
             V="1.1.0"
           fi
@@ -279,13 +285,14 @@ jobs:
             dist_release/version.json
             dist_release/SHA256SUMS.txt
 
-      - name: Sync docs/version.json and docs/index.html
+      - name: Sync version files, docs, and index.html
         shell: bash
         run: |
           cp dist_release/version.json docs/version.json
+          echo "${{ steps.ver.outputs.VERSION }}" > VERSION
           sed -i -E "s/v[0-9]+\.[0-9]+\.[0-9]+/v${{ steps.ver.outputs.VERSION }}/g" docs/index.html
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/version.json docs/index.html
-          git commit -m "chore(release): update docs/version.json and docs/index.html to v${{ steps.ver.outputs.VERSION }}" || true
+          git add docs/version.json docs/index.html VERSION
+          git commit -m "chore(release): bump version to v${{ steps.ver.outputs.VERSION }}" || true
           git push origin HEAD:main || true

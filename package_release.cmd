@@ -35,6 +35,8 @@ rem --- Version ---------------------------------------------------
 if "%VERSION%"=="" (
     if defined AG_FULL_VERSION (
         set "VERSION=%AG_FULL_VERSION%"
+    ) else if exist "%~dp0VERSION" (
+        set /p VERSION=<"%~dp0VERSION"
     ) else (
         set "VERSION=1.1.0"
     )

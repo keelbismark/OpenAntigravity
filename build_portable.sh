@@ -22,8 +22,10 @@ export AG_BUILTIN_PROXY="${AG_BUILTIN_PROXY:-}"
 # --- PORTABLE MODE BAKED INTO THE BUILD -------------------------
 export AG_PORTABLE=1
 
-# --- VERSION REPORTED BY THE BUILD (SemVer: 1.0.0, 1.0.1, ...) ---
-export AG_FULL_VERSION="${AG_FULL_VERSION:-1.1.0}"
+# --- VERSION REPORTED BY THE BUILD (SemVer from root VERSION file) ---
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_VERSION="$(tr -d '\r\n' < "$SCRIPT_DIR/VERSION" 2>/dev/null || echo '1.1.0')"
+export AG_FULL_VERSION="${AG_FULL_VERSION:-$ROOT_VERSION}"
 
 # --- UPDATE CHECK FEED (edit me, or pass as env) ----------------
 # The binary fetches this JSON and shows a banner when its "version"

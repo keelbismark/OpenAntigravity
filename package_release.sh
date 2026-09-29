@@ -73,8 +73,8 @@ if [ -z "$VERSION" ]; then
     done
 fi
 if [ -z "$VERSION" ]; then
-    VERSION="1.1.0"
-    echo "Версия не определена — используется $VERSION по умолчанию." >&2
+    VERSION="$(tr -d '\r\n' < "$REPO_ROOT/VERSION" 2>/dev/null || echo '1.1.0')"
+    echo "Версия определена из файла VERSION: $VERSION" >&2
 fi
 
 echo "══════════════════════════════════════════════════════════"
