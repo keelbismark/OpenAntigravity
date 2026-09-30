@@ -8,7 +8,7 @@ use eframe::egui::{self, CornerRadius, Sense, Stroke};
 
 use super::theme;
 
-/// A clean, tactile toggle switch with subtle animation.
+/// A clean, tactile toggle switch with high-contrast active state and smooth animation.
 pub fn switch(ui: &mut egui::Ui, on: &mut bool, enabled: bool) -> egui::Response {
     let size = egui::vec2(38.0, 20.0);
     let sense = if enabled {
@@ -24,31 +24,51 @@ pub fn switch(ui: &mut egui::Ui, on: &mut bool, enabled: bool) -> egui::Response
     }
 
     if ui.is_rect_visible(rect) {
-        let how = ui.ctx().animate_bool_with_time(resp.id, *on, 0.14);
+        let how = ui.ctx().animate_bool_with_time(resp.id, *on, 0.15);
         let hover = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered() && enabled, 0.10);
 
         let track_off = theme::SUNKEN;
-        let track_on = if enabled { theme::ACCENT } else { theme::ACCENT.gamma_multiply(0.5) };
+        let track_on = if enabled {
+            theme::OK
+        } else {
+            theme::OK.gamma_multiply(0.4)
+        };
         let track = egui::Color32::from_rgb(
             egui::lerp((track_off.r() as f32)..=(track_on.r() as f32), how) as u8,
             egui::lerp((track_off.g() as f32)..=(track_on.g() as f32), how) as u8,
             egui::lerp((track_off.b() as f32)..=(track_on.b() as f32), how) as u8,
         );
 
-        let knob = if enabled {
-            theme::TEXT
+        let knob_off = theme::MUTED;
+        let knob_on = if enabled {
+            egui::Color32::WHITE
         } else {
             theme::MUTED.gamma_multiply(0.7)
         };
+        let knob = egui::Color32::from_rgb(
+            egui::lerp((knob_off.r() as f32)..=(knob_on.r() as f32), how) as u8,
+            egui::lerp((knob_off.g() as f32)..=(knob_on.g() as f32), how) as u8,
+            egui::lerp((knob_off.b() as f32)..=(knob_on.b() as f32), how) as u8,
+        );
+
+        let stroke_off = if hover > 0.01 {
+            theme::LINE.gamma_multiply(1.0 + 0.3 * hover)
+        } else {
+            theme::LINE
+        };
+        let stroke_on = if hover > 0.01 {
+            theme::OK.gamma_multiply(1.1)
+        } else {
+            theme::OK
+        };
+        let stroke_color = egui::Color32::from_rgb(
+            egui::lerp((stroke_off.r() as f32)..=(stroke_on.r() as f32), how) as u8,
+            egui::lerp((stroke_off.g() as f32)..=(stroke_on.g() as f32), how) as u8,
+            egui::lerp((stroke_off.b() as f32)..=(stroke_on.b() as f32), how) as u8,
+        );
 
         let painter = ui.painter();
         painter.rect_filled(rect, CornerRadius::same(10), track);
-
-        let stroke_color = if how < 0.9 {
-            if hover > 0.01 { theme::LINE.gamma_multiply(1.0 + 0.3 * hover) } else { theme::LINE }
-        } else {
-            theme::ACCENT_HOVER
-        };
         painter.rect_stroke(
             rect,
             CornerRadius::same(10),
@@ -58,7 +78,17 @@ pub fn switch(ui: &mut egui::Ui, on: &mut bool, enabled: bool) -> egui::Response
 
         let r = rect.height() / 2.0 - 2.5;
         let cx = egui::lerp((rect.left() + r + 2.5)..=(rect.right() - r - 2.5), how);
-        painter.circle_filled(egui::pos2(cx, rect.center().y), r, knob);
+        let center = egui::pos2(cx, rect.center().y);
+
+        // Subtle drop shadow under active knob for depth
+        if how > 0.1 {
+            painter.circle_filled(
+                egui::pos2(center.x, center.y + 0.8),
+                r,
+                egui::Color32::from_black_alpha((35.0 * how) as u8),
+            );
+        }
+        painter.circle_filled(center, r, knob);
     }
 
     if enabled {
@@ -94,17 +124,237 @@ pub fn section_header(ui: &mut egui::Ui, text: &str) {
     );
 }
 
-/// A compact status/metric chip (e.g. "⚡ 38 мс", "🌐 127.0.0.1:45318").
-pub fn metric_chip(ui: &mut egui::Ui, icon: &str, text: &str) -> egui::Response {
+/// Unified vector icons — renders consistently across OSes without emojis or tofu squares.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum Icon {
+    Refresh { spin: bool },
+    Export,
+    Folder,
+    Desktop,
+    Copy,
+    Trash,
+    Update,
+    Plus,
+    Cross,
+    Bolt,
+    Gateway,
+    Check,
+}
+
+/// Paints a crisp vector icon inside a target rect.
+pub fn paint_icon(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    icon: Icon,
+    color: egui::Color32,
+    time: f64,
+) {
+    let cx = rect.center().x;
+    let cy = rect.center().y;
+    let left = rect.left();
+    let right = rect.right();
+    let top = rect.top();
+    let bottom = rect.bottom();
+    let stroke = Stroke::new(1.2, color);
+
+    match icon {
+        Icon::Refresh { spin } => {
+            let center = rect.center();
+            let radius = (rect.width().min(rect.height()) / 2.0 - 1.2).max(2.5);
+            let rot = if spin { (time * 8.0) as f32 } else { 0.0 };
+            let sweep = std::f32::consts::PI * 1.65;
+            let n = 12;
+            let mut pts = Vec::with_capacity(n);
+            for i in 0..n {
+                let frac = i as f32 / (n - 1) as f32;
+                let a = rot + frac * sweep;
+                pts.push(egui::pos2(center.x + radius * a.cos(), center.y + radius * a.sin()));
+            }
+            for w in pts.windows(2) {
+                painter.line_segment([w[0], w[1]], stroke);
+            }
+            if let Some(&tip) = pts.last() {
+                let end_a = rot + sweep;
+                let tang = end_a + std::f32::consts::FRAC_PI_2;
+                let alen = 3.0;
+                let p1 = egui::pos2(tip.x - alen * (tang - 0.55).cos(), tip.y - alen * (tang - 0.55).sin());
+                let p2 = egui::pos2(tip.x - alen * (tang + 0.55).cos(), tip.y - alen * (tang + 0.55).sin());
+                painter.line_segment([p1, tip], stroke);
+                painter.line_segment([p2, tip], stroke);
+            }
+        }
+        Icon::Export => {
+            painter.line_segment([egui::pos2(cx, top + 1.0), egui::pos2(cx, cy + 2.0)], stroke);
+            painter.line_segment([egui::pos2(cx - 3.0, cy - 1.0), egui::pos2(cx, cy + 2.0)], stroke);
+            painter.line_segment([egui::pos2(cx + 3.0, cy - 1.0), egui::pos2(cx, cy + 2.0)], stroke);
+
+            painter.line_segment([egui::pos2(left + 1.5, cy + 1.5), egui::pos2(left + 1.5, bottom - 1.0)], stroke);
+            painter.line_segment([egui::pos2(left + 1.5, bottom - 1.0), egui::pos2(right - 1.5, bottom - 1.0)], stroke);
+            painter.line_segment([egui::pos2(right - 1.5, bottom - 1.0), egui::pos2(right - 1.5, cy + 1.5)], stroke);
+        }
+        Icon::Folder => {
+            let f_top = top + 2.5;
+            let f_bottom = bottom - 1.5;
+            let f_left = left + 1.0;
+            let f_right = right - 1.0;
+            painter.line_segment([egui::pos2(f_left, f_top), egui::pos2(f_left + 3.5, f_top)], stroke);
+            painter.line_segment([egui::pos2(f_left + 3.5, f_top), egui::pos2(f_left + 5.0, f_top + 1.5)], stroke);
+            painter.line_segment([egui::pos2(f_left + 5.0, f_top + 1.5), egui::pos2(f_right, f_top + 1.5)], stroke);
+
+            painter.line_segment([egui::pos2(f_left, f_top), egui::pos2(f_left, f_bottom)], stroke);
+            painter.line_segment([egui::pos2(f_left, f_bottom), egui::pos2(f_right, f_bottom)], stroke);
+            painter.line_segment([egui::pos2(f_right, f_bottom), egui::pos2(f_right, f_top + 1.5)], stroke);
+        }
+        Icon::Desktop => {
+            let m_bottom = bottom - 4.0;
+            painter.rect_stroke(
+                egui::Rect::from_min_max(egui::pos2(left + 1.0, top + 1.5), egui::pos2(right - 1.0, m_bottom)),
+                CornerRadius::same(1),
+                stroke,
+                egui::StrokeKind::Inside,
+            );
+            painter.line_segment([egui::pos2(cx, m_bottom), egui::pos2(cx, bottom - 1.0)], stroke);
+            painter.line_segment([egui::pos2(cx - 3.5, bottom - 1.0), egui::pos2(cx + 3.5, bottom - 1.0)], stroke);
+        }
+        Icon::Copy => {
+            painter.line_segment([egui::pos2(left + 3.5, top + 1.0), egui::pos2(right - 1.0, top + 1.0)], stroke);
+            painter.line_segment([egui::pos2(right - 1.0, top + 1.0), egui::pos2(right - 1.0, bottom - 3.5)], stroke);
+
+            painter.rect_stroke(
+                egui::Rect::from_min_max(egui::pos2(left + 1.0, top + 3.5), egui::pos2(right - 3.5, bottom - 1.0)),
+                CornerRadius::same(1),
+                stroke,
+                egui::StrokeKind::Inside,
+            );
+        }
+        Icon::Trash => {
+            painter.line_segment([egui::pos2(left + 2.5, top + 3.5), egui::pos2(left + 3.5, bottom - 1.0)], stroke);
+            painter.line_segment([egui::pos2(left + 3.5, bottom - 1.0), egui::pos2(right - 3.5, bottom - 1.0)], stroke);
+            painter.line_segment([egui::pos2(right - 3.5, bottom - 1.0), egui::pos2(right - 2.5, top + 3.5)], stroke);
+
+            painter.line_segment([egui::pos2(left + 1.0, top + 3.5), egui::pos2(right - 1.0, top + 3.5)], stroke);
+            painter.line_segment([egui::pos2(cx - 2.0, top + 3.5), egui::pos2(cx - 2.0, top + 1.5)], stroke);
+            painter.line_segment([egui::pos2(cx - 2.0, top + 1.5), egui::pos2(cx + 2.0, top + 1.5)], stroke);
+            painter.line_segment([egui::pos2(cx + 2.0, top + 1.5), egui::pos2(cx + 2.0, top + 3.5)], stroke);
+        }
+        Icon::Update => {
+            painter.line_segment([egui::pos2(cx, bottom - 3.0), egui::pos2(cx, top + 1.0)], stroke);
+            painter.line_segment([egui::pos2(cx - 3.0, top + 4.0), egui::pos2(cx, top + 1.0)], stroke);
+            painter.line_segment([egui::pos2(cx + 3.0, top + 4.0), egui::pos2(cx, top + 1.0)], stroke);
+            painter.line_segment([egui::pos2(left + 2.0, bottom - 1.0), egui::pos2(right - 2.0, bottom - 1.0)], stroke);
+        }
+        Icon::Plus => {
+            painter.line_segment([egui::pos2(cx - 3.5, cy), egui::pos2(cx + 3.5, cy)], stroke);
+            painter.line_segment([egui::pos2(cx, cy - 3.5), egui::pos2(cx, cy + 3.5)], stroke);
+        }
+        Icon::Cross => {
+            painter.line_segment([egui::pos2(cx - 3.0, cy - 3.0), egui::pos2(cx + 3.0, cy + 3.0)], stroke);
+            painter.line_segment([egui::pos2(cx - 3.0, cy + 3.0), egui::pos2(cx + 3.0, cy - 3.0)], stroke);
+        }
+        Icon::Bolt => {
+            let pts = [
+                egui::pos2(cx + 0.5, top + 1.0),
+                egui::pos2(cx - 2.5, cy + 0.5),
+                egui::pos2(cx - 0.5, cy + 0.5),
+                egui::pos2(cx - 1.5, bottom - 1.0),
+                egui::pos2(cx + 2.5, cy - 0.5),
+                egui::pos2(cx + 0.5, cy - 0.5),
+            ];
+            for i in 0..pts.len() {
+                painter.line_segment([pts[i], pts[(i + 1) % pts.len()]], stroke);
+            }
+        }
+        Icon::Gateway => {
+            let r1 = egui::Rect::from_min_max(egui::pos2(left + 1.0, cy - 4.5), egui::pos2(right - 1.0, cy - 1.0));
+            let r2 = egui::Rect::from_min_max(egui::pos2(left + 1.0, cy + 1.0), egui::pos2(right - 1.0, cy + 4.5));
+            painter.rect_stroke(r1, CornerRadius::same(1), stroke, egui::StrokeKind::Inside);
+            painter.rect_stroke(r2, CornerRadius::same(1), stroke, egui::StrokeKind::Inside);
+            painter.circle_filled(egui::pos2(left + 3.0, cy - 2.7), 1.0, color);
+            painter.circle_filled(egui::pos2(left + 3.0, cy + 2.7), 1.0, color);
+        }
+        Icon::Check => {
+            painter.line_segment([egui::pos2(left + 2.0, cy + 0.5), egui::pos2(cx - 0.5, bottom - 2.0)], stroke);
+            painter.line_segment([egui::pos2(cx - 0.5, bottom - 2.0), egui::pos2(right - 1.5, top + 2.0)], stroke);
+        }
+    }
+}
+
+/// A clean button with optional vector icon and hover state.
+pub fn btn(
+    ui: &mut egui::Ui,
+    icon: Option<Icon>,
+    text: &str,
+    text_size: f32,
+    min_size: Option<egui::Vec2>,
+) -> egui::Response {
+    let font_id = egui::FontId::proportional(text_size);
+    let galley = ui.painter().layout_no_wrap(text.to_string(), font_id, theme::TEXT);
+    let icon_w = if icon.is_some() { 13.0 + 6.0 } else { 0.0 };
+    let pad_x = 10.0;
+    let pad_y = 5.0;
+    let mut desired = egui::vec2(
+        galley.size().x + icon_w + pad_x * 2.0,
+        galley.size().y + pad_y * 2.0,
+    );
+    if let Some(m) = min_size {
+        desired.x = desired.x.max(m.x);
+        desired.y = desired.y.max(m.y);
+    }
+
+    let (rect, resp) = ui.allocate_exact_size(desired, Sense::click());
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter();
+        let fill = if resp.hovered() {
+            theme::ACCENT_SUBTLE
+        } else {
+            theme::SUNKEN
+        };
+        let stroke_color = if resp.hovered() {
+            theme::LINE.gamma_multiply(1.4)
+        } else {
+            theme::LINE
+        };
+        painter.rect(
+            rect,
+            CornerRadius::same(theme::RADIUS_SMALL),
+            fill,
+            Stroke::new(1.0, stroke_color),
+            egui::StrokeKind::Inside,
+        );
+
+        let content_width = galley.size().x + icon_w;
+        let start_x = rect.center().x - content_width / 2.0;
+        let icon_col = if resp.hovered() { egui::Color32::WHITE } else { theme::MUTED };
+        let text_col = if resp.hovered() { egui::Color32::WHITE } else { theme::TEXT };
+
+        if let Some(ic) = icon {
+            if let Icon::Refresh { spin: true } = ic {
+                ui.ctx().request_repaint();
+            }
+            let icon_rect = egui::Rect::from_center_size(
+                egui::pos2(start_x + 6.5, rect.center().y),
+                egui::vec2(13.0, 13.0),
+            );
+            paint_icon(painter, icon_rect, ic, icon_col, ui.input(|i| i.time));
+        }
+
+        let text_pos = egui::pos2(start_x + icon_w, rect.center().y - galley.size().y / 2.0);
+        painter.galley(text_pos, galley, text_col);
+    }
+
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// A compact status/metric chip (e.g. Bolt with "38 мс", Gateway with "127.0.0.1:45318").
+pub fn metric_chip(ui: &mut egui::Ui, icon: Option<Icon>, text: &str) -> egui::Response {
     let font_id = egui::FontId::proportional(11.5);
-    let full = if icon.is_empty() {
-        text.to_string()
-    } else {
-        format!("{icon} {text}")
-    };
-    let galley = ui.painter().layout_no_wrap(full, font_id, theme::MUTED);
+    let galley = ui.painter().layout_no_wrap(text.to_string(), font_id, theme::MUTED);
+    let icon_w = if icon.is_some() { 12.0 + 5.0 } else { 0.0 };
     let padding = egui::vec2(8.0, 3.5);
-    let desired_size = egui::vec2(galley.size().x + padding.x * 2.0, galley.size().y + padding.y * 2.0);
+    let desired_size = egui::vec2(
+        galley.size().x + icon_w + padding.x * 2.0,
+        galley.size().y + padding.y * 2.0,
+    );
     let (rect, resp) = ui.allocate_exact_size(desired_size, Sense::click());
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
@@ -116,11 +366,23 @@ pub fn metric_chip(ui: &mut egui::Ui, icon: &str, text: &str) -> egui::Response 
             Stroke::new(1.0, theme::LINE),
             egui::StrokeKind::Inside,
         );
-        let text_pos = egui::pos2(rect.left() + padding.x, rect.top() + padding.y);
-        let color = if resp.hovered() { theme::TEXT } else { theme::MUTED };
-        painter.galley(text_pos, galley, color);
+
+        let icon_col = if resp.hovered() { theme::TEXT } else { theme::MUTED };
+        let text_col = if resp.hovered() { theme::TEXT } else { theme::MUTED };
+
+        let start_x = rect.left() + padding.x;
+        if let Some(ic) = icon {
+            let icon_rect = egui::Rect::from_center_size(
+                egui::pos2(start_x + 6.0, rect.center().y),
+                egui::vec2(12.0, 12.0),
+            );
+            paint_icon(painter, icon_rect, ic, icon_col, ui.input(|i| i.time));
+        }
+
+        let text_pos = egui::pos2(start_x + icon_w, rect.top() + padding.y);
+        painter.galley(text_pos, galley, text_col);
     }
-    resp
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 /// Clean navigation tabs matching the website (active tab has white text and underline).

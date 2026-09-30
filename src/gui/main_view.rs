@@ -4,7 +4,8 @@ use eframe::egui::{self, CornerRadius, Sense, Stroke};
 use std::time::Duration;
 
 use super::status::{self, Action, Tone};
-use super::{theme, widgets, App, Tab, DOCS_URL, GITHUB_RELEASES_URL, GITHUB_URL};
+use super::widgets::{self, Icon};
+use super::{theme, App, Tab, DOCS_URL, GITHUB_RELEASES_URL, GITHUB_URL};
 use crate::ops::{Cap, Cmd, Level};
 use crate::utils::mask_path;
 
@@ -223,22 +224,22 @@ fn hero_status_card(app: &mut App, ui: &mut egui::Ui) {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
 
-                    let ping_label = if app.proxy_test_running {
-                        "⚡ замер…".to_string()
+                    let (ping_icon, ping_label) = if app.proxy_test_running {
+                        (Icon::Refresh { spin: true }, "замер…".to_string())
                     } else if let Some(rtt) = app.last_rtt {
-                        format!("⚡ {rtt} мс")
+                        (Icon::Bolt, format!("{rtt} мс"))
                     } else {
-                        "⚡ проверить пинг".to_string()
+                        (Icon::Bolt, "проверить пинг".to_string())
                     };
 
-                    let chip_resp = widgets::metric_chip(ui, "", &ping_label)
+                    let chip_resp = widgets::metric_chip(ui, Some(ping_icon), &ping_label)
                         .on_hover_text("Нажмите для повторной проверки задержки к Google API");
                     if chip_resp.clicked() && !app.proxy_test_running {
                         app.start_proxy_test(ui.ctx());
                     }
 
                     let gw = format!("Локальный шлюз: {}:{}", crate::proxy::LISTEN_IP, crate::proxy::port());
-                    widgets::metric_chip(ui, "🌐", &gw);
+                    widgets::metric_chip(ui, Some(Icon::Gateway), &gw);
                 });
             }
 
@@ -324,17 +325,16 @@ fn doctor_section(app: &mut App, ui: &mut egui::Ui) {
         widgets::section_header(ui, "ДИАГНОСТИКА ОКРУЖЕНИЯ (DOCTOR)");
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let running = app.diag_running || app.proxy_test_running;
-            let btn_text = if running { "Тестирование…" } else { "🩺 Проверить всё" };
-            let run_btn = egui::Button::new(
-                egui::RichText::new(btn_text)
-                    .size(11.5)
-                    .color(if running { theme::MUTED } else { egui::Color32::WHITE }),
-            )
-            .fill(theme::SUNKEN)
-            .stroke(Stroke::new(1.0, theme::LINE))
-            .corner_radius(CornerRadius::same(theme::RADIUS_SMALL));
+            let btn_text = if running { "Тестирование…" } else { "Проверить всё" };
+            let run_btn_resp = widgets::btn(
+                ui,
+                Some(Icon::Refresh { spin: running }),
+                btn_text,
+                11.5,
+                None,
+            );
 
-            if ui.add_enabled(!busy && !running, run_btn).clicked() {
+            if !busy && !running && run_btn_resp.clicked() {
                 app.start_diagnostics(ui.ctx());
                 app.start_proxy_test(ui.ctx());
             }
@@ -498,28 +498,24 @@ fn proxy_section(app: &mut App, ui: &mut egui::Ui) {
                 ui.spacing_mut().item_spacing.x = 6.0;
 
                 // Save button
-                let save_btn = egui::Button::new(
-                    egui::RichText::new("Сохранить").size(12.0).color(theme::TEXT),
-                )
-                .fill(theme::SUNKEN)
-                .stroke(Stroke::new(1.0, theme::LINE))
-                .corner_radius(CornerRadius::same(theme::RADIUS_SMALL));
-
-                if ui.add_enabled(!busy, save_btn).clicked() {
+                let save_resp = widgets::btn(ui, Some(Icon::Check), "Сохранить", 12.0, None);
+                if !busy && save_resp.clicked() {
                     let text = app.own_proxy_input.trim().to_string();
                     app.worker.send(Cmd::SetOwnProxy(text));
                 }
 
                 // Check button
                 let has_input = !app.own_proxy_input.trim().is_empty();
-                let check_btn = egui::Button::new(
-                    egui::RichText::new("Проверить").size(12.0).color(theme::TEXT),
-                )
-                .fill(theme::SUNKEN)
-                .stroke(Stroke::new(1.0, theme::LINE))
-                .corner_radius(CornerRadius::same(theme::RADIUS_SMALL));
+                let check_label = if app.proxy_test_running { "Замер…" } else { "Проверить" };
+                let check_resp = widgets::btn(
+                    ui,
+                    Some(Icon::Refresh { spin: app.proxy_test_running }),
+                    check_label,
+                    12.0,
+                    None,
+                );
 
-                if ui.add_enabled(!app.proxy_test_running && has_input, check_btn).clicked() {
+                if !app.proxy_test_running && has_input && check_resp.clicked() {
                     app.start_proxy_test(ui.ctx());
                 }
             });
@@ -574,16 +570,13 @@ fn proxy_section(app: &mut App, ui: &mut egui::Ui) {
                 app.worker.send(Cmd::DeleteProxyProfile(i));
             }
 
-            let add_btn = egui::Button::new(
-                egui::RichText::new(if app.show_add_profile { "− Скрыть" } else { "+ Сохранить как профиль" })
-                    .size(11.5)
-                    .color(theme::TEXT),
-            )
-            .fill(theme::SUNKEN)
-            .stroke(Stroke::new(1.0, theme::LINE))
-            .corner_radius(CornerRadius::same(theme::RADIUS_SMALL));
-
-            if ui.add_enabled(!busy, add_btn).clicked() {
+            let (add_icon, add_label) = if app.show_add_profile {
+                (Icon::Cross, "Скрыть")
+            } else {
+                (Icon::Plus, "Сохранить как профиль")
+            };
+            let add_resp = widgets::btn(ui, Some(add_icon), add_label, 11.5, None);
+            if !busy && add_resp.clicked() {
                 app.show_add_profile = !app.show_add_profile;
             }
         });
@@ -598,12 +591,9 @@ fn proxy_section(app: &mut App, ui: &mut egui::Ui) {
                         .hint_text("Нидерланды"),
                 );
                 let can_add = !app.new_profile_name.trim().is_empty() && !app.own_proxy_input.trim().is_empty();
-                let save_prof_btn = egui::Button::new(egui::RichText::new("Добавить").size(12.0).color(theme::TEXT))
-                    .fill(theme::SUNKEN)
-                    .stroke(Stroke::new(1.0, theme::LINE))
-                    .corner_radius(CornerRadius::same(theme::RADIUS_SMALL));
+                let save_prof_resp = widgets::btn(ui, Some(Icon::Plus), "Добавить", 12.0, None);
 
-                if ui.add_enabled(!busy && can_add, save_prof_btn).clicked() {
+                if !busy && can_add && save_prof_resp.clicked() {
                     let name = app.new_profile_name.trim().to_string();
                     let address = app.own_proxy_input.trim().to_string();
                     app.worker.send(Cmd::SaveProxyProfile { name, address });
@@ -700,14 +690,8 @@ fn components_section(app: &mut App, ui: &mut egui::Ui) {
 
                     // Browse button strictly aligned right
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let btn = egui::Button::new(
-                            egui::RichText::new("Обзор").size(12.0).color(theme::TEXT),
-                        )
-                        .fill(theme::SUNKEN)
-                        .stroke(Stroke::new(1.0, theme::LINE))
-                        .corner_radius(CornerRadius::same(theme::RADIUS_SMALL));
-
-                        if ui.add(btn).clicked() {
+                        let browse_resp = widgets::btn(ui, Some(Icon::Folder), "Обзор", 12.0, None);
+                        if browse_resp.clicked() {
                             app.path_dialog = Some(String::new());
                         }
                     });
@@ -776,15 +760,15 @@ fn system_section(app: &mut App, ui: &mut egui::Ui) {
         ui.separator();
         ui.add_space(8.0);
 
-        let desk_btn = egui::Button::new(
-            egui::RichText::new("Создать ярлык на Рабочем столе").size(12.0).color(theme::TEXT),
-        )
-        .fill(theme::SUNKEN)
-        .stroke(Stroke::new(1.0, theme::LINE))
-        .corner_radius(CornerRadius::same(theme::RADIUS_SMALL))
-        .min_size(egui::vec2(ui.available_width(), 28.0));
+        let desk_resp = widgets::btn(
+            ui,
+            Some(Icon::Desktop),
+            "Создать ярлык на Рабочем столе",
+            12.0,
+            Some(egui::vec2(ui.available_width(), 28.0)),
+        );
 
-        if ui.add(desk_btn).clicked() {
+        if desk_resp.clicked() {
             let res = crate::platform::shortcut::create_shortcuts();
             app.shortcut_status = Some((std::time::Instant::now(), res));
         }
@@ -826,14 +810,13 @@ fn logs_screen(app: &mut App, ui: &mut egui::Ui) {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
 
-            let copy_btn = egui::Button::new(
-                egui::RichText::new("Скопировать всё").size(11.5).color(theme::TEXT),
-            )
-            .fill(theme::SUNKEN)
-            .stroke(Stroke::new(1.0, theme::LINE))
-            .corner_radius(CornerRadius::same(theme::RADIUS_SMALL));
+            let clear_resp = widgets::btn(ui, Some(Icon::Trash), "Очистить", 11.5, None);
+            if clear_resp.clicked() {
+                app.log.clear();
+            }
 
-            if ui.add(copy_btn).clicked() {
+            let copy_resp = widgets::btn(ui, Some(Icon::Copy), "Скопировать всё", 11.5, None);
+            if copy_resp.clicked() {
                 let text = app
                     .log
                     .iter()
@@ -841,17 +824,6 @@ fn logs_screen(app: &mut App, ui: &mut egui::Ui) {
                     .collect::<Vec<_>>()
                     .join("\n");
                 ui.ctx().copy_text(text);
-            }
-
-            let clear_btn = egui::Button::new(
-                egui::RichText::new("Очистить").size(11.5).color(theme::TEXT),
-            )
-            .fill(theme::SUNKEN)
-            .stroke(Stroke::new(1.0, theme::LINE))
-            .corner_radius(CornerRadius::same(theme::RADIUS_SMALL));
-
-            if ui.add(clear_btn).clicked() {
-                app.log.clear();
             }
         });
     });
@@ -916,18 +888,10 @@ fn footer(app: &mut App, ui: &mut egui::Ui) {
 
     ui.horizontal(|ui| {
         let busy = app.is_busy();
-        let report_btn = egui::Button::new(
-            egui::RichText::new("📄 Экспорт отчёта").size(FOOTER_TEXT).color(theme::TEXT),
-        )
-        .fill(theme::SUNKEN)
-        .stroke(Stroke::new(1.0, theme::LINE))
-        .corner_radius(CornerRadius::same(theme::RADIUS_SMALL));
+        let report_resp = widgets::btn(ui, Some(Icon::Export), "Экспорт отчёта", FOOTER_TEXT, None)
+            .on_hover_text("Сохранить диагностический отчёт для анализа неполадок");
 
-        if ui
-            .add_enabled(!busy, report_btn)
-            .on_hover_text("Сохранить диагностический отчёт для анализа неполадок")
-            .clicked()
-        {
+        if !busy && report_resp.clicked() {
             copy_report = true;
         }
 
@@ -938,18 +902,10 @@ fn footer(app: &mut App, ui: &mut egui::Ui) {
 
         if let Some((_, path)) = &saved {
             ui.add_space(4.0);
-            let show_btn = egui::Button::new(
-                egui::RichText::new("📂 Показать файл").size(FOOTER_TEXT).color(theme::TEXT),
-            )
-            .fill(theme::SUNKEN)
-            .stroke(Stroke::new(1.0, theme::LINE))
-            .corner_radius(CornerRadius::same(theme::RADIUS_SMALL));
+            let show_resp = widgets::btn(ui, Some(Icon::Folder), "Показать файл", FOOTER_TEXT, None)
+                .on_hover_text("Открыть каталог с файлом отчёта");
 
-            if ui
-                .add(show_btn)
-                .on_hover_text("Открыть каталог с файлом отчёта")
-                .clicked()
-            {
+            if show_resp.clicked() {
                 reveal_report = Some(path.clone());
             }
         }
@@ -965,20 +921,20 @@ fn footer(app: &mut App, ui: &mut egui::Ui) {
                 DOCS_URL,
             );
             ui.label(egui::RichText::new("·").size(FOOTER_TEXT).color(theme::LINE));
-            let update_btn = egui::Button::new(
-                egui::RichText::new(if app.manual_running {
-                    "Проверка…"
-                } else {
-                    "Обновления"
-                })
-                .size(FOOTER_TEXT)
-                .color(theme::TEXT),
-            )
-            .fill(theme::SUNKEN)
-            .stroke(Stroke::new(1.0, theme::LINE))
-            .corner_radius(CornerRadius::same(theme::RADIUS_SMALL));
+            let update_label = if app.manual_running {
+                "Проверка…"
+            } else {
+                "Обновления"
+            };
+            let update_resp = widgets::btn(
+                ui,
+                Some(Icon::Update),
+                update_label,
+                FOOTER_TEXT,
+                None,
+            );
 
-            if ui.add_enabled(!app.manual_running, update_btn).clicked() {
+            if !app.manual_running && update_resp.clicked() {
                 app.check_update_manually(ui.ctx());
                 crate::utils::open_url(GITHUB_RELEASES_URL);
             }

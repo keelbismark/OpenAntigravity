@@ -566,15 +566,40 @@ pub fn relaunch_elevated_with(params: &str) -> bool {
 
 #[cfg(target_os = "windows")]
 pub fn mask_path(path: &str) -> String {
-    let mut result = path.to_string();
-    if let Ok(local) = env::var("LOCALAPPDATA") {
-        result = result.replace(&local, "%LOCALAPPDATA%");
+    let mut cleaned = path.trim();
+    if let Some(rest) = cleaned.strip_prefix(r"\\?\UNC\") {
+        cleaned = rest;
+    } else if let Some(rest) = cleaned.strip_prefix(r"\\?\") {
+        cleaned = rest;
     }
-    if let Ok(appdata) = env::var("APPDATA") {
-        result = result.replace(&appdata, "%APPDATA%");
-    }
-    if let Ok(userprofile) = env::var("USERPROFILE") {
-        result = result.replace(&userprofile, "%USERPROFILE%");
+    let mut result = cleaned.to_string();
+
+    let mut replace_env = |var_name: &str, placeholder: &str| {
+        if let Ok(val) = env::var(var_name) {
+            let val_clean = val
+                .strip_prefix(r"\\?\UNC\")
+                .or_else(|| val.strip_prefix(r"\\?\"))
+                .unwrap_or(&val);
+            if !val_clean.is_empty() {
+                if result.contains(val_clean) {
+                    result = result.replace(val_clean, placeholder);
+                } else {
+                    let lower_res = result.to_lowercase();
+                    let lower_val = val_clean.to_lowercase();
+                    if let Some(idx) = lower_res.find(&lower_val) {
+                        result.replace_range(idx..idx + val_clean.len(), placeholder);
+                    }
+                }
+            }
+        }
+    };
+
+    replace_env("LOCALAPPDATA", "%LOCALAPPDATA%");
+    replace_env("APPDATA", "%APPDATA%");
+    replace_env("USERPROFILE", "%USERPROFILE%");
+
+    if let Some(rest) = result.strip_prefix(r"\\?\") {
+        result = rest.to_string();
     }
     result
 }
@@ -815,5 +840,19 @@ mod tests {
 
         assert_eq!(bare, "VISIBLE", "the bug should reproduce without the flag");
         assert_ne!(flagged, "VISIBLE", "CREATE_NO_WINDOW must hide the console");
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn test_mask_path_verbatim_prefix() {
+        if let Ok(local) = std::env::var("LOCALAPPDATA") {
+            let verbatim = format!(r"\\?\{local}\Programs\Antigravity");
+            let masked = mask_path(&verbatim);
+            assert_eq!(masked, r"%LOCALAPPDATA%\Programs\Antigravity");
+
+            let direct = format!(r"{local}\agy\bin");
+            let masked_direct = mask_path(&direct);
+            assert_eq!(masked_direct, r"%LOCALAPPDATA%\agy\bin");
+        }
     }
 }
