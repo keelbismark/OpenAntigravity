@@ -237,10 +237,12 @@ jobs:
             "url_linux": "${DL_URL}/OpenAntigravity_linux_v${VERSION}.tar.gz",
             "url_appimage": "${DL_URL}/OpenAntigravity-x86_64.AppImage"
           }
-          ENDJSON
-
           cd dist_release
-          sha256sum OpenAntigravity_windows_v*.zip OpenAntigravity_linux_v*.tar.gz OpenAntigravity*.AppImage > SHA256SUMS.txt 2>/dev/null || true
+          # Создаем стабильные ссылки без номера версии в имени файла для постоянных ссылок
+          [ -f "OpenAntigravity_windows_v${VERSION}.zip" ] && cp "OpenAntigravity_windows_v${VERSION}.zip" "OpenAntigravity-windows-portable.zip"
+          [ -f "OpenAntigravity_linux_v${VERSION}.tar.gz" ] && cp "OpenAntigravity_linux_v${VERSION}.tar.gz" "OpenAntigravity-linux-portable.tar.gz"
+
+          sha256sum OpenAntigravity*.zip OpenAntigravity*.tar.gz OpenAntigravity*.AppImage > SHA256SUMS.txt 2>/dev/null || true
 
           # Сбор списка изменений из Conventional Commits
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")

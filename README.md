@@ -44,9 +44,9 @@ Open Antigravity — легковесная портативная утилит�
 
 | Платформа | Формат | Запуск |
 |---|---|---|
-| **Windows 10 / 11** | [OpenAntigravity_windows_v1.1.1.zip](https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity_windows_v1.1.1.zip) | Распаковать и запустить `OpenAntigravity.exe` |
+| **Windows 10 / 11** | [OpenAntigravity-windows-portable.zip](https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity-windows-portable.zip) | Распаковать и запустить `OpenAntigravity.exe` |
 | **Linux (Steam Deck / Ubuntu / Fedora)** | [OpenAntigravity-x86_64.AppImage](https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity-x86_64.AppImage) | `chmod +x OpenAntigravity-x86_64.AppImage && ./OpenAntigravity-x86_64.AppImage` |
-| **Linux Portable** | [OpenAntigravity_linux_v1.1.1.tar.gz](https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity_linux_v1.1.1.tar.gz) | Распаковать и запустить `./launch.sh` |
+| **Linux Portable** | [OpenAntigravity-linux-portable.tar.gz](https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity-linux-portable.tar.gz) | Распаковать и запустить `./launch.sh` |
 
 ### Терминальный режим (TUI) в одну строку
 
