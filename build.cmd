@@ -39,10 +39,20 @@ if "%NEW_REL_VER%"=="" (
     echo [!] Ошибка: укажите версию для релиза, например: build.cmd --release 1.1.4
     exit /b 1
 )
+if not exist "%~dp0.git" (
+    echo [!] Ошибка: --release доступен только при сборке из git-репозитория.
+    exit /b 1
+)
+git diff-index --quiet HEAD --
+if errorlevel 1 (
+    echo [!] Ошибка: в репозитории есть незакоммиченные изменения. Сначала закоммитьте их или очистите working tree.
+    exit /b 1
+)
 echo ================================================================
 echo   Автоматический релиз Open Antigravity v%NEW_REL_VER%
 echo ================================================================
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$v = '%NEW_REL_VER%'.Trim(); [System.IO.File]::WriteAllText('%~dp0VERSION', $v + [Environment]::NewLine); $c = Get-Content '%~dp0Cargo.toml' -Raw; ($c -replace '(?m)^version = \"[^\"]+\"', ('version = \"' + $v + '\"')) | Set-Content '%~dp0Cargo.toml' -NoNewline"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\bump_version.ps1" "%NEW_REL_VER%"
+if errorlevel 1 goto :err
 echo [*] Проверка кода и тесты перед релизом...
 cargo check
 if errorlevel 1 goto :err
@@ -51,10 +61,20 @@ if errorlevel 1 goto :err
 echo [*] Фиксация изменений в git и создание тега...
 git add "%~dp0VERSION" "%~dp0Cargo.toml" "%~dp0Cargo.lock"
 git commit -m "chore(release): bump version to v%NEW_REL_VER%"
+if errorlevel 1 goto :err
 git tag "v%NEW_REL_VER%"
+if errorlevel 1 goto :err
 echo [*] Отправка в GitHub (запуск CI/CD релиза)...
 git push origin main
+if errorlevel 1 (
+    echo [!] Ошибка отправки в origin. Убедитесь, что у вас есть права на запись в репозиторий.
+    exit /b 1
+)
 git push origin "v%NEW_REL_VER%"
+if errorlevel 1 (
+    echo [!] Ошибка отправки тега в origin. Убедитесь, что у вас есть права на запись в репозиторий.
+    exit /b 1
+)
 echo.
 echo [*] Релиз v%NEW_REL_VER% успешно запущен в GitHub Actions!
 exit /b 0
