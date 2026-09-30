@@ -15,6 +15,7 @@ mod widgets;
 
 use eframe::egui;
 use std::sync::mpsc::{channel, Receiver};
+use std::sync::Arc;
 
 use crate::gate;
 use crate::ops::{self, Cmd, Event, Level, Status, Worker};
@@ -108,6 +109,9 @@ pub struct App {
     tray_hidden: bool,
     /// Whether autostart with system is enabled.
     pub autostart_enabled: bool,
+    auto_update_tx: std::sync::mpsc::Sender<crate::update::UpdateProgress>,
+    auto_update_rx: Receiver<crate::update::UpdateProgress>,
+    pub auto_update_progress: Option<crate::update::UpdateProgress>,
     /// History of proxy ping / latency samples (ms) for the GUI sparkline chart.
     pub latency_history: Vec<u32>,
     /// Last measured RTT (ms).
@@ -171,6 +175,7 @@ impl App {
 
         let start_hidden = std::env::args().any(|a| a == "--minimized" || a == "-m" || a == "--tray");
         let autostart_enabled = crate::platform::autostart::is_enabled();
+        let (auto_update_tx, auto_update_rx) = channel();
 
         Self {
             update: None,
@@ -208,6 +213,9 @@ impl App {
             tray_items,
             tray_hidden: start_hidden,
             autostart_enabled,
+            auto_update_tx,
+            auto_update_rx,
+            auto_update_progress: None,
             latency_history: Vec::new(),
             last_rtt: None,
             current_tab: Tab::Main,
@@ -296,24 +304,167 @@ impl App {
             .ok();
     }
 
-    /// The "новая версия" button, drawn on both screens (spec item 10: it must
-    /// not disappear after the key is accepted).
-    fn update_banner(&self, ui: &mut egui::Ui) {
-        let Some(rel) = &self.update else { return };
-        let label = format!("↑  Доступна новая версия — {}", rel.display_version());
-        let btn = egui::Button::new(egui::RichText::new(label).color(egui::Color32::BLACK))
-            .fill(theme::WARN)
-            .corner_radius(egui::CornerRadius::same(theme::RADIUS_SMALL))
-            .min_size(egui::vec2(ui.available_width(), 32.0));
-        if ui.add(btn).clicked() {
-            // The feed's own link for this platform — or its page when no
-            // archive matches — not a URL reconstructed from the version this
-            // process happened to see hours ago.
-            if let Some(url) = rel.landing_url() {
-                crate::utils::open_url(url);
+    fn start_auto_update(&mut self, info: &crate::update::UpdateInfo, ctx: &egui::Context) {
+        self.auto_update_progress = Some(crate::update::UpdateProgress::Downloading {
+            percent: 0,
+            text: "Подготовка...".to_string(),
+        });
+        let info_clone = info.clone();
+        let tx = self.auto_update_tx.clone();
+        let ctx_clone = ctx.clone();
+        let wake = Arc::new(move || {
+            ctx_clone.request_repaint();
+        });
+        std::thread::Builder::new()
+            .name("auto-updater".to_string())
+            .spawn(move || {
+                crate::update::perform_auto_update(&info_clone, tx, wake);
+            })
+            .ok();
+    }
+
+    /// The "новая версия" banner with one-click auto-update.
+    fn update_banner(&mut self, ui: &mut egui::Ui) {
+        let Some(rel) = self.update.clone() else { return };
+        let ctx = ui.ctx().clone();
+
+        if let Some(progress) = self.auto_update_progress.clone() {
+            match progress {
+                crate::update::UpdateProgress::Downloading { percent, text } => {
+                    let frame = egui::Frame::NONE
+                        .fill(theme::CARD)
+                        .stroke(egui::Stroke::new(1.0, theme::CARD_BORDER))
+                        .corner_radius(egui::CornerRadius::same(theme::RADIUS_SMALL))
+                        .inner_margin(egui::Margin::symmetric(12, 8));
+                    frame.show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            widgets::show_icon(ui, widgets::Icon::Refresh { spin: true }, theme::ACCENT, 14.0);
+                            ui.label(
+                                egui::RichText::new(format!("Загрузка обновления v{}: {}", rel.display_version(), text))
+                                    .color(theme::TEXT)
+                                    .size(12.5),
+                            );
+                        });
+                        ui.add_space(4.0);
+                        let fraction = (percent as f32 / 100.0).clamp(0.0, 1.0);
+                        ui.add(egui::ProgressBar::new(fraction).show_percentage());
+                    });
+                    ui.add_space(8.0);
+                }
+                crate::update::UpdateProgress::Extracting => {
+                    let frame = egui::Frame::NONE
+                        .fill(theme::CARD)
+                        .stroke(egui::Stroke::new(1.0, theme::CARD_BORDER))
+                        .corner_radius(egui::CornerRadius::same(theme::RADIUS_SMALL))
+                        .inner_margin(egui::Margin::symmetric(12, 8));
+                    frame.show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            widgets::show_icon(ui, widgets::Icon::Refresh { spin: true }, theme::ACCENT, 14.0);
+                            ui.label(
+                                egui::RichText::new("Распаковка и подготовка новой версии...")
+                                    .color(theme::TEXT)
+                                    .size(12.5),
+                            );
+                        });
+                    });
+                    ui.add_space(8.0);
+                }
+                crate::update::UpdateProgress::Restarting => {
+                    let frame = egui::Frame::NONE
+                        .fill(theme::OK.gamma_multiply(0.2))
+                        .stroke(egui::Stroke::new(1.0, theme::OK))
+                        .corner_radius(egui::CornerRadius::same(theme::RADIUS_SMALL))
+                        .inner_margin(egui::Margin::symmetric(12, 8));
+                    frame.show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            widgets::show_icon(ui, widgets::Icon::Check, theme::OK, 14.0);
+                            ui.label(
+                                egui::RichText::new("Обновление установлено! Перезапуск...")
+                                    .color(theme::TEXT)
+                                    .size(12.5)
+                                    .strong(),
+                            );
+                        });
+                    });
+                    ui.add_space(8.0);
+                }
+                crate::update::UpdateProgress::Failed(err) => {
+                    let frame = egui::Frame::NONE
+                        .fill(theme::BAD.gamma_multiply(0.15))
+                        .stroke(egui::Stroke::new(1.0, theme::BAD))
+                        .corner_radius(egui::CornerRadius::same(theme::RADIUS_SMALL))
+                        .inner_margin(egui::Margin::symmetric(12, 8));
+                    frame.show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            widgets::show_icon(ui, widgets::Icon::Cross, theme::BAD, 14.0);
+                            ui.label(
+                                egui::RichText::new(format!("Ошибка обновления: {err}"))
+                                    .color(theme::BAD)
+                                    .size(12.0),
+                            );
+                            if ui.button("Скачать вручную").clicked() {
+                                if let Some(url) = rel.landing_url() {
+                                    crate::utils::open_url(url);
+                                }
+                            }
+                            if ui.button("Скрыть").clicked() {
+                                self.auto_update_progress = None;
+                            }
+                        });
+                    });
+                    ui.add_space(8.0);
+                }
             }
+            return;
         }
-        ui.add_space(10.0);
+
+        let frame = egui::Frame::NONE
+            .fill(theme::CARD)
+            .stroke(egui::Stroke::new(1.0, theme::CARD_BORDER))
+            .corner_radius(egui::CornerRadius::same(theme::RADIUS_SMALL))
+            .inner_margin(egui::Margin::symmetric(12, 6));
+
+        frame.show(ui, |ui| {
+            ui.horizontal(|ui| {
+                widgets::show_icon(ui, widgets::Icon::Update, theme::ACCENT, 14.0);
+                ui.label(
+                    egui::RichText::new(format!("Доступна новая версия v{}", rel.display_version()))
+                        .color(theme::TEXT)
+                        .size(12.5)
+                        .strong(),
+                );
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.add(
+                        egui::Button::new(
+                            egui::RichText::new("Обновить сейчас")
+                                .color(egui::Color32::BLACK)
+                                .strong()
+                                .size(12.0),
+                        )
+                        .fill(theme::OK)
+                        .corner_radius(egui::CornerRadius::same(theme::RADIUS_SMALL))
+                        .min_size(egui::vec2(120.0, 26.0)),
+                    ).clicked() {
+                        self.start_auto_update(&rel, &ctx);
+                    }
+
+                    if ui.add(
+                        egui::Button::new(
+                            egui::RichText::new("Обзор")
+                                .color(theme::MUTED)
+                                .size(11.5),
+                        )
+                        .fill(egui::Color32::TRANSPARENT),
+                    ).clicked() {
+                        if let Some(url) = rel.landing_url() {
+                            crate::utils::open_url(url);
+                        }
+                    }
+                });
+            });
+        });
+        ui.add_space(8.0);
     }
 
     /// Re-launches this exe elevated and closes the current window.
@@ -332,6 +483,9 @@ impl App {
     }
 
     fn drain_events(&mut self) {
+        while let Ok(prog) = self.auto_update_rx.try_recv() {
+            self.auto_update_progress = Some(prog);
+        }
         while let Ok(rel) = self.update_rx.try_recv() {
             if self.tray_hidden {
                 crate::platform::notify::send(
@@ -496,6 +650,7 @@ impl App {
             tray::TrayAction::Show => {
                 self.tray_hidden = false;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
             }
             tray::TrayAction::Quit => {
@@ -523,6 +678,15 @@ impl eframe::App for App {
         // When the user clicks the window's [X], let it close cleanly and exit.
         if ctx.input(|i| i.viewport().close_requested()) {
             self.tray_items = None;
+        }
+
+        // When the user clicks minimize [_], hide to system tray if available
+        if self.tray_items.is_some() && !self.tray_hidden {
+            if ctx.input(|i| i.viewport().minimized == Some(true)) {
+                self.tray_hidden = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+            }
         }
 
         // Live proxy ping check: runs automatically every 25 seconds if proxy is configured and enabled

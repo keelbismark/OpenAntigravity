@@ -234,7 +234,8 @@ jobs:
             "notes": "Open Antigravity v${VERSION}",
             "page": "${RELEASE_URL}",
             "url_windows": "${DL_URL}/OpenAntigravity_windows_v${VERSION}.zip",
-            "url_linux": "${DL_URL}/OpenAntigravity_linux_v${VERSION}.tar.gz"
+            "url_linux": "${DL_URL}/OpenAntigravity_linux_v${VERSION}.tar.gz",
+            "url_appimage": "${DL_URL}/OpenAntigravity-x86_64.AppImage"
           }
           ENDJSON
 

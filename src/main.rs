@@ -685,6 +685,27 @@ fn print_help() {
 }
 
 fn main() {
+    // Clean up any stale .old binary left by a previous auto-update
+    if let Ok(exe) = std::env::current_exe() {
+        let old = exe.with_extension("exe.old");
+        if old.exists() {
+            let _ = std::fs::remove_file(old);
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let old_unix = exe.with_extension("old");
+            if old_unix.exists() {
+                let _ = std::fs::remove_file(old_unix);
+            }
+            if let Ok(appimage) = std::env::var("APPIMAGE") {
+                let old_appimage = std::path::PathBuf::from(appimage).with_extension("AppImage.old");
+                if old_appimage.exists() {
+                    let _ = std::fs::remove_file(old_appimage);
+                }
+            }
+        }
+    }
+
     if env::args().skip(1).any(|a| {
         matches!(
             a.trim_start_matches('-').to_ascii_lowercase().as_str(),

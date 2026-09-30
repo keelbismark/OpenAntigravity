@@ -16,10 +16,14 @@ cd /d "%~dp0"
 set "DO_PACKAGE=0"
 set "DO_CHECK=0"
 set "DO_CLEAN=0"
+set "DO_RELEASE=0"
+set "NEW_REL_VER="
 set "CUSTOM_PROXY="
 
 :argloop
 if "%~1"=="" goto argdone
+if /i "%~1"=="--release"  ( set "DO_RELEASE=1"& set "NEW_REL_VER=%~2"& shift& shift& goto argloop )
+if /i "%~1"=="-r"         ( set "DO_RELEASE=1"& set "NEW_REL_VER=%~2"& shift& shift& goto argloop )
 if /i "%~1"=="--package"  ( set "DO_PACKAGE=1"& shift& goto argloop )
 if /i "%~1"=="-p"         ( set "DO_PACKAGE=1"& shift& goto argloop )
 if /i "%~1"=="--check"    ( set "DO_CHECK=1"& shift& goto argloop )
@@ -29,6 +33,33 @@ if /i "%~1"=="--proxy"    ( set "CUSTOM_PROXY=%~2"& shift& shift& goto argloop )
 shift
 goto argloop
 :argdone
+
+if not %DO_RELEASE%==1 goto :skip_release
+if "%NEW_REL_VER%"=="" (
+    echo [!] Ошибка: укажите версию для релиза, например: build.cmd --release 1.1.4
+    exit /b 1
+)
+echo ================================================================
+echo   Автоматический релиз Open Antigravity v%NEW_REL_VER%
+echo ================================================================
+echo %NEW_REL_VER%> "%~dp0VERSION"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$v = '%NEW_REL_VER%'.Trim(); $c = Get-Content '%~dp0Cargo.toml'; ($c -replace '(?m)^version = \"[^\"]+\"', ('version = \"' + $v + '\"')) | Set-Content '%~dp0Cargo.toml'"
+echo [*] Проверка кода и тесты перед релизом...
+cargo check
+if errorlevel 1 goto :err
+cargo test --bin open_antigravity
+if errorlevel 1 goto :err
+echo [*] Фиксация изменений в git и создание тега...
+git add "%~dp0VERSION" "%~dp0Cargo.toml" "%~dp0Cargo.lock"
+git commit -m "chore(release): bump version to v%NEW_REL_VER%"
+git tag "v%NEW_REL_VER%"
+echo [*] Отправка в GitHub (запуск CI/CD релиза)...
+git push origin main
+git push origin "v%NEW_REL_VER%"
+echo.
+echo [*] Релиз v%NEW_REL_VER% успешно запущен в GitHub Actions!
+exit /b 0
+:skip_release
 
 if %DO_CLEAN%==1 (
     echo [*] Очистка артефактов сборки...
