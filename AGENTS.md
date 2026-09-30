@@ -74,6 +74,8 @@ gui/               — eframe: mod.rs (App, каналы, фоновый пин�
 tui/               — ratatui/crossterm терминальный интерфейс
 canary.rs          — маркировка происхождения и токен релиза
 build.rs           — чтение VERSION, вшивание AG_BUILTIN_PROXY (XOR), AG_FULL_VERSION
+build.cmd          — единый сборщик и упаковщик под Windows (build, --package, --check)
+build.sh           — единый сборщик и упаковщик под Linux (glibc/musl, --package, --check)
 build_portable.sh  — сборщик Linux-дистрибутива (glibc/musl)
 build_appimage.sh  — упаковщик Linux AppImage
 package_release.sh — сборщик релизных архивов
@@ -114,9 +116,9 @@ podman run --rm -v "$PWD":/src -v cargo-cache:/usr/local/cargo/registry -w /src 
 
 | Что | Как |
 |---|---|
-| Windows exe | `cargo build --release` или `build_portable.cmd` |
-| Linux статика (TUI-only, любые glibc) | `bash build_portable.sh` (musl по умолчанию) |
-| **Linux GUI & AppImage (Steam Deck и др.)** | `bash build_portable.sh` (glibc) + `bash build_appimage.sh` |
+| Windows exe & portable | `build.cmd` (или `build.cmd --package` для zip) |
+| Linux статика (TUI-only, любые glibc) | `bash build.sh --musl` (или `bash build.sh` для glibc) |
+| **Linux GUI & AppImage (Steam Deck и др.)** | `bash build.sh --package` + `bash build_appimage.sh` |
 | **Автосборка релизов (все платформы)** | `git tag vX.Y.Z && git push origin vX.Y.Z` (GitHub Actions) |
 
 Полные сценарии — в `BUILD_PORTABLE.md` (§8: WSL2, Docker на VPS, SteamOS,

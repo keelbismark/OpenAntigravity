@@ -9,12 +9,12 @@
 #  Использование:
 #    bash package_release.sh                          # сборка + упаковка
 #    bash package_release.sh --skip-build             # упаковка из dist_portable_linux
-#    bash package_release.sh --version 2.17.0.4       # задать версию вручную
+#    bash package_release.sh --version 1.1.2          # задать версию вручную
 #    bash package_release.sh --site https://example.com  # базовый URL для ссылок
 #
 #  Результат в release/:
-#    OpenAntigravity_linux_v2.17.0.3.tar.gz
-#    OpenAntigravity_linux_v2.17.0.3.tar.gz.sha256
+#    OpenAntigravity_linux_v1.1.2.tar.gz
+#    OpenAntigravity_linux_v1.1.2.tar.gz.sha256
 #    version.json                                     (если задан --site)
 # ================================================================
 set -euo pipefail

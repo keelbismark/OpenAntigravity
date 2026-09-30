@@ -189,6 +189,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Extract version
         id: ver
@@ -201,7 +203,7 @@ jobs:
           elif [ -f VERSION ]; then
             V="$(tr -d '\r\n' < VERSION)"
           else
-            V="1.1.0"
+            V="1.1.2"
           fi
           echo "VERSION=$V" >> "$GITHUB_OUTPUT"
 
@@ -236,11 +238,47 @@ jobs:
           cd dist_release
           sha256sum OpenAntigravity_windows_v*.zip OpenAntigravity_linux_v*.tar.gz OpenAntigravity*.AppImage > SHA256SUMS.txt 2>/dev/null || true
 
+          # Сбор списка изменений из Conventional Commits
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            COMMITS_RANGE="${PREV_TAG}..HEAD"
+          else
+            COMMITS_RANGE="HEAD~15..HEAD"
+          fi
+
+          FEATS=$(git log $COMMITS_RANGE --grep="^feat" --pretty=format:"- %s" 2>/dev/null || true)
+          FIXES=$(git log $COMMITS_RANGE --grep="^fix" --pretty=format:"- %s" 2>/dev/null || true)
+          OTHER=$(git log $COMMITS_RANGE --grep="^\(chore\|docs\|refactor\|perf\)" --pretty=format:"- %s" 2>/dev/null || true)
+
+          CHANGELOG=""
+          if [ -n "$FEATS" ]; then
+            CHANGELOG="${CHANGELOG}
+### 🚀 Новые возможности
+${FEATS}
+"
+          fi
+          if [ -n "$FIXES" ]; then
+            CHANGELOG="${CHANGELOG}
+### 🐛 Исправления ошибок
+${FIXES}
+"
+          fi
+          if [ -n "$OTHER" ]; then
+            CHANGELOG="${CHANGELOG}
+### 🔧 Улучшения и оптимизации
+${OTHER}
+"
+          fi
+
           {
             echo "## Open Antigravity v${VERSION}"
             echo ""
-            echo "Портативная модифицированная сборка для Antigravity 2.0 (Google IDE)."
+            echo "Портативная модифицированная сборка для Antigravity (Google IDE)."
             echo ""
+            if [ -n "$CHANGELOG" ]; then
+              echo "$CHANGELOG"
+              echo ""
+            fi
             echo "### 📦 Скачать сборку"
             echo "- 🐧 **Linux (AppImage, рекомендуется для Steam Deck / Ubuntu / Fedora):** [OpenAntigravity-x86_64.AppImage](${DL_URL}/OpenAntigravity-x86_64.AppImage)"
             echo "- 🐧 **Linux (архив .tar.gz):** [OpenAntigravity_linux_v${VERSION}.tar.gz](${DL_URL}/OpenAntigravity_linux_v${VERSION}.tar.gz)"
