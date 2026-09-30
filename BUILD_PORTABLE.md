@@ -300,11 +300,11 @@ Desktop Mode.
 
 ```json
 {
-  "version": "1.1.2",
+  "version": "1.1.3",
   "notes": "кратко: что нового",
   "page": "https://ваш-сайт/",
-  "url_windows": "https://ваш-сайт/OpenAntigravity_windows_v1.1.2.zip",
-  "url_linux": "https://ваш-сайт/OpenAntigravity_linux_v1.1.2.tar.gz"
+  "url_windows": "https://ваш-сайт/OpenAntigravity_windows_v1.1.3.zip",
+  "url_linux": "https://ваш-сайт/OpenAntigravity_linux_v1.1.3.tar.gz"
 }
 ```
 
@@ -380,8 +380,8 @@ build.cmd --check
 
 ```
 release/
-├── OpenAntigravity_linux_v1.1.2.tar.gz       (или .zip на Windows)
-├── OpenAntigravity_linux_v1.1.2.tar.gz.sha256
+├── OpenAntigravity_linux_v1.1.3.tar.gz       (или .zip на Windows)
+├── OpenAntigravity_linux_v1.1.3.tar.gz.sha256
 ├── OpenAntigravity-x86_64.AppImage          (для Linux / Steam Deck)
 └── version.json                             (информация о релизе)
 ```
