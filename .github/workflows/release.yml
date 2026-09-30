@@ -153,17 +153,17 @@ jobs:
           Copy-Item "target\release\open_antigravity.exe" "$distDir\OpenAntigravity.exe" -Force
 
           $readme = @"
-Portable Open Antigravity v$env:VERSION
-========================================
+          Portable Open Antigravity v$env:VERSION
+          ========================================
 
-Запуск:
-  OpenAntigravity.exe
+          Запуск:
+            OpenAntigravity.exe
 
-- Программа полностью портативна: настройки и кэш живут в папке "data" рядом с exe.
-- Удаление папки "data" = полный сброс. В систему ничего не ставится.
-- Встроенный прокси уже активен.
-- Диагностика, создание ярлыка и управление доступны прямо в окне программы.
-"@
+          - Программа полностью портативна: настройки и кэш живут в папке "data" рядом с exe.
+          - Удаление папки "data" = полный сброс. В систему ничего не ставится.
+          - Встроенный прокси уже активен.
+          - Диагностика, создание ярлыка и управление доступны прямо в окне программы.
+          "@
           Set-Content -Path "$distDir\README.txt" -Value $readme -Encoding UTF8
 
           $zipPath = "release\OpenAntigravity_windows_v$env:VERSION.zip"
