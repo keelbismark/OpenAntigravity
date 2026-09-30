@@ -28,10 +28,15 @@ cargo --version
 
 ## 2. Впишите свой прокси
 
-Откройте `build_portable.cmd` блокнотом и поправьте одну строку:
+Задайте прокси параметром `--proxy` или через переменную окружения:
 
 ```bat
+build.cmd --proxy "aguser:ПАРОЛЬ@IP_ВАШЕГО_VPS:48123"
+```
+или:
+```bat
 set "AG_BUILTIN_PROXY=aguser:ПАРОЛЬ@IP_ВАШЕГО_VPS:48123"
+build.cmd
 ```
 
 Формат строго такой: `логин:пароль@хост:порт` — обычный HTTP-прокси с CONNECT
@@ -44,7 +49,7 @@ set "AG_BUILTIN_PROXY=aguser:ПАРОЛЬ@IP_ВАШЕГО_VPS:48123"
 
 ## 3. Соберите
 
-Запустите `build_portable.cmd` (двойной клик или из терминала из корня папки с исходниками). Скрипт:
+Запустите `build.cmd` (двойной клик или из терминала из корня папки с исходниками). Скрипт:
 
 1. вызывает `cargo build --release` с нужными переменными;
 2. складывает результат в `dist_portable\`:
@@ -339,12 +344,12 @@ Desktop Mode.
 
 ## 11. Упаковка релиза
 
-Скрипты `package_release.sh` (Linux) и `package_release.cmd` (Windows)
+Скрипты `build.sh` (Linux) и `build.cmd` (Windows)
 автоматизируют полный цикл выпуска новой версии.
 
 ### 11.1 Что делают
 
-1. Вызывают `build_portable.sh` / `build_portable.cmd` (сборка + dist).
+1. Собирают релизный бинарник и формируют портативный дистрибутив.
 2. Упаковывают `dist_portable_linux/` в `OpenAntigravity_linux_v{VER}.tar.gz`
    (или `dist_portable\` в `.zip` на Windows) с версионным именем папки
    внутри архива.
