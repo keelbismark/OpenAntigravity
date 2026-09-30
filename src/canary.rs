@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn token_shape_is_stable() {
-        let t = token_for("2.5.0");
+        let t = token_for("1.1.2");
         assert_eq!(t.len(), 21);
         assert!(t.starts_with("OAG-"));
         assert!(t
