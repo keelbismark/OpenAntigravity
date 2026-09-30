@@ -561,7 +561,7 @@ impl eframe::App for App {
         // window wherever the screen is shorter than it is.
         const MARGIN_X: f32 = 16.0;
         const MARGIN_TOP: f32 = 14.0;
-        const MARGIN_BOTTOM: f32 = 12.0;
+        const MARGIN_BOTTOM: f32 = 18.0;
         let avail = ui.available_size();
         let frame = egui::Frame::central_panel(&ui.style().clone()).inner_margin(egui::Margin {
             left: MARGIN_X as i8,
