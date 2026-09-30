@@ -533,7 +533,15 @@ pub fn relaunch_elevated_with(params: &str) -> bool {
         return false;
     };
     let op = wide("runas");
-    let params_w = wide(params);
+    let current_pid = std::process::id();
+    let effective_params = if params.is_empty() {
+        format!("--wait-pid {}", current_pid)
+    } else if !params.contains("--wait-pid") {
+        format!("{} --wait-pid {}", params, current_pid)
+    } else {
+        params.to_string()
+    };
+    let params_w = wide(&effective_params);
     let file = wide(&exe.to_string_lossy());
     let dir = exe
         .parent()
@@ -548,11 +556,7 @@ pub fn relaunch_elevated_with(params: &str) -> bool {
             std::ptr::null_mut(),
             op.as_ptr(),
             file.as_ptr(),
-            if params.is_empty() {
-                std::ptr::null()
-            } else {
-                params_w.as_ptr()
-            },
+            params_w.as_ptr(),
             dir.as_ptr(),
             SW_SHOWNORMAL,
         )

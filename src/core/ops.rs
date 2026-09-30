@@ -872,6 +872,11 @@ impl Status {
                 None => "ни один сервер не включён".to_string(),
             })
         };
+        self.own_proxy = if s.own_proxy_enabled && upstream::configured().is_some() {
+            State::On
+        } else {
+            State::Off
+        };
         self.providers = crate::resolvers::ordered_provider_names()
             .iter()
             .map(|n| ProviderRow {
@@ -908,7 +913,7 @@ fn read_status(ctx: &mut Ctx, deep: bool) -> Status {
             let watchdog = scope.spawn(move || read_watchdog(admin));
             let dns_probe = scope.spawn(probe_dns);
             let local_proxy = scope.spawn(move || read_local_proxy(settings));
-            let own_proxy = scope.spawn(read_own_proxy);
+            let own_proxy = scope.spawn(move || read_own_proxy(settings));
             let own_proxy_text = scope.spawn(move || {
                 upstream::configured_display()
                     .unwrap_or_else(|| settings.own_proxy.clone())
@@ -1130,8 +1135,8 @@ fn local_proxy_state(wanted: bool, ours: bool) -> State {
     }
 }
 
-fn read_own_proxy() -> State {
-    if upstream::configured().is_some() {
+fn read_own_proxy(settings: &Settings) -> State {
+    if settings.own_proxy_enabled && upstream::configured().is_some() {
         State::On
     } else {
         State::Off

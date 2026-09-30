@@ -46,20 +46,37 @@ fn install_font(ctx: &egui::Context) {
     #[cfg(target_os = "windows")]
     {
         let dir = std::env::var("WINDIR").unwrap_or_else(|_| "C:\\Windows".to_string());
+        let fonts_dir = std::path::Path::new(&dir).join("Fonts");
         let candidates = ["seguisb.ttf", "segoeui.ttf"];
         for f in candidates {
-            let path = std::path::Path::new(&dir).join("Fonts").join(f);
+            let path = fonts_dir.join(f);
             if let Ok(bytes) = std::fs::read(&path) {
                 let mut fonts = egui::FontDefinitions::default();
                 fonts.font_data.insert(
                     f.to_string(),
                     std::sync::Arc::new(egui::FontData::from_owned(bytes)),
                 );
-                fonts
+
+                // Segoe UI is purely alphanumeric/Cyrillic without checkmarks or symbols.
+                // Load Segoe UI Symbol as fallback for ✓ (U+2713), ✗ (U+2717), etc.
+                let sym_file = "seguisym.ttf";
+                let sym_path = fonts_dir.join(sym_file);
+                if let Ok(sym_bytes) = std::fs::read(&sym_path) {
+                    fonts.font_data.insert(
+                        sym_file.to_string(),
+                        std::sync::Arc::new(egui::FontData::from_owned(sym_bytes)),
+                    );
+                }
+
+                let prop = fonts
                     .families
                     .entry(egui::FontFamily::Proportional)
-                    .or_default()
-                    .insert(0, f.to_string());
+                    .or_default();
+
+                if fonts.font_data.contains_key(sym_file) {
+                    prop.insert(0, sym_file.to_string());
+                }
+                prop.insert(0, f.to_string());
                 ctx.set_fonts(fonts);
                 return;
             }

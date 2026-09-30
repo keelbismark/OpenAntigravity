@@ -421,6 +421,11 @@ pub fn builtin_exits_enabled() -> bool {
     cached().builtin_exits
 }
 
+/// Whether the user-configured upstream proxy is enabled.
+pub fn own_proxy_enabled() -> bool {
+    cached().own_proxy_enabled
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

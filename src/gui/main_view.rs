@@ -138,7 +138,7 @@ fn hero_status_card(app: &mut App, ui: &mut egui::Ui) {
         )
     };
 
-    let accent = match h.tone {
+    let _accent = match h.tone {
         Tone::Ok => theme::OK,
         Tone::Wait => theme::ACCENT,
         Tone::Fixing => theme::WARN,
@@ -168,10 +168,10 @@ fn hero_status_card(app: &mut App, ui: &mut egui::Ui) {
 
             // Top row: Emblem + Title & Detail
             ui.horizontal(|ui| {
-                let (emblem_bg, emblem_text, emblem_color) = if is_active {
-                    (egui::Color32::from_rgba_unmultiplied(34, 197, 94, 25), "✓", theme::OK)
+                let (emblem_bg, emblem_color) = if is_active {
+                    (egui::Color32::from_rgba_unmultiplied(34, 197, 94, 25), theme::OK)
                 } else {
-                    (theme::SUNKEN, "○", theme::MUTED)
+                    (theme::SUNKEN, theme::MUTED)
                 };
 
                 let emblem_size = egui::vec2(34.0, 34.0);
@@ -184,13 +184,19 @@ fn hero_status_card(app: &mut App, ui: &mut egui::Ui) {
                     Stroke::new(1.0, emblem_color.gamma_multiply(0.4)),
                     egui::StrokeKind::Inside,
                 );
-                painter.text(
-                    emblem_rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    emblem_text,
-                    egui::FontId::proportional(15.0),
-                    emblem_color,
-                );
+                let c = emblem_rect.center();
+                if is_active {
+                    painter.line_segment(
+                        [c + egui::vec2(-4.5, 0.5), c + egui::vec2(-1.0, 3.5)],
+                        Stroke::new(2.2, emblem_color),
+                    );
+                    painter.line_segment(
+                        [c + egui::vec2(-1.0, 3.5), c + egui::vec2(5.0, -3.5)],
+                        Stroke::new(2.2, emblem_color),
+                    );
+                } else {
+                    painter.circle_stroke(c, 4.5, Stroke::new(1.8, emblem_color));
+                }
 
                 ui.add_space(8.0);
 
@@ -626,6 +632,9 @@ fn proxy_section(app: &mut App, ui: &mut egui::Ui) {
                     .color(theme::MUTED),
             );
         }) {
+            if let Some(st) = &mut app.status {
+                st.own_proxy = if own_proxy { crate::core::ops::State::On } else { crate::core::ops::State::Off };
+            }
             app.worker.send(Cmd::Set(Cap::OwnProxy, own_proxy));
         }
     });
@@ -725,6 +734,9 @@ fn components_section(app: &mut App, ui: &mut egui::Ui) {
                     .color(theme::MUTED),
             );
         }) {
+            if let Some(st) = &mut app.status {
+                st.watchdog = if watchdog { crate::core::ops::State::On } else { crate::core::ops::State::Off };
+            }
             app.worker.send(Cmd::Set(Cap::Watchdog, watchdog));
         }
     });

@@ -3,7 +3,8 @@
 //! Prevents port collisions (41400), settings race conditions, and
 //! redundant background tasks.
 
-use std::path::{Path, PathBuf};
+#[cfg(not(target_os = "windows"))]
+use std::path::PathBuf;
 
 pub struct InstanceLock {
     #[cfg(target_os = "windows")]
@@ -39,6 +40,30 @@ impl Drop for InstanceLock {
 }
 
 #[cfg(target_os = "windows")]
+pub fn wait_for_process_exit(pid: u32) {
+    extern "system" {
+        fn OpenProcess(dwDesiredAccess: u32, bInheritHandle: i32, dwProcessId: u32) -> *mut std::ffi::c_void;
+        fn WaitForSingleObject(hHandle: *mut std::ffi::c_void, dwMilliseconds: u32) -> u32;
+        fn CloseHandle(hObject: *mut std::ffi::c_void) -> i32;
+    }
+    const SYNCHRONIZE: u32 = 0x0010_0000;
+    unsafe {
+        let handle = OpenProcess(SYNCHRONIZE, 0, pid);
+        if !handle.is_null() {
+            WaitForSingleObject(handle, 5000);
+            CloseHandle(handle);
+        }
+    }
+    // Give OS handle table a brief moment to finish teardown
+    std::thread::sleep(std::time::Duration::from_millis(50));
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn wait_for_process_exit(_pid: u32) {
+    std::thread::sleep(std::time::Duration::from_millis(50));
+}
+
+#[cfg(target_os = "windows")]
 pub fn try_acquire_named(name: &str) -> Result<InstanceLock, String> {
     extern "system" {
         fn CreateMutexW(
@@ -55,21 +80,38 @@ pub fn try_acquire_named(name: &str) -> Result<InstanceLock, String> {
     let mut wide: Vec<u16> = name.encode_utf16().collect();
     wide.push(0);
 
-    let handle = unsafe { CreateMutexW(std::ptr::null_mut(), 1, wide.as_ptr()) };
-    if handle.is_null() {
-        let err = unsafe { GetLastError() };
-        if err == ERROR_ACCESS_DENIED {
-            return Err("Другой экземпляр приложения уже запущен в системе.".to_string());
+    // If an instance is currently terminating (e.g. elevation restart),
+    // retry briefly before concluding it is a duplicate instance.
+    let is_relaunch = std::env::args().any(|a| a == "--wait-pid");
+    let max_attempts = if is_relaunch { 20 } else { 1 };
+
+    for attempt in 0..max_attempts {
+        let handle = unsafe { CreateMutexW(std::ptr::null_mut(), 1, wide.as_ptr()) };
+        if handle.is_null() {
+            let err = unsafe { GetLastError() };
+            if err == ERROR_ACCESS_DENIED {
+                if attempt + 1 < max_attempts {
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                    continue;
+                }
+                return Err("Другой экземпляр приложения уже запущен в системе.".to_string());
+            }
+            return Err(format!("Не удалось инициализировать мьютекс процесса (ошибка {})", err));
         }
-        return Err(format!("Не удалось инициализировать мьютекс процесса (ошибка {})", err));
+
+        if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
+            unsafe { CloseHandle(handle) };
+            if attempt + 1 < max_attempts {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                continue;
+            }
+            return Err("Приложение уже запущено (в фоновом режиме или в трее).".to_string());
+        }
+
+        return Ok(InstanceLock { handle });
     }
 
-    if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
-        unsafe { CloseHandle(handle) };
-        return Err("Приложение уже запущено (в фоновом режиме или в трее).".to_string());
-    }
-
-    Ok(InstanceLock { handle })
+    Err("Приложение уже запущено (в фоновом режиме или в трее).".to_string())
 }
 
 #[cfg(not(target_os = "windows"))]
