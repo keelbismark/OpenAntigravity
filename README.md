@@ -32,8 +32,7 @@ Open Antigravity — легковесная портативная утилит�
 * **Резервирование прокси (Failover)** — поддержка цепочки прокси через точку с запятой (`основной;резервный`) с автоматическим переключением при сбоях.
 * **Автоконтроль при обновлениях (Watchdog)** — защита от сброса настроек при автоматических обновлениях Antigravity.
 * **GUI и TUI в одном бинарнике** — строгий тёмный графический интерфейс и терминальный режим для работы по SSH.
-* **Полная портативность** — работа без установки и системных служб. Все настройки и профили изолированы в папке `data/`.
-* **Поддержка Steam Deck (SteamOS)** — работа в Game Mode и Desktop Mode, готовый AppImage и интеграция в библиотеку Steam в один клик.
+* **Поддержка Steam Deck (SteamOS)** — работа в Game Mode и Desktop Mode, готовый компактный AppImage.
 
 ---
 
@@ -45,9 +44,9 @@ Open Antigravity — легковесная портативная утилит�
 
 | Платформа | Формат | Запуск |
 |---|---|---|
-| **Windows 10 / 11** | [OpenAntigravity_windows_v1.1.0.zip](https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity_windows_v1.1.0.zip) | Распаковать и запустить `OpenAntigravity.exe` |
+| **Windows 10 / 11** | [OpenAntigravity_windows_v1.1.1.zip](https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity_windows_v1.1.1.zip) | Распаковать и запустить `OpenAntigravity.exe` |
 | **Linux (Steam Deck / Ubuntu / Fedora)** | [OpenAntigravity-x86_64.AppImage](https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity-x86_64.AppImage) | `chmod +x OpenAntigravity-x86_64.AppImage && ./OpenAntigravity-x86_64.AppImage` |
-| **Linux Portable** | [OpenAntigravity_linux_v1.1.0.tar.gz](https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity_linux_v1.1.0.tar.gz) | Распаковать и запустить `./launch.sh` |
+| **Linux Portable** | [OpenAntigravity_linux_v1.1.1.tar.gz](https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity_linux_v1.1.1.tar.gz) | Распаковать и запустить `./launch.sh` |
 
 ### Терминальный режим (TUI) в одну строку
 
@@ -99,7 +98,6 @@ irm https://raw.githubusercontent.com/keelbismark/OpenAntigravity/main/tui.ps1 |
 * `--check`, `--diagnose` — комплексная сетевая и системная диагностика (self-test).
 * `--tui`, `--cli` — принудительный запуск в текстовом интерфейсе (TUI).
 * `--shortcut` — создание ярлыков на Рабочем столе и в главном меню приложений.
-* `--steam` — добавление Open Antigravity в библиотеку Steam (для Linux/Steam Deck).
 * `--about`, `--version` — информация о сборке и лицензии.
 
 ---

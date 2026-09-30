@@ -151,32 +151,19 @@ jobs:
           New-Item -ItemType Directory -Force -Path "release" | Out-Null
 
           Copy-Item "target\release\open_antigravity.exe" "$distDir\OpenAntigravity.exe" -Force
-          New-Item -ItemType File -Force -Path "$distDir\portable.flag" | Out-Null
-
-          if (Test-Path "assets\icon.png") { Copy-Item "assets\icon.png" "$distDir\icon.png" -Force }
-          if (Test-Path "icon.ico") { Copy-Item "icon.ico" "$distDir\icon.ico" -Force }
-
-          Set-Content -Path "$distDir\Start Open Antigravity.bat" -Value '@start "" "%~dp0OpenAntigravity.exe"' -Encoding ASCII
-          Set-Content -Path "$distDir\Create Desktop Shortcut.bat" -Value "@echo off`necho Создание ярлыка на Рабочем столе...`n`"%~dp0OpenAntigravity.exe`" --shortcut`npause" -Encoding OEM
-          Set-Content -Path "$distDir\Check Diagnostics.bat" -Value "@echo off`n`"%~dp0OpenAntigravity.exe`" --check`npause" -Encoding OEM
-          Set-Content -Path "$distDir\Add to Steam.bat" -Value "@echo off`necho Добавление Open Antigravity в библиотеку Steam...`n`"%~dp0OpenAntigravity.exe`" --steam`npause" -Encoding OEM
 
           $readme = @"
-          Portable Open Antigravity build v$env:VERSION
+Portable Open Antigravity v$env:VERSION
+========================================
 
-          - Запуск:
-            OpenAntigravity.exe          (напрямую или через Start Open Antigravity.bat)
-            Check Diagnostics.bat        (проверка сети, прокси и компонентов)
+Запуск:
+  OpenAntigravity.exe
 
-          - Ярлыки:
-            Create Desktop Shortcut.bat  (ярлык на Рабочем столе)
-            Add to Steam.bat             (добавление в библиотеку Steam)
-
-          - Скопируйте папку ЦЕЛИКОМ куда угодно (диск C, D, флешка).
-            Все данные лежат в папке "data" рядом с exe.
-            Удалить "data" = полный сброс. В систему ничего не ставится.
-          - Прокси вшит в сборку и работает сразу после запуска.
-          "@
+- Программа полностью портативна: настройки и кэш живут в папке "data" рядом с exe.
+- Удаление папки "data" = полный сброс. В систему ничего не ставится.
+- Встроенный прокси уже активен.
+- Диагностика, создание ярлыка и управление доступны прямо в окне программы.
+"@
           Set-Content -Path "$distDir\README.txt" -Value $readme -Encoding UTF8
 
           $zipPath = "release\OpenAntigravity_windows_v$env:VERSION.zip"
@@ -261,7 +248,7 @@ jobs:
             echo "- **Избирательное проксирование:** через прокси идут только вызовы моделей Google, остальной трафик системы и IDE не затрагивается."
             echo "- **Свой прокси:** поддержка формата \`логин:пароль@хост:порт\` или цепочки резервирования \`основной;резервный\`."
             echo "- **Полная портативность:** все настройки хранятся в каталоге \`data/\` рядом с приложением."
-            echo "- **Поддержка Steam Deck:** готовый AppImage с интеграцией иконки и добавлением ярлыка в библиотеку Steam в 1 клик."
+            echo "- **Поддержка Steam Deck:** готовый AppImage и портативная сборка со встроенной иконкой и адаптивным интерфейсом."
             echo "- **Двойной интерфейс:** современный графический интерфейс (GUI) + терминальный текстовый режим (TUI)."
             echo ""
             echo "### 🔒 Контрольные суммы (SHA256)"

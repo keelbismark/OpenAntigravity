@@ -677,10 +677,9 @@ fn print_help() {
            --tui, --cli               Запустить интерактивный текстовый интерфейс (TUI)\n\
            --check, --diagnose        Комплексная сетевая и системная диагностика (self-test)\n\
            --shortcut                 Создать ярлыки на Рабочем столе и в главном меню\n\
-           --steam                    Добавить Open Antigravity в библиотеку Steam\n\
            --about, --license         Показать лицензионное соглашение и правовую информацию\n\
-         \n\
-         По умолчанию открывается графический интерфейс (GUI), либо TUI, если дисплей недоступен.",
+          \n\
+          По умолчанию открывается графический интерфейс (GUI), либо TUI, если дисплей недоступен.",
         crate::update::current_version()
     );
 }
@@ -703,8 +702,6 @@ fn main() {
                 | "diag"
                 | "shortcut"
                 | "create-shortcut"
-                | "steam"
-                | "add-to-steam"
         )
     }) {
         utils::attach_parent_console();
@@ -738,19 +735,6 @@ fn main() {
         )
     }) {
         match shortcut::create_shortcuts() {
-            Ok(msg) => println!("{}", msg),
-            Err(err) => eprintln!("Ошибка: {}", err),
-        }
-        return;
-    }
-
-    if env::args().skip(1).any(|a| {
-        matches!(
-            a.trim_start_matches('-').to_ascii_lowercase().as_str(),
-            "steam" | "add-to-steam"
-        )
-    }) {
-        match shortcut::add_to_steam() {
             Ok(msg) => println!("{}", msg),
             Err(err) => eprintln!("Ошибка: {}", err),
         }

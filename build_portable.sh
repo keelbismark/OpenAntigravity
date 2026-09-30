@@ -91,7 +91,6 @@ fi
 OUTDIR="$PWD/dist_portable_linux"
 mkdir -p "$OUTDIR"
 cp -f "$BIN" "$OUTDIR/open_antigravity"
-cp -f "assets/icon.png" "$OUTDIR/icon.png" 2>/dev/null || true
 
 # Launcher: handles noexec media (copies the binary into the home dir)
 # and falls back to the terminal UI when there is no graphical session.
@@ -151,7 +150,7 @@ cat > "$OUTDIR/README.txt" <<'EOF'
 - Все настройки и кэш хранятся в папке "data" рядом с программой.
 - Прокси уже встроен в сборку.
 - Полный сброс: удаление папки "data".
-- Диагностика (--check), ярлыки на рабочий стол (--shortcut) и в Steam (--steam)
+- Диагностика (--check) и ярлык на рабочий стол (--shortcut)
   доступны прямо кнопками в GUI или через флаги запуска.
 - Запуск с карты памяти / флешки: launch.sh автоматически обработает
   монтирование с noexec.
