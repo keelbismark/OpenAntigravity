@@ -1,7 +1,99 @@
 {
-  "version": "1.1.3",
-  "notes": "Open Antigravity v1.1.3",
-  "page": "https://github.com/keelbismark/OpenAntigravity/releases/tag/v1.1.3",
-  "url_windows": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.1.3/OpenAntigravity_windows_v1.1.3.zip",
-  "url_linux": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.1.3/OpenAntigravity_linux_v1.1.3.tar.gz"
+  "version": "1.1.4",
+  "notes": "Open Antigravity v1.1.4",
+  "page": "https://github.com/keelbismark/OpenAntigravity/releases/tag/v1.1.4",
+  "url_windows": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.1.4/OpenAntigravity_windows_v1.1.4.zip",
+  "url_linux": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.1.4/OpenAntigravity_linux_v1.1.4.tar.gz",
+  "url_appimage": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.1.4/OpenAntigravity-x86_64.AppImage"
 }
+cd dist_release
+# Создаем стабильные ссылки без номера версии в имени файла для постоянных ссылок
+[ -f "OpenAntigravity_windows_v1.1.4.zip" ] && cp "OpenAntigravity_windows_v1.1.4.zip" "OpenAntigravity-windows-portable.zip"
+[ -f "OpenAntigravity_linux_v1.1.4.tar.gz" ] && cp "OpenAntigravity_linux_v1.1.4.tar.gz" "OpenAntigravity-linux-portable.tar.gz"
+
+sha256sum OpenAntigravity*.zip OpenAntigravity*.tar.gz OpenAntigravity*.AppImage > SHA256SUMS.txt 2>/dev/null || true
+
+# Сбор списка изменений из Conventional Commits
+PREV_TAG=v1.1.3
+if [ -n "" ]; then
+  COMMITS_RANGE="..HEAD"
+else
+  COMMITS_RANGE="HEAD~15..HEAD"
+fi
+
+FEATS=- feat(release): add safety guards and robust version bump script
+- feat: add one-click auto-update, minimize to tray, release automation and refine status texts
+- feat(build): modernize and unify build scripts, add CI workflow and changelog generator
+- feat(update): bake in default GitHub Pages update feed URL (v1.1.2)
+- feat: centralize version management in root VERSION file (SSOT)
+- feat(site): auto-detect and sync latest release directly via GitHub Releases API
+- feat(site): dynamic latest release link synchronization from version.json
+- feat: live proxy ping, proxy profile presets, and environment doctor card
+- feat(ui): round app icon corners to match system squircle style
+- feat: initial release of Open Antigravity v1.0.0
+FIXES=- fix(build): enforce single source of truth for version and auto-sync Cargo.toml
+- fix(gui): strip verbatim path prefix, add unified vector icons and enhance active switch contrast
+- fix(ci): respect linux sandbox loopback race condition in test step
+- fix(ci): fix yaml indentation in release changelog step
+- fix(platform): restore Path import for non-windows target (v1.1.2)
+- fix(gui): lift footer toolbar away from bottom window border (v1.1.2)
+- fix: single-instance elevation race, fallback symbol fonts, and proxy switch state (v1.1.2)
+- fix(ci): fix yaml indentation in release.yml workflow
+- fix: remove Steam integration and minimize portable release files to essentials (v1.1.1)
+OTHER=- chore(release): bump version to v1.1.4
+- chore(build): refine release version writing in build.cmd
+- docs & ci: add permanent latest asset links and document --release workflow
+- chore: eliminate all compiler warnings across modules
+- chore(release): bump version to v1.1.3
+- chore(build): remove legacy build_portable.cmd and package_release.cmd
+- chore: align Cargo package version with release version v1.1.2 and automate sync
+- chore(release): bump version to v1.1.2
+- chore(release): bump version to v1.1.1
+- docs: track and update AGENTS.md with SSOT versioning and modern build architecture
+- chore: update default version references to v1.1.0 across scripts and templates
+- docs: update README.md for v1.1.0 with feature details, proxy profiles, doctor card, and download table
+- chore: release v1.1.0 updates for docs website and workflow sync fix
+
+CHANGELOG=""
+if [ -n "" ]; then
+  CHANGELOG=
+
+### 🚀 Новые возможности
+fi
+if [ -n "" ]; then
+  CHANGELOG=
+
+### 🐛 Исправления ошибок
+fi
+if [ -n "" ]; then
+  CHANGELOG=
+
+### 🔧 Улучшения и оптимизации
+fi
+
+{
+  echo "## Open Antigravity v1.1.4"
+  echo ""
+  echo "Портативная модифицированная сборка для Antigravity (Google IDE)."
+  echo ""
+  if [ -n "" ]; then
+    echo ""
+    echo ""
+  fi
+  echo "### 📦 Скачать сборку"
+  echo "- 🐧 **Linux (AppImage, рекомендуется для Steam Deck / Ubuntu / Fedora):** [OpenAntigravity-x86_64.AppImage](https://github.com/keelbismark/OpenAntigravity/releases/download/v1.1.4/OpenAntigravity-x86_64.AppImage)"
+  echo "- 🐧 **Linux (архив .tar.gz):** [OpenAntigravity_linux_v1.1.4.tar.gz](https://github.com/keelbismark/OpenAntigravity/releases/download/v1.1.4/OpenAntigravity_linux_v1.1.4.tar.gz)"
+  echo "- 🪟 **Windows (архив .zip):** [OpenAntigravity_windows_v1.1.4.zip](https://github.com/keelbismark/OpenAntigravity/releases/download/v1.1.4/OpenAntigravity_windows_v1.1.4.zip)"
+  echo ""
+  echo "### 🚀 Особенности"
+  echo "- **Избирательное проксирование:** через прокси идут только вызовы моделей Google, остальной трафик системы и IDE не затрагивается."
+  echo "- **Свой прокси:** поддержка формата `логин:пароль@хост:порт` или цепочки резервирования `основной;резервный`."
+  echo "- **Полная портативность:** все настройки хранятся в каталоге `data/` рядом с приложением."
+  echo "- **Поддержка Steam Deck:** готовый AppImage и портативная сборка со встроенной иконкой и адаптивным интерфейсом."
+  echo "- **Двойной интерфейс:** современный графический интерфейс (GUI) + терминальный текстовый режим (TUI)."
+  echo ""
+  echo "### 🔒 Контрольные суммы (SHA256)"
+  echo "```"
+  cat SHA256SUMS.txt
+  echo "```"
+} > RELEASE_NOTES.md
