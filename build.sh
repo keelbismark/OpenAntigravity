@@ -34,23 +34,31 @@ if [ "$DO_RELEASE" -eq 1 ]; then
         echo "[!] Ошибка: укажите версию для релиза, например: bash build.sh --release 1.1.4" >&2
         exit 1
     fi
+    if [ ! -d "$SCRIPT_DIR/.git" ]; then
+        echo "[!] Ошибка: --release доступен только при сборке из git-репозитория." >&2
+        exit 1
+    fi
+    if ! git diff-index --quiet HEAD --; then
+        echo "[!] Ошибка: в репозитории есть незакоммиченные изменения. Сначала закоммитьте их или очистите working tree." >&2
+        exit 1
+    fi
     echo "================================================================"
     echo "  Автоматический релиз Open Antigravity v${NEW_REL_VER}"
     echo "================================================================"
-    echo "$NEW_REL_VER" > "$SCRIPT_DIR/VERSION"
+    printf "%s\n" "$NEW_REL_VER" > "$SCRIPT_DIR/VERSION"
     if [ -f "$SCRIPT_DIR/Cargo.toml" ]; then
         sed -i -E 's/^version = "[0-9]+\.[0-9]+\.[0-9]+"/version = "'"$NEW_REL_VER"'"/' "$SCRIPT_DIR/Cargo.toml"
     fi
     echo "[*] Проверка кода и тесты перед релизом..."
-    cargo check
-    cargo test --bin open_antigravity
+    cargo check || exit 1
+    cargo test --bin open_antigravity || exit 1
     echo "[*] Фиксация изменений в git и создание тега..."
     git add "$SCRIPT_DIR/VERSION" "$SCRIPT_DIR/Cargo.toml" "$SCRIPT_DIR/Cargo.lock"
-    git commit -m "chore(release): bump version to v${NEW_REL_VER}"
-    git tag "v${NEW_REL_VER}"
+    git commit -m "chore(release): bump version to v${NEW_REL_VER}" || exit 1
+    git tag "v${NEW_REL_VER}" || exit 1
     echo "[*] Отправка в GitHub (запуск CI/CD релиза)..."
-    git push origin main
-    git push origin "v${NEW_REL_VER}"
+    git push origin main || { echo "[!] Ошибка отправки ветки в origin. Убедитесь, что у вас есть права на запись в репозиторий." >&2; exit 1; }
+    git push origin "v${NEW_REL_VER}" || { echo "[!] Ошибка отправки тега в origin. Убедитесь, что у вас есть права на запись в репозиторий." >&2; exit 1; }
     echo
     echo "[*] Релиз v${NEW_REL_VER} успешно запущен в GitHub Actions!"
     exit 0
