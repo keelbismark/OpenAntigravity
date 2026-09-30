@@ -300,7 +300,7 @@ impl App {
     /// not disappear after the key is accepted).
     fn update_banner(&self, ui: &mut egui::Ui) {
         let Some(rel) = &self.update else { return };
-        let label = format!("⬆  Доступна новая версия — {}", rel.display_version());
+        let label = format!("↑  Доступна новая версия — {}", rel.display_version());
         let btn = egui::Button::new(egui::RichText::new(label).color(egui::Color32::BLACK))
             .fill(theme::WARN)
             .corner_radius(egui::CornerRadius::same(theme::RADIUS_SMALL))
