@@ -295,11 +295,11 @@ Desktop Mode.
 
 ```json
 {
-  "version": "2.17.0.3",
+  "version": "1.1.2",
   "notes": "кратко: что нового",
   "page": "https://ваш-сайт/",
-  "url_windows": "https://ваш-сайт/OpenAntigravity_windows_v2.17.0.3.zip",
-  "url_linux": "https://ваш-сайт/OpenAntigravity_linux_v2.17.0.3.tar.gz"
+  "url_windows": "https://ваш-сайт/OpenAntigravity_windows_v1.1.2.zip",
+  "url_linux": "https://ваш-сайт/OpenAntigravity_linux_v1.1.2.tar.gz"
 }
 ```
 
@@ -307,14 +307,12 @@ Desktop Mode.
 
 ### 9.3 Как выпускать новую версию
 
-1. Соберите новый билд, подняв четвёртую цифру: `AG_FULL_VERSION=2.17.0.4`
-   (Cargo-версия остаётся 2.17.0).
-2. Выложите архив на сайт рядом с `version.json`.
-3. Поправьте `version.json`: `"version": "2.17.0.4"`, ссылки на новый архив,
-   строчку `notes`.
+1. Измените версию в файле `VERSION` (например `1.1.3`).
+2. Запустите сборку: `build.cmd --package` (Windows) или `bash build.sh --package` (Linux).
+3. При релизе через GitHub: создайте тег `git tag v1.1.3 && git push origin v1.1.3`.
+   GitHub Actions автоматически всё соберёт и опубликует.
 
-У пользователей старой сборки в течение суток (или сразу по кнопке
-«Проверить обновления» в футере GUI / клавише `u` в TUI) появится баннер.
+У пользователей старой сборки появится баннер со ссылкой на обновление.
 
 ### 9.4 Где кнопки
 
@@ -322,10 +320,6 @@ Desktop Mode.
   15 с; при найденной версии поднимается баннер сверху).
 - **TUI**: клавиша `u` (результат — строка-тост; найденная версия — в
   заголовке окна).
-
-Сравнение версий понимает и трёх-, и четырёхзначные номера (`2.17.0` <
-`2.17.0.3`), так что переход с сборки без `AG_FULL_VERSION` на «правильную»
-нумерацию тоже честно покажет обновление один раз.
 
 ## 10. Диагностика и ярлыки
 
@@ -360,35 +354,31 @@ Desktop Mode.
 ### 11.2 Использование (Linux)
 
 ```bash
-# Полный цикл: сборка + упаковка
-bash package_release.sh --site https://your-site.com
+# Полный цикл: сборка + упаковка (.tar.gz и AppImage)
+bash build.sh --package
 
-# Только упаковка (бинарник уже собран)
-bash package_release.sh --skip-build --version 2.17.0.4
-
-# С описанием релиза
-bash package_release.sh --version 2.17.0.4 \
-  --site https://your-site.com \
-  --notes "Добавлен тест сети и ярлыки"
+# Проверка и тесты
+bash build.sh --check
 ```
 
 ### 11.3 Использование (Windows)
 
 ```cmd
-rem Полный цикл
-package_release.cmd --site https://your-site.com
+rem Полный цикл: сборка + упаковка в ZIP
+build.cmd --package
 
-rem Только упаковка
-package_release.cmd --skip-build --version 2.17.0.4
+rem Проверка компиляции и прогон тестов
+build.cmd --check
 ```
 
 ### 11.4 Результат
 
 ```
 release/
-├── OpenAntigravity_linux_v2.17.0.3.tar.gz       (или .zip на Windows)
-├── OpenAntigravity_linux_v2.17.0.3.tar.gz.sha256
-└── version.json                            (если --site задан)
+├── OpenAntigravity_linux_v1.1.2.tar.gz       (или .zip на Windows)
+├── OpenAntigravity_linux_v1.1.2.tar.gz.sha256
+├── OpenAntigravity-x86_64.AppImage          (для Linux / Steam Deck)
+└── version.json                             (информация о релизе)
 ```
 
 ### 11.5 Публикация

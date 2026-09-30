@@ -30,6 +30,7 @@ release/*.tar.gz.sha256
 release/*.zip
 release/*.zip.sha256
 release/*.AppImage*
+dist_portable/
 dist_portable_windows/
 dist_portable_linux/open_antigravity
 dist_portable_linux/data/
