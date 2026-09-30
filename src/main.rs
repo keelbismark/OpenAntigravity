@@ -783,6 +783,16 @@ fn main() {
 
     canary::handle_cli_flags();
 
+    // If relaunched from another instance (e.g. elevating privileges), wait
+    // for the parent process to exit and release its handles before acquiring the lock.
+    if let Some(pos) = env::args().position(|a| a == "--wait-pid") {
+        if let Some(pid_str) = env::args().nth(pos + 1) {
+            if let Ok(pid) = pid_str.parse::<u32>() {
+                single_instance::wait_for_process_exit(pid);
+            }
+        }
+    }
+
     // Prevent running multiple concurrent instances of the application.
     let _instance_lock = match single_instance::try_acquire() {
         Ok(lock) => lock,

@@ -416,7 +416,7 @@ pub fn configured_display() -> Option<String> {
 /// comes out somewhere Google will accept. The last is checked against a pinned
 /// address rather than a clock - see `Route`.
 pub fn available() -> bool {
-    configured().is_some() && OWN.usable()
+    crate::settings::own_proxy_enabled() && configured().is_some() && OWN.usable()
 }
 
 fn basic(auth: &str) -> String {

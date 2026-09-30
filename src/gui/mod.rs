@@ -525,12 +525,13 @@ impl eframe::App for App {
             self.tray_items = None;
         }
 
-        // Live proxy ping check: runs automatically every 25 seconds if proxy is configured
+        // Live proxy ping check: runs automatically every 25 seconds if proxy is configured and enabled
+        let proxy_on = self.status.as_ref().map(|s| s.get(crate::core::ops::Cap::OwnProxy).is_on()).unwrap_or(true);
         let need_ping = match self.last_ping_time {
             Some(t) => t.elapsed() > std::time::Duration::from_secs(25),
             None => true,
         };
-        if need_ping && !self.proxy_test_running && !self.own_proxy_input.trim().is_empty() {
+        if need_ping && proxy_on && !self.proxy_test_running && !self.own_proxy_input.trim().is_empty() {
             self.last_ping_time = Some(std::time::Instant::now());
             self.start_proxy_test(ctx);
         }
