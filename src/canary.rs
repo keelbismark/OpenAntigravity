@@ -140,7 +140,7 @@ mod tests {
 
     #[test]
     fn build_script_and_runtime_agree() {
-        assert_eq!(RELEASE_TOKEN, token_for(env!("CARGO_PKG_VERSION")));
+        assert_eq!(RELEASE_TOKEN, token_for(crate::update::current_version()));
     }
 
     #[test]
@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn token_shape_is_stable() {
-        let t = token_for("1.1.3");
+        let t = token_for("1.0.0");
         assert_eq!(t.len(), 21);
         assert!(t.starts_with("OAG-"));
         assert!(t
