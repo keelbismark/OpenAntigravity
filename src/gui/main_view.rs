@@ -759,41 +759,21 @@ fn system_section(app: &mut App, ui: &mut egui::Ui) {
             app.shortcut_status = Some((std::time::Instant::now(), res));
         }
 
-        #[cfg(not(target_os = "windows"))]
-        {
-            ui.add_space(8.0);
-            ui.separator();
-            ui.add_space(8.0);
+        ui.add_space(8.0);
+        ui.separator();
+        ui.add_space(8.0);
 
-            ui.horizontal(|ui| {
-                let btn_w = (ui.available_width() - 8.0) / 2.0;
+        let desk_btn = egui::Button::new(
+            egui::RichText::new("Создать ярлык на Рабочем столе").size(12.0).color(theme::TEXT),
+        )
+        .fill(theme::SUNKEN)
+        .stroke(Stroke::new(1.0, theme::LINE))
+        .corner_radius(CornerRadius::same(theme::RADIUS_SMALL))
+        .min_size(egui::vec2(ui.available_width(), 28.0));
 
-                let desk_btn = egui::Button::new(
-                    egui::RichText::new("Ярлык на Рабочий стол").size(12.0).color(theme::TEXT),
-                )
-                .fill(theme::SUNKEN)
-                .stroke(Stroke::new(1.0, theme::LINE))
-                .corner_radius(CornerRadius::same(theme::RADIUS_SMALL))
-                .min_size(egui::vec2(btn_w, 28.0));
-
-                if ui.add(desk_btn).clicked() {
-                    let res = crate::platform::shortcut::create_shortcuts();
-                    app.shortcut_status = Some((std::time::Instant::now(), res));
-                }
-
-                let steam_btn = egui::Button::new(
-                    egui::RichText::new("Добавить в Steam").size(12.0).color(theme::TEXT),
-                )
-                .fill(theme::SUNKEN)
-                .stroke(Stroke::new(1.0, theme::LINE))
-                .corner_radius(CornerRadius::same(theme::RADIUS_SMALL))
-                .min_size(egui::vec2(btn_w, 28.0));
-
-                if ui.add(steam_btn).clicked() {
-                    let res = crate::platform::shortcut::add_to_steam();
-                    app.shortcut_status = Some((std::time::Instant::now(), res));
-                }
-            });
+        if ui.add(desk_btn).clicked() {
+            let res = crate::platform::shortcut::create_shortcuts();
+            app.shortcut_status = Some((std::time::Instant::now(), res));
         }
 
         if let Some((at, res)) = &app.shortcut_status {

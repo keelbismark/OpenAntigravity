@@ -67,7 +67,7 @@ platform/          — системный слой и OS-специфика:
                      service.rs (systemd юнит на Linux / задачи Windows),
                      portcheck.rs (проверка и освобождение портов),
                      elevate.rs (повышение прав pkexec/UAC),
-                     diag.rs (диагностика --check), shortcut.rs (ярлыки и Steam),
+                     diag.rs (диагностика --check), shortcut.rs (ярлыки на Рабочий стол и меню),
                      health.rs (мониторинг здоровья процессов), notify.rs (уведомления)
 gui/               — eframe: mod.rs (App, каналы, фоновый пинг), main_view.rs (Doctor, пресеты),
                      status.rs (Facts->Action), renderer.rs (glow/wgpu выбор),
