@@ -119,7 +119,7 @@ podman run --rm -v "$PWD":/src -v cargo-cache:/usr/local/cargo/registry -w /src 
 | Windows exe & portable | `build.cmd` (или `build.cmd --package` для zip) |
 | Linux статика (TUI-only, любые glibc) | `bash build.sh --musl` (или `bash build.sh` для glibc) |
 | **Linux GUI & AppImage (Steam Deck и др.)** | `bash build.sh --package` + `bash build_appimage.sh` |
-| **Автосборка релизов (все платформы)** | `git tag vX.Y.Z && git push origin vX.Y.Z` (GitHub Actions) |
+| **Автосборка релизов (все платформы)** | `build.cmd --release X.Y.Z` (или `bash build.sh --release X.Y.Z`) |
 
 Полные сценарии — в `BUILD_PORTABLE.md` (§8: WSL2, Docker на VPS, SteamOS,
 траблшутинг). Держи его в синхроне при изменении сборки.
@@ -137,9 +137,10 @@ noexec-фолбэк в `~/.local/share/openantigravity`, авто-TUI без г�
 ## 5. Механизм обновлений и релизы
 
 - **Единый источник версии**: корень репозитория, файл **`VERSION`**.
-- **Выпуск релиза**:
-  1. Изменить версию в файле `VERSION` (например `1.2.0`).
-  2. Создать и запушить тег: `git tag v1.2.0 && git push origin v1.2.0`.
+- **Выпуск релиза в 1 команду**:
+  - `build.cmd --release 1.2.0` (на Windows) или `bash build.sh --release 1.2.0` (на Linux).
+  - Скрипт сам запишет `VERSION`, синхронизирует `Cargo.toml`, прогонит тесты, создаст коммит и git-тег `v1.2.0`, и отправит в `origin`.
+  - Либо вручную: обновить `VERSION`, `git tag v1.2.0 && git push origin v1.2.0`.
   3. GitHub Actions (`.github/workflows/release.yml`) автоматически:
      - Соберёт Linux AppImage и переносимый `.tar.gz`.
      - Соберёт Windows `.zip` со всеми ярлыками и bat-файлами запуска.
