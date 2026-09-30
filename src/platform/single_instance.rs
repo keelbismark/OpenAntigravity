@@ -4,7 +4,7 @@
 //! redundant background tasks.
 
 #[cfg(not(target_os = "windows"))]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub struct InstanceLock {
     #[cfg(target_os = "windows")]
