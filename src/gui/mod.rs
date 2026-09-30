@@ -67,9 +67,6 @@ pub struct App {
     gate_at: std::time::Instant,
     gate_rx: Receiver<gate::Signal>,
     log: Vec<(Level, String)>,
-    /// Ctrl+A over the journal. Our own, because egui's label selection is per
-    /// galley and the journal is one label per line.
-    log_all_selected: bool,
     busy: Option<String>,
 
     own_proxy_input: String,
@@ -191,7 +188,6 @@ impl App {
             gate_at: std::time::Instant::now(),
             gate_rx,
             log: Vec::new(),
-            log_all_selected: false,
             busy: None,
             own_proxy_input: settings.own_proxy.clone(),
             providers_local: Vec::new(),

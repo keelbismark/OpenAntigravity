@@ -31,6 +31,7 @@ pub const ACCENT_SUBTLE: Color32 = Color32::from_rgb(0x27, 0x27, 0x2A);
 
 /// "On / succeeded" (Emerald).
 pub const OK: Color32 = Color32::from_rgb(0x22, 0xC5, 0x5E);
+#[allow(dead_code)]
 pub const OK_SUBTLE: Color32 = Color32::from_rgb(0x05, 0x2E, 0x16);
 /// "Needs attention" (Amber).
 pub const WARN: Color32 = Color32::from_rgb(0xF5, 0x9E, 0x0B);

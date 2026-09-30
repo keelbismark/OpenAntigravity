@@ -412,6 +412,7 @@ fn scan_desktop_files() -> Vec<PathBuf> {
 /// running process detection, and desktop shortcuts. Fast and lightweight.
 pub fn discover_installs_fast() -> Vec<PathBuf> {
     let mut installs = Vec::new();
+    #[allow(unused_mut)]
     let mut candidates = standard_install_candidates();
 
     #[cfg(not(target_os = "windows"))]

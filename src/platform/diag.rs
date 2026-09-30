@@ -10,7 +10,6 @@
 
 use std::fmt::Write as _;
 use std::net::{TcpStream, ToSocketAddrs};
-use std::path::Path;
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

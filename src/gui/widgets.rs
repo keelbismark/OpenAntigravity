@@ -99,6 +99,7 @@ pub fn switch(ui: &mut egui::Ui, on: &mut bool, enabled: bool) -> egui::Response
 }
 
 /// A crisp status indicator dot.
+#[allow(dead_code)]
 pub fn pulsing_dot(ui: &mut egui::Ui, color: egui::Color32, active: bool) {
     let size = egui::vec2(12.0, 12.0);
     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
@@ -525,6 +526,7 @@ pub fn card<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
 }
 
 /// Renders a modern latency monitor / sparkline chart.
+#[allow(dead_code)]
 pub fn latency_chart(
     ui: &mut egui::Ui,
     samples: &[u32],
@@ -699,6 +701,7 @@ pub fn hint(ui: &mut egui::Ui, text: &str) {
 }
 
 /// A coloured status dot, for install rows and provider rows.
+#[allow(dead_code)]
 pub fn dot(ui: &mut egui::Ui, color: egui::Color32) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(10.0, 10.0), Sense::hover());
     if ui.is_rect_visible(rect) {
