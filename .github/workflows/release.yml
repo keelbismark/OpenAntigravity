@@ -252,22 +252,13 @@ jobs:
 
           CHANGELOG=""
           if [ -n "$FEATS" ]; then
-            CHANGELOG="${CHANGELOG}
-### 🚀 Новые возможности
-${FEATS}
-"
+            CHANGELOG=$(printf "%s\n\n### 🚀 Новые возможности\n%s" "$CHANGELOG" "$FEATS")
           fi
           if [ -n "$FIXES" ]; then
-            CHANGELOG="${CHANGELOG}
-### 🐛 Исправления ошибок
-${FIXES}
-"
+            CHANGELOG=$(printf "%s\n\n### 🐛 Исправления ошибок\n%s" "$CHANGELOG" "$FIXES")
           fi
           if [ -n "$OTHER" ]; then
-            CHANGELOG="${CHANGELOG}
-### 🔧 Улучшения и оптимизации
-${OTHER}
-"
+            CHANGELOG=$(printf "%s\n\n### 🔧 Улучшения и оптимизации\n%s" "$CHANGELOG" "$OTHER")
           fi
 
           {
