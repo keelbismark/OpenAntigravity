@@ -39,13 +39,18 @@ if %DO_CLEAN%==1 (
     exit /b 0
 )
 
-rem --- Определение версии из VERSION ---
-if exist "%~dp0VERSION" (
-    set /p VERSION=<"%~dp0VERSION"
-    set "VERSION=!VERSION: =!"
-) else (
-    set "VERSION=1.1.3"
+rem --- Определение версии из файла VERSION (SSOT) ---
+if not exist "%~dp0VERSION" (
+    echo [!] Ошибка: файл VERSION не найден в корне проекта.
+    exit /b 1
 )
+set /p VERSION=<"%~dp0VERSION"
+set "VERSION=!VERSION: =!"
+
+rem --- Автоматическая синхронизация версии в Cargo.toml из VERSION ---
+if not exist "%~dp0Cargo.toml" goto :skip_cargosync
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$v = (Get-Content '%~dp0VERSION').Trim(); $c = Get-Content '%~dp0Cargo.toml'; if ($c -match '(?m)^version = \"([^\"]+)\"' -and $Matches[1] -ne $v) { ($c -replace '(?m)^version = \"[^\"]+\"', ('version = \"' + $v + '\"')) | Set-Content '%~dp0Cargo.toml'; Write-Host ('[*] Синхронизирована версия Cargo.toml -> ' + $v) }"
+:skip_cargosync
 
 if %DO_CHECK%==1 (
     echo ================================================================

@@ -24,7 +24,11 @@ export AG_PORTABLE=1
 
 # --- VERSION REPORTED BY THE BUILD (SemVer from root VERSION file) ---
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ROOT_VERSION="$(tr -d '\r\n' < "$SCRIPT_DIR/VERSION" 2>/dev/null || echo '1.1.3')"
+if [ ! -f "$SCRIPT_DIR/VERSION" ]; then
+    echo "[!] Ошибка: файл VERSION не найден в корне проекта." >&2
+    exit 1
+fi
+ROOT_VERSION="$(tr -d '\r\n' < "$SCRIPT_DIR/VERSION")"
 export AG_FULL_VERSION="${AG_FULL_VERSION:-$ROOT_VERSION}"
 if [ -f "$SCRIPT_DIR/Cargo.toml" ]; then
     sed -i -E 's/^version = "[0-9]+\.[0-9]+\.[0-9]+"/version = "'"$ROOT_VERSION"'"/' "$SCRIPT_DIR/Cargo.toml" 2>/dev/null || true

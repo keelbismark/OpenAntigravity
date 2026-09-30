@@ -37,7 +37,8 @@ jobs:
           elif [ -f VERSION ]; then
             V="$(tr -d '\r\n' < VERSION)"
           else
-            V="1.1.0"
+            echo "Error: VERSION file not found" >&2
+            exit 1
           fi
           echo "VERSION=$V" >> "$GITHUB_OUTPUT"
           echo "Building Linux version: $V"
@@ -113,7 +114,8 @@ jobs:
           elif [ -f VERSION ]; then
             V="$(tr -d '\r\n' < VERSION)"
           else
-            V="1.1.0"
+            echo "Error: VERSION file not found" >&2
+            exit 1
           fi
           echo "VERSION=$V" >> "$GITHUB_OUTPUT"
           echo "Building Windows version: $V"
@@ -203,7 +205,8 @@ jobs:
           elif [ -f VERSION ]; then
             V="$(tr -d '\r\n' < VERSION)"
           else
-            V="1.1.3"
+            echo "Error: VERSION file not found" >&2
+            exit 1
           fi
           echo "VERSION=$V" >> "$GITHUB_OUTPUT"
 

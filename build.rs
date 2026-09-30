@@ -353,18 +353,22 @@ fn main() {
     let file_ver = fs::read_to_string("VERSION")
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|_| "1.1.0".to_string());
-    let full_ver = env::var("AG_FULL_VERSION").unwrap_or(file_ver);
+    let full_ver = env::var("AG_FULL_VERSION").unwrap_or_else(|_| file_ver.clone());
     let trimmed = full_ver.trim();
     if !trimmed.is_empty() {
         println!("cargo:rustc-env=AG_FULL_VERSION={}", trimmed);
     }
 
-    let version = env::var("CARGO_PKG_VERSION").unwrap_or_default();
+    let version = if !trimmed.is_empty() {
+        trimmed
+    } else {
+        &file_ver
+    };
     let canary_src = fs::read_to_string("src/canary.rs").expect("src/canary.rs is missing");
     let seed = const_from_canary_rs(&canary_src, "CANARY_SEED");
     let sep = const_from_canary_rs(&canary_src, "CANARY_SEP");
     let static_canary = const_from_canary_rs(&canary_src, "STATIC_CANARY");
-    let release_token = token_for(&seed, &sep, &version);
+    let release_token = token_for(&seed, &sep, version);
 
     // Emitted for canary.rs to include!(), so the token itself is a literal in
     // .rdata rather than something computed at runtime - a plain `strings` dump
