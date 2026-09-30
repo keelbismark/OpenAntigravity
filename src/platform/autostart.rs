@@ -3,6 +3,7 @@
 //! Windows: ключ в `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
 //! Linux: desktop-файл в `~/.config/autostart/open-antigravity.desktop`.
 
+#[cfg(not(target_os = "windows"))]
 use std::path::{Path, PathBuf};
 
 /// Проверяет, включён ли автозапуск в текущей системе.

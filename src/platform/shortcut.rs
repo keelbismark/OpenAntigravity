@@ -4,7 +4,9 @@
 //! Linux: Создание файла .desktop на Рабочем столе (~/Desktop) и в меню приложений
 //! (~/.local/share/applications/) с правами на запуск и доверием KDE/GNOME.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(not(target_os = "windows"))]
+use std::path::PathBuf;
 
 /// Создает ярлык запуска для текущей установки Open Antigravity.
 pub fn create_shortcuts() -> Result<String, String> {
