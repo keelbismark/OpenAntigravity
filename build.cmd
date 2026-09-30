@@ -42,8 +42,7 @@ if "%NEW_REL_VER%"=="" (
 echo ================================================================
 echo   Автоматический релиз Open Antigravity v%NEW_REL_VER%
 echo ================================================================
-echo %NEW_REL_VER%> "%~dp0VERSION"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$v = '%NEW_REL_VER%'.Trim(); $c = Get-Content '%~dp0Cargo.toml'; ($c -replace '(?m)^version = \"[^\"]+\"', ('version = \"' + $v + '\"')) | Set-Content '%~dp0Cargo.toml'"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$v = '%NEW_REL_VER%'.Trim(); [System.IO.File]::WriteAllText('%~dp0VERSION', $v + [Environment]::NewLine); $c = Get-Content '%~dp0Cargo.toml' -Raw; ($c -replace '(?m)^version = \"[^\"]+\"', ('version = \"' + $v + '\"')) | Set-Content '%~dp0Cargo.toml' -NoNewline"
 echo [*] Проверка кода и тесты перед релизом...
 cargo check
 if errorlevel 1 goto :err
