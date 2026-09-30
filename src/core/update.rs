@@ -8,11 +8,11 @@
 //!
 //! ```json
 //! {
-//!   "version": "2.17.0.3",
+//!   "version": "1.1.2",
 //!   "notes": "что нового",
 //!   "page": "https://host/страница-проекта",
-//!   "url_windows": "https://host/OpenAntigravity_windows_v2.17.0.3.zip",
-//!   "url_linux":   "https://host/OpenAntigravity_linux_v2.17.0.3.tar.gz"
+//!   "url_windows": "https://host/OpenAntigravity_windows_v1.1.2.zip",
+//!   "url_linux":   "https://host/OpenAntigravity_linux_v1.1.2.tar.gz"
 //! }
 //! ```
 //!
@@ -51,11 +51,8 @@ const MAX_REDIRECTS: usize = 3;
 /// The version this binary shipped as, in the form the feed's `version` field
 /// uses.
 ///
-/// `CARGO_PKG_VERSION` only ever holds the three-digit part (`2.17.0`) because
-/// the build keeps the fourth digit out of Cargo.toml — a changed Cargo
-/// version re-salts every licence key (I2). The full shipped name
-/// (`2.17.0.3`) comes from `AG_FULL_VERSION`, set by the build script; when it
-/// is absent the three-digit part is all we can honestly claim.
+/// Read from `AG_FULL_VERSION` (set by build.rs from the `VERSION` file) or falls back
+/// to `CARGO_PKG_VERSION` from Cargo.toml.
 pub fn current_version() -> &'static str {
     option_env!("AG_FULL_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"))
 }
@@ -613,17 +610,17 @@ mod tests {
     #[test]
     fn test_update_info_json_deserialization() {
         let sample = r#"{
-            "version": "2.17.0.3",
+            "version": "1.1.2",
             "notes": "отчёт в data/, кнопка «Завершить процесс»",
             "page": "https://github.com/keelbismark/OpenAntigravity",
-            "url_windows": "https://example.com/OpenAntigravity_windows_v2.17.0.3.zip",
-            "url_linux": "https://example.com/OpenAntigravity_linux_v2.17.0.3.tar.gz"
+            "url_windows": "https://example.com/OpenAntigravity_windows_v1.1.2.zip",
+            "url_linux": "https://example.com/OpenAntigravity_linux_v1.1.2.tar.gz"
         }"#;
 
         let info: UpdateInfo = serde_json::from_str(sample).expect("valid json");
-        assert_eq!(info.display_version(), "2.17.0.3");
-        assert!(info.is_newer_than_current() == is_newer_version("2.17.0.3", current_version()));
-        assert_eq!(info.url_windows.as_deref(), Some("https://example.com/OpenAntigravity_windows_v2.17.0.3.zip"));
+        assert_eq!(info.display_version(), "1.1.2");
+        assert!(info.is_newer_than_current() == is_newer_version("1.1.2", current_version()));
+        assert_eq!(info.url_windows.as_deref(), Some("https://example.com/OpenAntigravity_windows_v1.1.2.zip"));
     }
 
     #[test]
