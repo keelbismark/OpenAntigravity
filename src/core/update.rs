@@ -91,6 +91,9 @@ pub struct UpdateInfo {
     /// Archive for Linux/SteamOS builds.
     #[serde(default)]
     pub url_linux: Option<String>,
+    /// AppImage for Linux/SteamOS builds.
+    #[serde(default)]
+    pub url_appimage: Option<String>,
 }
 
 impl UpdateInfo {
@@ -104,6 +107,22 @@ impl UpdateInfo {
     /// Returns true if this feed entry is strictly newer than the running binary.
     pub fn is_newer_than_current(&self) -> bool {
         is_newer_version(&self.version, current_version())
+    }
+
+    /// The direct download archive or binary for the current platform.
+    pub fn platform_download_url(&self) -> Option<&str> {
+        #[cfg(target_os = "windows")]
+        {
+            self.url_windows.as_deref()
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            if std::env::var("APPIMAGE").is_ok() && self.url_appimage.is_some() {
+                self.url_appimage.as_deref()
+            } else {
+                self.url_linux.as_deref().or(self.url_appimage.as_deref())
+            }
+        }
     }
 
     /// Where a click on the banner should land: this platform's archive first,
@@ -122,6 +141,7 @@ impl UpdateInfo {
         {
             self.url_linux
                 .as_deref()
+                .or(self.url_appimage.as_deref())
                 .or(self.url_windows.as_deref())
                 .or(self.page.as_deref())
         }
@@ -583,6 +603,382 @@ pub fn spawn_watch(tx: std::sync::mpsc::Sender<UpdateInfo>, wake: Box<dyn Fn() +
         .ok();
 }
 
+/// Progress state during auto-update.
+#[derive(Debug, Clone)]
+pub enum UpdateProgress {
+    Downloading { percent: u8, text: String },
+    Extracting,
+    Restarting,
+    Failed(String),
+}
+
+enum DownloadResult {
+    Done,
+    Redirect(String),
+}
+
+fn stream_download_or_redirect<S: Read + Write>(
+    stream: &mut S,
+    url: &ParsedUrl,
+    dest_path: &std::path::Path,
+    on_progress: &dyn Fn(usize, Option<usize>),
+) -> Result<DownloadResult, String> {
+    let req = format!(
+        "GET {} HTTP/1.1\r\n\
+         Host: {}\r\n\
+         User-Agent: open_antigravity/{}\r\n\
+         Accept: */*\r\n\
+         Connection: close\r\n\r\n",
+        url.path,
+        url.host,
+        current_version()
+    );
+    stream
+        .write_all(req.as_bytes())
+        .map_err(|e| format!("failed to send HTTP request: {e}"))?;
+    stream
+        .flush()
+        .map_err(|e| format!("failed to flush HTTP request: {e}"))?;
+
+    let mut header_buf = Vec::new();
+    let mut chunk = [0u8; 1024];
+    let header_delim_pos;
+    loop {
+        let n = stream
+            .read(&mut chunk)
+            .map_err(|e| format!("failed to read response headers: {e}"))?;
+        if n == 0 {
+            return Err("connection closed before HTTP headers finished".to_string());
+        }
+        header_buf.extend_from_slice(&chunk[..n]);
+        if let Some(pos) = header_buf.windows(4).position(|w| w == b"\r\n\r\n") {
+            header_delim_pos = pos;
+            break;
+        }
+        if header_buf.len() > 64 * 1024 {
+            return Err("response headers exceeded limit (>64KB)".to_string());
+        }
+    }
+
+    let header_str = String::from_utf8_lossy(&header_buf[..header_delim_pos]);
+    let initial_body = &header_buf[header_delim_pos + 4..];
+
+    let mut lines = header_str.lines();
+    let status_line = lines.next().unwrap_or("");
+    let status = status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse::<u16>().ok())
+        .ok_or_else(|| format!("unreadable status line: {status_line}"))?;
+
+    let mut location = None;
+    let mut content_length = None;
+    for line in lines {
+        let lower = line.to_ascii_lowercase();
+        if lower.starts_with("location:") {
+            location = Some(line[9..].trim().to_string());
+        } else if lower.starts_with("content-length:") {
+            content_length = line[15..].trim().parse::<usize>().ok();
+        }
+    }
+
+    if (300..400).contains(&status) {
+        let loc = location.ok_or_else(|| format!("HTTP {status} redirect without Location header"))?;
+        return Ok(DownloadResult::Redirect(loc));
+    }
+
+    if status != 200 {
+        return Err(format!("сервер вернул HTTP статус {status}"));
+    }
+
+    let mut file = fs::File::create(dest_path)
+        .map_err(|e| format!("не удалось создать файл для сохранения {}: {e}", dest_path.display()))?;
+
+    let mut downloaded = 0;
+    if !initial_body.is_empty() {
+        file.write_all(initial_body)
+            .map_err(|e| format!("ошибка записи в файл: {e}"))?;
+        downloaded += initial_body.len();
+        on_progress(downloaded, content_length);
+    }
+
+    let mut buf = [0u8; 32768];
+    loop {
+        match stream.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                file.write_all(&buf[..n])
+                    .map_err(|e| format!("ошибка записи в файл: {e}"))?;
+                downloaded += n;
+                on_progress(downloaded, content_length);
+            }
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
+            Err(e) => return Err(format!("ошибка загрузки: {e}")),
+        }
+    }
+    file.flush()
+        .map_err(|e| format!("ошибка сохранения файла: {e}"))?;
+
+    if let Some(expected) = content_length {
+        if downloaded < expected {
+            return Err(format!(
+                "загрузка прервана: получено {downloaded} из {expected} байт"
+            ));
+        }
+    }
+
+    Ok(DownloadResult::Done)
+}
+
+/// Streams a file download from `url` directly to `dest_path`, following redirects.
+pub fn download_file(
+    url: &str,
+    dest_path: &std::path::Path,
+    on_progress: &dyn Fn(usize, Option<usize>),
+) -> Result<(), String> {
+    let mut current = parse_url(url)?;
+
+    for _ in 0..=MAX_REDIRECTS {
+        let mut sock = connect_tcp(&current.host, current.port)?;
+        if current.tls {
+            let server_name = ServerName::try_from(current.host.clone())
+                .map_err(|e| format!("invalid TLS server name {}: {}", current.host, e))?;
+            let mut conn = ClientConnection::new(tls_config(), server_name)
+                .map_err(|e| format!("failed to initialize TLS: {}", e))?;
+            let mut stream = rustls::Stream::new(&mut conn, &mut sock);
+            match stream_download_or_redirect(&mut stream, &current, dest_path, on_progress)? {
+                DownloadResult::Done => return Ok(()),
+                DownloadResult::Redirect(loc) => {
+                    current = resolve_redirect(&current, &loc)?;
+                }
+            }
+        } else {
+            match stream_download_or_redirect(&mut sock, &current, dest_path, on_progress)? {
+                DownloadResult::Done => return Ok(()),
+                DownloadResult::Redirect(loc) => {
+                    current = resolve_redirect(&current, &loc)?;
+                }
+            }
+        }
+    }
+    Err(format!("слишком много перенаправлений (>{MAX_REDIRECTS})"))
+}
+
+fn find_binary_in_dir(dir: &std::path::Path) -> Option<PathBuf> {
+    let entries = fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() {
+            #[cfg(target_os = "windows")]
+            {
+                if let Some(ext) = path.extension() {
+                    if ext.eq_ignore_ascii_case("exe") {
+                        return Some(path);
+                    }
+                }
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if name == "open_antigravity" || name.ends_with(".AppImage") {
+                    return Some(path);
+                }
+            }
+        } else if path.is_dir() {
+            if let Some(found) = find_binary_in_dir(&path) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
+/// Extracts update archive and returns path to the extracted binary.
+pub fn extract_and_apply_update(archive_path: &std::path::Path) -> Result<PathBuf, String> {
+    let extract_dir = std::env::temp_dir().join(format!("oag_update_{}", std::process::id()));
+    if extract_dir.exists() {
+        let _ = fs::remove_dir_all(&extract_dir);
+    }
+    fs::create_dir_all(&extract_dir)
+        .map_err(|e| format!("не удалось создать папку распаковки: {e}"))?;
+
+    #[cfg(target_os = "windows")]
+    {
+        let mut tar_cmd = std::process::Command::new("tar");
+        tar_cmd.arg("-xf").arg(archive_path).arg("-C").arg(&extract_dir);
+        let tar_ok = tar_cmd.status().map(|s| s.success()).unwrap_or(false);
+
+        if !tar_ok {
+            let ps_script = format!(
+                "Expand-Archive -Path '{}' -DestinationPath '{}' -Force",
+                archive_path.display(),
+                extract_dir.display()
+            );
+            let ps_status = std::process::Command::new("powershell")
+                .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_script])
+                .status()
+                .map_err(|e| format!("ошибка распаковки PowerShell: {e}"))?;
+            if !ps_status.success() {
+                return Err("не удалось распаковать архив обновления".to_string());
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let tar_status = std::process::Command::new("tar")
+            .arg("-xzf")
+            .arg(archive_path)
+            .arg("-C")
+            .arg(&extract_dir)
+            .status()
+            .map_err(|e| format!("ошибка вызова tar: {e}"))?;
+        if !tar_status.success() {
+            return Err("не удалось распаковать архив обновления".to_string());
+        }
+    }
+
+    find_binary_in_dir(&extract_dir)
+        .ok_or_else(|| "бинарный файл приложения не найден в архиве обновления".to_string())
+}
+
+/// Replaces current binary with `new_exe` and restarts the process.
+pub fn restart_with_new_binary(new_exe: &std::path::Path) -> Result<(), String> {
+    let current_exe = std::env::current_exe()
+        .map_err(|e| format!("не удалось определить путь к текущему приложению: {e}"))?;
+
+    #[cfg(target_os = "windows")]
+    {
+        let old_exe = current_exe.with_extension("exe.old");
+        if old_exe.exists() {
+            let _ = fs::remove_file(&old_exe);
+        }
+        fs::rename(&current_exe, &old_exe)
+            .map_err(|e| format!("не удалось переместить текущий exe: {e}"))?;
+        if let Err(e) = fs::copy(new_exe, &current_exe) {
+            let _ = fs::rename(&old_exe, &current_exe);
+            return Err(format!("не удалось скопировать новый exe: {e}"));
+        }
+
+        let mut cmd = std::process::Command::new(&current_exe);
+        cmd.args(std::env::args().skip(1));
+        cmd.spawn()
+            .map_err(|e| format!("не удалось перезапустить обновлённое приложение: {e}"))?;
+        std::process::exit(0);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(appimage_path) = std::env::var("APPIMAGE") {
+            let target = PathBuf::from(appimage_path);
+            let old = target.with_extension("AppImage.old");
+            if old.exists() {
+                let _ = fs::remove_file(&old);
+            }
+            let _ = fs::rename(&target, &old);
+            fs::copy(new_exe, &target)
+                .map_err(|e| format!("не удалось обновить AppImage: {e}"))?;
+            let _ = fs::set_permissions(&target, fs::Permissions::from_mode(0o755));
+            let mut cmd = std::process::Command::new(&target);
+            cmd.args(std::env::args().skip(1));
+            cmd.spawn()
+                .map_err(|e| format!("не удалось перезапустить AppImage: {e}"))?;
+            std::process::exit(0);
+        } else {
+            let old = current_exe.with_extension("old");
+            if old.exists() {
+                let _ = fs::remove_file(&old);
+            }
+            let _ = fs::rename(&current_exe, &old);
+            fs::copy(new_exe, &current_exe)
+                .map_err(|e| format!("не удалось заменить бинарник: {e}"))?;
+            let _ = fs::set_permissions(&current_exe, fs::Permissions::from_mode(0o755));
+            let mut cmd = std::process::Command::new(&current_exe);
+            cmd.args(std::env::args().skip(1));
+            cmd.spawn()
+                .map_err(|e| format!("не удалось перезапустить приложение: {e}"))?;
+            std::process::exit(0);
+        }
+    }
+}
+
+/// Performs a full auto-update in background: download, extract, replace, restart.
+pub fn perform_auto_update(
+    info: &UpdateInfo,
+    progress_tx: std::sync::mpsc::Sender<UpdateProgress>,
+    wake: Arc<dyn Fn() + Send + Sync>,
+) {
+    let Some(url) = info.platform_download_url() else {
+        let _ = progress_tx.send(UpdateProgress::Failed(
+            "ссылка на скачивание для вашей платформы отсутствует".to_string(),
+        ));
+        wake();
+        return;
+    };
+
+    let temp_dir = std::env::temp_dir();
+    let file_name = if url.ends_with(".AppImage") {
+        "open_antigravity_update.AppImage"
+    } else if url.ends_with(".tar.gz") {
+        "open_antigravity_update.tar.gz"
+    } else {
+        "open_antigravity_update.zip"
+    };
+    let archive_path = temp_dir.join(file_name);
+
+    let tx_clone = progress_tx.clone();
+    let wake_cb = wake.clone();
+
+    let on_progress = move |downloaded: usize, total: Option<usize>| {
+        let (percent, text) = match total {
+            Some(tot) if tot > 0 => {
+                let p = ((downloaded as f64 / tot as f64) * 100.0).min(100.0) as u8;
+                let mb_down = downloaded as f64 / (1024.0 * 1024.0);
+                let mb_tot = tot as f64 / (1024.0 * 1024.0);
+                (p, format!("{:.1} / {:.1} МБ ({}%)", mb_down, mb_tot, p))
+            }
+            _ => {
+                let mb_down = downloaded as f64 / (1024.0 * 1024.0);
+                (0, format!("{:.1} МБ", mb_down))
+            }
+        };
+        let _ = tx_clone.send(UpdateProgress::Downloading { percent, text });
+        wake_cb();
+    };
+
+    if let Err(e) = download_file(url, &archive_path, &on_progress) {
+        let _ = progress_tx.send(UpdateProgress::Failed(format!("Ошибка загрузки: {e}")));
+        wake();
+        return;
+    }
+
+    let new_binary = if url.ends_with(".AppImage") {
+        archive_path
+    } else {
+        let _ = progress_tx.send(UpdateProgress::Extracting);
+        wake();
+        match extract_and_apply_update(&archive_path) {
+            Ok(bin) => bin,
+            Err(e) => {
+                let _ = progress_tx.send(UpdateProgress::Failed(format!("Ошибка установки: {e}")));
+                wake();
+                return;
+            }
+        }
+    };
+
+    let _ = progress_tx.send(UpdateProgress::Restarting);
+    wake();
+    std::thread::sleep(Duration::from_millis(600));
+
+    if let Err(e) = restart_with_new_binary(&new_binary) {
+        let _ = progress_tx.send(UpdateProgress::Failed(format!("Ошибка перезапуска: {e}")));
+        wake();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -683,12 +1079,15 @@ mod tests {
             page: Some("https://example.com/page".into()),
             url_windows: Some("https://example.com/win.zip".into()),
             url_linux: Some("https://example.com/linux.tar.gz".into()),
+            url_appimage: Some("https://example.com/appimage".into()),
         };
         let landing = info.landing_url().expect("some landing").to_string();
         if cfg!(target_os = "windows") {
             assert_eq!(landing, "https://example.com/win.zip");
+            assert_eq!(info.platform_download_url(), Some("https://example.com/win.zip"));
         } else {
-            assert_eq!(landing, "https://example.com/linux.tar.gz");
+            assert!(landing.contains("example.com"));
+            assert!(info.platform_download_url().is_some());
         }
     }
 

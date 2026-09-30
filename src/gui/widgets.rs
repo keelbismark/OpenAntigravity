@@ -345,6 +345,17 @@ pub fn btn(
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
+/// Helper to render an icon directly into a Ui.
+pub fn show_icon(ui: &mut egui::Ui, icon: Icon, color: egui::Color32, size: f32) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(size, size), Sense::hover());
+    if ui.is_rect_visible(rect) {
+        if let Icon::Refresh { spin: true } = icon {
+            ui.ctx().request_repaint();
+        }
+        paint_icon(ui.painter(), rect, icon, color, ui.input(|i| i.time));
+    }
+}
+
 /// A compact status/metric chip (e.g. Bolt with "38 мс", Gateway with "127.0.0.1:45318").
 pub fn metric_chip(ui: &mut egui::Ui, icon: Option<Icon>, text: &str) -> egui::Response {
     let font_id = egui::FontId::proportional(11.5);

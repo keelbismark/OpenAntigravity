@@ -600,21 +600,21 @@ fn run_worker(
                 }
             }
             Cmd::EnableAll => {
-                ctx.busy(Some("Включаю"));
+                ctx.busy(Some("Включение компонентов"));
                 enable_all(&mut ctx);
                 ctx.settings.save();
                 push_status(&mut ctx, Scan::Deep);
                 ctx.busy(None);
             }
             Cmd::Repair => {
-                ctx.busy(Some("Чиню службу обхода"));
+                ctx.busy(Some("Восстановление службы обхода"));
                 repair(&mut ctx);
                 ctx.settings.save();
                 push_status(&mut ctx, Scan::System);
                 ctx.busy(None);
             }
             Cmd::KillHolder => {
-                ctx.busy(Some("Освобождаю порт"));
+                ctx.busy(Some("Освобождение порта"));
                 let target = crate::gate::read().and_then(|r| {
                     r.blockers.into_iter().find(|b| {
                         b.cause == "held" && crate::gate::is_own_relay_image(&b.by)

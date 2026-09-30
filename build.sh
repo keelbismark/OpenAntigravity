@@ -15,16 +15,46 @@ cd "$SCRIPT_DIR"
 
 DO_PACKAGE=0
 DO_CHECK=0
+DO_RELEASE=0
+NEW_REL_VER=""
 AG_MUSL="${AG_MUSL:-0}"
 
 while [ $# -gt 0 ]; do
     case "$1" in
+        --release|-r) DO_RELEASE=1; NEW_REL_VER="$2"; shift 2 ;;
         --package|-p) DO_PACKAGE=1; shift ;;
         --check|-c)   DO_CHECK=1; shift ;;
         --musl)       AG_MUSL=1; shift ;;
         *)            shift ;;
     esac
 done
+
+if [ "$DO_RELEASE" -eq 1 ]; then
+    if [ -z "$NEW_REL_VER" ]; then
+        echo "[!] Ошибка: укажите версию для релиза, например: bash build.sh --release 1.1.4" >&2
+        exit 1
+    fi
+    echo "================================================================"
+    echo "  Автоматический релиз Open Antigravity v${NEW_REL_VER}"
+    echo "================================================================"
+    echo "$NEW_REL_VER" > "$SCRIPT_DIR/VERSION"
+    if [ -f "$SCRIPT_DIR/Cargo.toml" ]; then
+        sed -i -E 's/^version = "[0-9]+\.[0-9]+\.[0-9]+"/version = "'"$NEW_REL_VER"'"/' "$SCRIPT_DIR/Cargo.toml"
+    fi
+    echo "[*] Проверка кода и тесты перед релизом..."
+    cargo check
+    cargo test --bin open_antigravity
+    echo "[*] Фиксация изменений в git и создание тега..."
+    git add "$SCRIPT_DIR/VERSION" "$SCRIPT_DIR/Cargo.toml" "$SCRIPT_DIR/Cargo.lock"
+    git commit -m "chore(release): bump version to v${NEW_REL_VER}"
+    git tag "v${NEW_REL_VER}"
+    echo "[*] Отправка в GitHub (запуск CI/CD релиза)..."
+    git push origin main
+    git push origin "v${NEW_REL_VER}"
+    echo
+    echo "[*] Релиз v${NEW_REL_VER} успешно запущен в GitHub Actions!"
+    exit 0
+fi
 
 # --- Определение версии из файла VERSION (SSOT) ---
 if [ ! -f "$SCRIPT_DIR/VERSION" ]; then
