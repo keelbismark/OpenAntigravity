@@ -44,7 +44,7 @@ if exist "%~dp0VERSION" (
     set /p VERSION=<"%~dp0VERSION"
     set "VERSION=!VERSION: =!"
 ) else (
-    set "VERSION=1.1.2"
+    set "VERSION=1.1.3"
 )
 
 if %DO_CHECK%==1 (

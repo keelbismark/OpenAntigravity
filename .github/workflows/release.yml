@@ -203,7 +203,7 @@ jobs:
           elif [ -f VERSION ]; then
             V="$(tr -d '\r\n' < VERSION)"
           else
-            V="1.1.2"
+            V="1.1.3"
           fi
           echo "VERSION=$V" >> "$GITHUB_OUTPUT"
 

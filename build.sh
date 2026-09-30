@@ -27,7 +27,7 @@ while [ $# -gt 0 ]; do
 done
 
 # --- Версия ---
-ROOT_VERSION="$(tr -d '\r\n' < "$SCRIPT_DIR/VERSION" 2>/dev/null || echo '1.1.2')"
+ROOT_VERSION="$(tr -d '\r\n' < "$SCRIPT_DIR/VERSION" 2>/dev/null || echo '1.1.3')"
 export AG_FULL_VERSION="${AG_FULL_VERSION:-$ROOT_VERSION}"
 export AG_PORTABLE=1
 export AG_UPDATE_URL="${AG_UPDATE_URL:-https://keelbismark.github.io/OpenAntigravity/version.json}"
