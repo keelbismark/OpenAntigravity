@@ -76,6 +76,7 @@ jobs:
           AG_PORTABLE: "1"
           AG_FULL_VERSION: ${{ steps.ver.outputs.VERSION }}
           AG_BUILTIN_PROXY: ${{ secrets.AG_BUILTIN_PROXY }}
+          AG_UPDATE_URL: "https://keelbismark.github.io/OpenAntigravity/version.json"
         run: |
           bash build_portable.sh
 
@@ -138,6 +139,7 @@ jobs:
           AG_PORTABLE: "1"
           AG_FULL_VERSION: ${{ steps.ver.outputs.VERSION }}
           AG_BUILTIN_PROXY: ${{ secrets.AG_BUILTIN_PROXY }}
+          AG_UPDATE_URL: "https://keelbismark.github.io/OpenAntigravity/version.json"
         run: |
           cargo build --release
 

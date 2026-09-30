@@ -31,7 +31,7 @@ export AG_FULL_VERSION="${AG_FULL_VERSION:-$ROOT_VERSION}"
 # The binary fetches this JSON and shows a banner when its "version"
 # is newer than the one baked here. Empty string disables the check.
 # Leave as-is until your site is up, then point at your host.
-export AG_UPDATE_URL="${AG_UPDATE_URL:-}"
+export AG_UPDATE_URL="${AG_UPDATE_URL:-https://keelbismark.github.io/OpenAntigravity/version.json}"
 
 cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 
