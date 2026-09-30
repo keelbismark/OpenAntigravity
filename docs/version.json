@@ -1,7 +1,7 @@
 {
   "version": "1.1.1",
-  "notes": "Open Antigravity v1.1.1 — чистый минималистичный релиз без лишних файлов и скриптов, удалена невостребованная интеграция со Steam",
+  "notes": "Open Antigravity v1.1.1",
   "page": "https://github.com/keelbismark/OpenAntigravity/releases/tag/v1.1.1",
   "url_windows": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.1.1/OpenAntigravity_windows_v1.1.1.zip",
-  "url_linux": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.1.1/OpenAntigravity-x86_64.AppImage"
+  "url_linux": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.1.1/OpenAntigravity_linux_v1.1.1.tar.gz"
 }
