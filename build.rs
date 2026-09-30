@@ -230,22 +230,38 @@ fn main() {
     println!("cargo:rerun-if-env-changed=AG_PORTABLE");
     println!("cargo:rerun-if-env-changed=AG_UPDATE_URL");
 
-    // URL проверки обновлений (AG_UPDATE_URL=https://host/version.json). Вшивается
-    // в бинарник через option_env! в update.rs — здесь только контроль перекомпиляции
-    // и мягкая проверка формата: опечатка не должна превращаться в молчаливое
-    // «обновления не проверить».
-    if let Some(raw) = env::var_os("AG_UPDATE_URL") {
-        let raw = raw.to_string_lossy().trim().to_string();
-        if raw.is_empty() {
-            println!("cargo:warning=AG_UPDATE_URL задан, но пуст — проверка обновлений выключена");
-        } else if !(raw.starts_with("http://") || raw.starts_with("https://")) {
+    // URL проверки обновлений (AG_UPDATE_URL=https://host/version.json).
+    // По умолчанию используется GitHub Pages репозитория OpenAntigravity:
+    // https://keelbismark.github.io/OpenAntigravity/version.json
+    // Вшивается в бинарник через rustc-env и считывается через option_env! в update.rs.
+    // Может быть переопределён переменной AG_UPDATE_URL ("none" / "off" полностью отключает).
+    const DEFAULT_UPDATE_URL: &str = "https://keelbismark.github.io/OpenAntigravity/version.json";
+    let effective_update_url = match env::var("AG_UPDATE_URL") {
+        Ok(raw) => {
+            let trimmed = raw.trim();
+            if trimmed.eq_ignore_ascii_case("none") || trimmed.eq_ignore_ascii_case("off") {
+                None
+            } else if trimmed.is_empty() {
+                Some(DEFAULT_UPDATE_URL.to_string())
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+        Err(_) => Some(DEFAULT_UPDATE_URL.to_string()),
+    };
+
+    if let Some(url) = effective_update_url {
+        if !(url.starts_with("http://") || url.starts_with("https://")) {
             println!(
                 "cargo:warning=AG_UPDATE_URL не начинается с http:// или https:// — \n                 такой адрес парсер отвергнет: {}",
-                raw.split('/').next().unwrap_or("")
+                url.split('/').next().unwrap_or("")
             );
         } else {
-            println!("cargo:warning=update feed -> {}", raw);
+            println!("cargo:rustc-env=AG_UPDATE_URL={}", url);
+            println!("cargo:warning=update feed -> {}", url);
         }
+    } else {
+        println!("cargo:warning=проверка обновлений выключена (AG_UPDATE_URL=none)");
     }
 
     // Вшитый прокси (AG_BUILTIN_PROXY=логин:пароль@хост:порт). Строка не должна

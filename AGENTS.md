@@ -148,7 +148,7 @@ noexec-фолбэк в `~/.local/share/openantigravity`, авто-TUI без г�
   (`api.github.com/repos/.../releases/latest`) и сразу обновляет бейдж релиза
   и ссылки на загрузку всех файлов.
 - Адрес фида автообновлений в приложении: `AG_UPDATE_URL` (runtime-override >
-  вшитый через `option_env!` > выкл).
+  вшитый через `build.rs` / `option_env!` > по умолчанию `https://keelbismark.github.io/OpenAntigravity/version.json`).
 
 ## 6. Портативность и данные
 

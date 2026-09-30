@@ -724,6 +724,13 @@ mod tests {
     }
 
     #[test]
+    fn test_baked_update_url() {
+        let url = update_url();
+        assert!(url.is_some(), "baked update url must not be empty");
+        assert!(url.unwrap().contains("version.json"));
+    }
+
+    #[test]
     #[ignore = "performs a real network request; point AG_UPDATE_URL at a live feed to exercise the happy path"]
     fn test_live_fetch_update_info() {
         let url = std::env::var("AG_UPDATE_URL")
