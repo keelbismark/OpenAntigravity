@@ -12,7 +12,7 @@ pub fn view(app: &mut App, ui: &mut egui::Ui) {
     header(app, ui);
     ui.add_space(8.0);
 
-    let footer_h = 46.0;
+    let footer_h = 58.0;
     let avail_h = (ui.available_height() - footer_h).max(120.0);
 
     egui::ScrollArea::vertical()
@@ -27,10 +27,11 @@ pub fn view(app: &mut App, ui: &mut egui::Ui) {
             ui.add_space(8.0);
         });
 
-    ui.add_space(4.0);
+    ui.add_space(6.0);
     ui.separator();
-    ui.add_space(4.0);
+    ui.add_space(8.0);
     footer(app, ui);
+    ui.add_space(4.0);
 }
 
 // ---------------------------------------------------------------------------
