@@ -237,6 +237,8 @@ jobs:
             "url_linux": "${DL_URL}/OpenAntigravity_linux_v${VERSION}.tar.gz",
             "url_appimage": "${DL_URL}/OpenAntigravity-x86_64.AppImage"
           }
+          ENDJSON
+
           cd dist_release
           # Создаем стабильные ссылки без номера версии в имени файла для постоянных ссылок
           [ -f "OpenAntigravity_windows_v${VERSION}.zip" ] && cp "OpenAntigravity_windows_v${VERSION}.zip" "OpenAntigravity-windows-portable.zip"
