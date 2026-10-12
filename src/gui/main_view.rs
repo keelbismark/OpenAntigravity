@@ -106,6 +106,9 @@ fn main_screen(app: &mut App, ui: &mut egui::Ui) {
     doctor_section(app, ui);
 
     ui.add_space(14.0);
+    activity_inspector_section(app, ui);
+
+    ui.add_space(14.0);
     proxy_section(app, ui);
 
     ui.add_space(14.0);
@@ -425,6 +428,8 @@ fn doctor_section(app: &mut App, ui: &mut egui::Ui) {
             }
         }
 
+        let mut fix_to_run: Option<crate::diag::AutoFixAction> = None;
+
         if let Some((_, diag_status, text)) = &app.diag_summary {
             ui.add_space(6.0);
             let badge_col = match diag_status {
@@ -437,6 +442,187 @@ fn doctor_section(app: &mut App, ui: &mut egui::Ui) {
                 ui.label(egui::RichText::new("Результат:").size(11.5).color(theme::SUBTLE));
                 ui.label(egui::RichText::new(text).size(11.5).color(badge_col));
             });
+        }
+
+        if let Some(report) = &app.last_diag_report {
+            let fixes: Vec<(&crate::diag::DiagItem, crate::diag::AutoFixAction)> = report
+                .items
+                .iter()
+                .filter_map(|it| it.fix.map(|f| (it, f)))
+                .collect();
+
+            if !fixes.is_empty() {
+                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(6.0);
+
+                ui.label(
+                    egui::RichText::new("Обнаружены проблемы для устранения:")
+                        .size(12.0)
+                        .strong()
+                        .color(egui::Color32::from_rgb(235, 175, 45)),
+                );
+                ui.add_space(4.0);
+
+                for (item, fix_action) in fixes {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(format!("• {}: {}", item.name, item.summary))
+                                .size(11.5)
+                                .color(theme::TEXT),
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let fix_btn = widgets::btn(ui, Some(Icon::Bolt), fix_action.label(), 11.0, None);
+                            if !busy && fix_btn.clicked() {
+                                fix_to_run = Some(fix_action);
+                            }
+                        });
+                    });
+                }
+            }
+        }
+
+        ui.add_space(8.0);
+        ui.separator();
+        ui.add_space(6.0);
+
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("Утилиты:")
+                    .size(11.5)
+                    .color(theme::MUTED),
+            );
+
+            let dns_resp = widgets::btn(ui, Some(Icon::Refresh { spin: false }), "Сброс DNS-кэша", 11.0, None)
+                .on_hover_text("Очистить системный кэш DNS для мгновенного применения сетевых настроек");
+            if !busy && dns_resp.clicked() {
+                fix_to_run = Some(crate::diag::AutoFixAction::FlushDns);
+            }
+
+            #[cfg(windows)]
+            {
+                let nat_resp = widgets::btn(ui, Some(Icon::Bolt), "Перезапуск WinNAT", 11.0, None)
+                    .on_hover_text("Перезапустить службу сетевой трансляции Windows (WinNAT) для освобождения системных портов");
+                if !busy && nat_resp.clicked() {
+                    fix_to_run = Some(crate::diag::AutoFixAction::RestartWinNat);
+                }
+            }
+        });
+
+        if let Some(action) = fix_to_run {
+            app.worker.send(Cmd::AutoFix(action));
+        }
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Section: AI Activity Inspector (Live Gemini & IDE Telemetry)
+// ---------------------------------------------------------------------------
+
+fn activity_inspector_section(app: &mut App, ui: &mut egui::Ui) {
+    widgets::section_header(ui, "МОНИТОРИНГ АКТИВНОСТИ ИИ (LIVE INSPECTOR)");
+    ui.add_space(4.0);
+
+    widgets::card(ui, |ui| {
+        let summary = app.activity_summary.clone().unwrap_or_default();
+
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
+
+            let total_str = format!("Всего запросов: {}", summary.total_turns);
+            widgets::metric_chip(ui, Some(Icon::Bolt), &total_str);
+
+            let ok_str = format!("200 OK: {}", summary.success_turns);
+            widgets::metric_chip(ui, Some(Icon::Check), &ok_str);
+
+            if summary.blocked_turns > 0 {
+                let blocked_str = format!("400 Blocked: {}", summary.blocked_turns);
+                widgets::metric_chip(ui, Some(Icon::Cross), &blocked_str);
+            }
+
+            if let Some(ago) = summary.newest_event_ago {
+                let secs = ago.as_secs();
+                let ago_str = if secs < 60 {
+                    format!("{secs} с назад")
+                } else {
+                    format!("{} мин назад", secs / 60)
+                };
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(
+                        egui::RichText::new(format!("Активность: {ago_str}"))
+                            .size(11.5)
+                            .color(theme::MUTED),
+                    );
+                });
+            }
+        });
+
+        if summary.recent_events.is_empty() {
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("Ожидание активности Language Server в IDE / CLI... Логи отслеживаются в реальном времени.")
+                        .size(11.5)
+                        .color(theme::SUBTLE),
+                );
+            });
+        } else {
+            ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(6.0);
+
+            for (idx, ev) in summary.recent_events.iter().take(5).enumerate() {
+                if idx > 0 {
+                    ui.add_space(4.0);
+                }
+                ui.horizontal(|ui| {
+                    let (status_text, status_col) = match ev.status {
+                        crate::core::ls_log::TurnStatus::Ok200 => ("200 OK", theme::OK),
+                        crate::core::ls_log::TurnStatus::Refusal400 => ("400 BLOCKED", theme::BAD),
+                        crate::core::ls_log::TurnStatus::Error => ("ERR", theme::WARN),
+                    };
+
+                    ui.label(
+                        egui::RichText::new(status_text)
+                            .size(11.0)
+                            .strong()
+                            .color(status_col),
+                    );
+
+                    ui.label(
+                        egui::RichText::new(&ev.model)
+                            .size(11.5)
+                            .strong()
+                            .color(theme::TEXT),
+                    );
+
+                    if let Some(ref resp_id) = ev.response_id {
+                        ui.label(
+                            egui::RichText::new(resp_id)
+                                .size(11.0)
+                                .monospace()
+                                .color(theme::SUBTLE),
+                        );
+                    }
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let time_str = if let Some(ago) = ev.ago_secs {
+                            if ago < 60 {
+                                format!("{ago} с назад")
+                            } else {
+                                format!("{} мин назад", ago / 60)
+                            }
+                        } else {
+                            ev.time_hms.clone()
+                        };
+                        ui.label(
+                            egui::RichText::new(time_str)
+                                .size(11.0)
+                                .color(theme::MUTED),
+                        );
+                    });
+                });
+            }
         }
     });
 }
@@ -520,6 +706,33 @@ fn proxy_section(app: &mut App, ui: &mut egui::Ui) {
                 }
             });
         });
+
+        // Multi-proxy ranking & status
+        let ranked = crate::upstream::get_ranked_upstreams();
+        if ranked.len() > 1 {
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("Резервные узлы:")
+                        .size(11.5)
+                        .color(theme::MUTED),
+                );
+                for up in ranked.iter().take(3) {
+                    let score_str = if let Some(score) = crate::upstream::get_upstream_score(up) {
+                        if let Some(rtt) = score.rtt_ms {
+                            format!("{} ({} мс)", up.display(), rtt)
+                        } else if score.err.is_some() {
+                            format!("{} (сбой)", up.display())
+                        } else {
+                            up.display()
+                        }
+                    } else {
+                        up.display()
+                    };
+                    widgets::metric_chip(ui, Some(Icon::Bolt), &score_str);
+                }
+            });
+        }
 
         // Proxy Profiles / Presets
         let profiles = app.status.as_ref().map(|s| s.proxy_profiles.clone()).unwrap_or_default();
@@ -627,6 +840,68 @@ fn proxy_section(app: &mut App, ui: &mut egui::Ui) {
                 st.own_proxy = if own_proxy { crate::core::ops::State::On } else { crate::core::ops::State::Off };
             }
             app.worker.send(Cmd::Set(Cap::OwnProxy, own_proxy));
+        }
+
+        ui.add_space(8.0);
+        ui.separator();
+        ui.add_space(8.0);
+
+        ui.label(
+            egui::RichText::new("Окружение терминала и консольных утилит (CLI)")
+                .size(12.5)
+                .strong()
+                .color(theme::TEXT),
+        );
+        ui.add_space(2.0);
+        ui.label(
+            egui::RichText::new("Экспорт переменных HTTP_PROXY / HTTPS_PROXY для работы curl, git, python и сторонних утилит через шлюз:")
+                .size(11.5)
+                .color(theme::MUTED),
+        );
+        ui.add_space(6.0);
+
+        let port = crate::proxy::port();
+        ui.horizontal(|ui| {
+            let ps_resp = widgets::btn(ui, Some(Icon::Copy), "PowerShell", 11.5, None)
+                .on_hover_text("Скопировать команду экспорта переменных для PowerShell ($env:HTTP_PROXY=...)");
+            if ps_resp.clicked() {
+                ui.ctx().copy_text(crate::utils::proxy_env_powershell(port));
+                app.terminal_env_copied = Some(("PowerShell".to_string(), std::time::Instant::now()));
+            }
+
+            let cmd_resp = widgets::btn(ui, Some(Icon::Copy), "CMD", 11.5, None)
+                .on_hover_text("Скопировать команду экспорта переменных для командной строки Windows (set HTTP_PROXY=...)");
+            if cmd_resp.clicked() {
+                ui.ctx().copy_text(crate::utils::proxy_env_cmd(port));
+                app.terminal_env_copied = Some(("CMD".to_string(), std::time::Instant::now()));
+            }
+
+            let bash_resp = widgets::btn(ui, Some(Icon::Copy), "Bash / Zsh", 11.5, None)
+                .on_hover_text("Скопировать команду экспорта переменных для Linux/macOS Bash и Zsh (export HTTP_PROXY=...)");
+            if bash_resp.clicked() {
+                ui.ctx().copy_text(crate::utils::proxy_env_bash(port));
+                app.terminal_env_copied = Some(("Bash/Zsh".to_string(), std::time::Instant::now()));
+            }
+
+            let run_resp = widgets::btn(ui, Some(Icon::Desktop), "Запустить терминал", 11.5, None)
+                .on_hover_text("Открыть окно терминала с автоматически настроенными переменными прокси");
+            if run_resp.clicked() {
+                let _ = crate::utils::launch_terminal_with_proxy(port);
+            }
+        });
+
+        if let Some((shell, at)) = &app.terminal_env_copied {
+            if at.elapsed() < std::time::Duration::from_secs(4) {
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!("✓ Команда для {} скопирована в буфер обмена!", shell))
+                            .color(theme::OK)
+                            .size(11.5)
+                            .strong(),
+                    );
+                });
+            }
         }
     });
 }

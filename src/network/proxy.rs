@@ -429,7 +429,7 @@ fn try_own_proxy(mut client: TcpStream, host: &str, port: u16) -> Result<(), Tcp
     if port != 443 || !is_gate_host(host) || !upstream::available() {
         return Err(client);
     }
-    let upstreams = upstream::configured_all();
+    let upstreams = upstream::get_ranked_upstreams();
     if upstreams.is_empty() {
         return Err(client);
     }
@@ -437,8 +437,11 @@ fn try_own_proxy(mut client: TcpStream, host: &str, port: u16) -> Result<(), Tcp
     for (i, up) in upstreams.iter().enumerate() {
         let is_primary = i == 0;
         let is_last = i + 1 == upstreams.len();
+        let start = Instant::now();
         match upstream::open(up, host, port, upstream::LIVE_OPEN_BUDGET) {
             Ok(upstream_sock) => {
+                let rtt = start.elapsed().as_millis() as u64;
+                upstream::record_upstream_result(up, Ok((rtt, None)));
                 // Committed: from here the client is talking to Google through their proxy.
                 if client.write_all(RESP_ESTABLISHED).is_err() {
                     return Ok(());
@@ -447,13 +450,14 @@ fn try_own_proxy(mut client: TcpStream, host: &str, port: u16) -> Result<(), Tcp
                 let proxy_label = if is_primary {
                     "свой прокси"
                 } else {
-                    "резервный прокси"
+                    "резервный прокси (автовыбор)"
                 };
                 crate::dns_forwarder::log_proxy(&format!("{} -> {}", proxy_label, host));
                 splice(client, upstream_sock);
                 return Ok(());
             }
             Err(why) => {
+                upstream::record_upstream_result(up, Err(why.clone()));
                 let proxy_label = if is_primary {
                     "основной прокси"
                 } else {
@@ -462,7 +466,7 @@ fn try_own_proxy(mut client: TcpStream, host: &str, port: u16) -> Result<(), Tcp
                 let next_hint = if is_last {
                     ""
                 } else {
-                    " (переключаюсь на резервный)"
+                    " (авто-переключение на следующий узел)"
                 };
                 crate::dns_forwarder::log_proxy(&format!(
                     "{}: {}{}",

@@ -723,6 +723,76 @@ pub fn local_clock() -> Option<LocalClock> {
     })
 }
 
+/// Formats PowerShell environment export snippet.
+pub fn proxy_env_powershell(port: u16) -> String {
+    format!(
+        "$env:HTTP_PROXY=\"http://127.0.0.1:{0}\"; $env:HTTPS_PROXY=\"http://127.0.0.1:{0}\"; $env:ALL_PROXY=\"http://127.0.0.1:{0}\"",
+        port
+    )
+}
+
+/// Formats Windows Command Prompt (cmd.exe) environment export snippet.
+pub fn proxy_env_cmd(port: u16) -> String {
+    format!(
+        "set HTTP_PROXY=http://127.0.0.1:{0} && set HTTPS_PROXY=http://127.0.0.1:{0} && set ALL_PROXY=http://127.0.0.1:{0}",
+        port
+    )
+}
+
+/// Formats POSIX / Bash / Zsh environment export snippet.
+pub fn proxy_env_bash(port: u16) -> String {
+    format!(
+        "export HTTP_PROXY=\"http://127.0.0.1:{0}\" HTTPS_PROXY=\"http://127.0.0.1:{0}\" ALL_PROXY=\"http://127.0.0.1:{0}\"",
+        port
+    )
+}
+
+/// Spawns a new interactive terminal shell with proxy environment variables pre-configured.
+pub fn launch_terminal_with_proxy(port: u16) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let ps_init = format!(
+            "$env:HTTP_PROXY='http://127.0.0.1:{0}'; $env:HTTPS_PROXY='http://127.0.0.1:{0}'; $env:ALL_PROXY='http://127.0.0.1:{0}'; \
+             Write-Host '===================================================' -ForegroundColor Cyan; \
+             Write-Host '  Open Antigravity: Терминальная сессия с прокси   ' -ForegroundColor Green; \
+             Write-Host '  HTTP_PROXY / HTTPS_PROXY -> http://127.0.0.1:{0}' -ForegroundColor Yellow; \
+             Write-Host '===================================================' -ForegroundColor Cyan",
+            port
+        );
+        Command::new("powershell.exe")
+            .args(["-NoExit", "-Command", &ps_init])
+            .spawn()
+            .map_err(|e| format!("Не удалось запустить PowerShell: {e}"))?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let bash_init = format!(
+            "export HTTP_PROXY='http://127.0.0.1:{0}' HTTPS_PROXY='http://127.0.0.1:{0}' ALL_PROXY='http://127.0.0.1:{0}'; \
+             echo -e '\\033[1;36m===================================================\\033[0m'; \
+             echo -e '\\033[1;32m  Open Antigravity: Терминальная сессия с прокси   \\033[0m'; \
+             echo -e '\\033[1;33m  HTTP_PROXY / HTTPS_PROXY -> http://127.0.0.1:{0}\\033[0m'; \
+             echo -e '\\033[1;36m===================================================\\033[0m'; \
+             exec bash",
+            port
+        );
+        let spawned = Command::new("x-terminal-emulator")
+            .args(["-e", "bash", "-c", &bash_init])
+            .spawn()
+            .or_else(|_| {
+                Command::new("gnome-terminal")
+                    .args(["--", "bash", "-c", &bash_init])
+                    .spawn()
+            })
+            .or_else(|_| {
+                Command::new("konsole")
+                    .args(["-e", "bash", "-c", &bash_init])
+                    .spawn()
+            });
+        spawned.map(|_| ()).map_err(|e| format!("Не удалось запустить терминал: {e}"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -854,5 +924,21 @@ mod tests {
             let masked_direct = mask_path(&direct);
             assert_eq!(masked_direct, r"%LOCALAPPDATA%\agy\bin");
         }
+    }
+
+    #[test]
+    fn test_proxy_env_formats() {
+        let ps = proxy_env_powershell(8085);
+        assert!(ps.contains("$env:HTTP_PROXY=\"http://127.0.0.1:8085\""));
+        assert!(ps.contains("$env:HTTPS_PROXY=\"http://127.0.0.1:8085\""));
+        assert!(ps.contains("$env:ALL_PROXY=\"http://127.0.0.1:8085\""));
+
+        let cmd = proxy_env_cmd(8085);
+        assert!(cmd.contains("set HTTP_PROXY=http://127.0.0.1:8085"));
+        assert!(cmd.contains("set HTTPS_PROXY=http://127.0.0.1:8085"));
+
+        let bash = proxy_env_bash(8085);
+        assert!(bash.contains("export HTTP_PROXY=\"http://127.0.0.1:8085\""));
+        assert!(bash.contains("HTTPS_PROXY=\"http://127.0.0.1:8085\""));
     }
 }

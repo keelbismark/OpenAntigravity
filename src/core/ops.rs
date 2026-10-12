@@ -333,6 +333,7 @@ pub enum Cmd {
     /// from the gate file here, not carried from the card: the card could be
     /// minutes old by the time the button is pressed.
     KillHolder,
+    AutoFix(crate::platform::diag::AutoFixAction),
     #[allow(dead_code)]
     Stop,
 }
@@ -669,6 +670,21 @@ fn run_worker(
                 repair(&mut ctx);
                 ctx.settings.save();
                 push_status(&mut ctx, Scan::System);
+                ctx.busy(None);
+            }
+            Cmd::AutoFix(action) => {
+                ctx.busy(Some(action.label()));
+                match crate::platform::diag::execute_fix(action) {
+                    Ok(msg) => {
+                        ctx.log(Level::Ok, msg);
+                    }
+                    Err(e) => {
+                        ctx.log(Level::Warn, format!("Сбой автоисправления: {e}"));
+                    }
+                }
+                repair(&mut ctx);
+                ctx.settings.save();
+                push_status(&mut ctx, Scan::Deep);
                 ctx.busy(None);
             }
             Cmd::ReorderProviders(order) => {

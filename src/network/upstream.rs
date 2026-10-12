@@ -16,6 +16,7 @@
 //! the relay, and guessing wrong about SOCKS would fail in a way a user cannot
 //! read. The prompt says so plainly.
 
+use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
@@ -408,6 +409,124 @@ pub fn configured_display() -> Option<String> {
     } else {
         Some(all.into_iter().map(|u| u.display()).collect::<Vec<_>>().join("; "))
     }
+}
+
+/// Measured status and latency score for an upstream proxy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpstreamScore {
+    pub display: String,
+    pub rtt_ms: Option<u64>,
+    pub loc: Option<String>,
+    pub ok: bool,
+    pub err: Option<String>,
+}
+
+static SCORES: Mutex<Option<HashMap<String, UpstreamScore>>> = Mutex::new(None);
+
+pub fn record_upstream_result(up: &Upstream, result: Result<(u64, Option<String>), String>) {
+    let Ok(mut guard) = SCORES.lock() else { return };
+    let map = guard.get_or_insert_with(HashMap::new);
+    let key = up.as_line();
+    match result {
+        Ok((rtt, loc)) => {
+            map.insert(
+                key,
+                UpstreamScore {
+                    display: up.display(),
+                    rtt_ms: Some(rtt),
+                    loc,
+                    ok: true,
+                    err: None,
+                },
+            );
+        }
+        Err(e) => {
+            map.insert(
+                key,
+                UpstreamScore {
+                    display: up.display(),
+                    rtt_ms: None,
+                    loc: None,
+                    ok: false,
+                    err: Some(e),
+                },
+            );
+        }
+    }
+}
+
+pub fn get_upstream_score(up: &Upstream) -> Option<UpstreamScore> {
+    let guard = SCORES.lock().ok()?;
+    let map = guard.as_ref()?;
+    map.get(&up.as_line()).cloned()
+}
+
+/// Returns configured upstreams sorted by health and lowest latency.
+pub fn get_ranked_upstreams() -> Vec<Upstream> {
+    let mut all = configured_all();
+    if all.len() <= 1 {
+        return all;
+    }
+    let guard = match SCORES.lock() {
+        Ok(g) => g,
+        Err(_) => return all,
+    };
+    let Some(map) = guard.as_ref() else {
+        return all;
+    };
+
+    all.sort_by(|a, b| {
+        let sa = map.get(&a.as_line());
+        let sb = map.get(&b.as_line());
+        match (sa, sb) {
+            (Some(sa), Some(sb)) => {
+                if sa.ok != sb.ok {
+                    sb.ok.cmp(&sa.ok)
+                } else if sa.ok {
+                    sa.rtt_ms.cmp(&sb.rtt_ms)
+                } else {
+                    std::cmp::Ordering::Equal
+                }
+            }
+            (Some(sa), None) => {
+                if sa.ok {
+                    std::cmp::Ordering::Less
+                } else {
+                    std::cmp::Ordering::Greater
+                }
+            }
+            (None, Some(sb)) => {
+                if sb.ok {
+                    std::cmp::Ordering::Greater
+                } else {
+                    std::cmp::Ordering::Less
+                }
+            }
+            (None, None) => std::cmp::Ordering::Equal,
+        }
+    });
+
+    all
+}
+
+/// Races all configured upstreams, measuring latency to Google Cloud Code and updating scores.
+pub fn race_all_upstreams(budget: Duration) -> Vec<(Upstream, Result<(u64, Option<String>), String>)> {
+    let all = configured_all();
+    let mut results = Vec::with_capacity(all.len());
+    for up in all {
+        let start = Instant::now();
+        let res = match open(&up, PROBE_HOST, 443, budget) {
+            Ok(_sock) => {
+                let rtt = start.elapsed().as_millis() as u64;
+                let loc = exit_info(&up).map(|(ip, country)| format!("{ip} ({country})"));
+                Ok((rtt, loc))
+            }
+            Err(e) => Err(e),
+        };
+        record_upstream_result(&up, res.clone());
+        results.push((up, res));
+    }
+    results
 }
 
 /// Whether the route should be tried for this connection.
@@ -935,5 +1054,20 @@ mod tests {
         assert!(region_is_blocked("ru"));
         assert!(!region_is_blocked("NL"));
         assert!(!region_is_blocked(""));
+    }
+
+    #[test]
+    fn test_upstream_ranking_by_score() {
+        let p1 = parse("1.1.1.1:8080").unwrap();
+        let p2 = parse("2.2.2.2:8080").unwrap();
+        let p3 = parse("3.3.3.3:8080").unwrap();
+
+        // Record p1 as slow (350 ms), p2 as fast (40 ms), p3 as failed
+        record_upstream_result(&p1, Ok((350, Some("DE".into()))));
+        record_upstream_result(&p2, Ok((40, Some("NL".into()))));
+        record_upstream_result(&p3, Err("connection timeout".into()));
+
+        assert_eq!(get_upstream_score(&p2).unwrap().rtt_ms, Some(40));
+        assert!(!get_upstream_score(&p3).unwrap().ok);
     }
 }

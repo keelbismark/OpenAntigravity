@@ -44,12 +44,35 @@ impl DiagStatus {
     }
 }
 
+/// One-click remediation action for issues detected during diagnostics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutoFixAction {
+    RepairPatch,
+    FlushDns,
+    RestartWinNat,
+    FreePort,
+    ReapplyDnsRules,
+}
+
+impl AutoFixAction {
+    pub fn label(&self) -> &'static str {
+        match self {
+            AutoFixAction::RepairPatch => "Разблокировать IDE",
+            AutoFixAction::FlushDns => "Сбросить DNS-кэш",
+            AutoFixAction::RestartWinNat => "Перезапустить WinNAT",
+            AutoFixAction::FreePort => "Освободить порт",
+            AutoFixAction::ReapplyDnsRules => "Восстановить правила",
+        }
+    }
+}
+
 pub struct DiagItem {
     pub category: &'static str,
     pub name: String,
     pub status: DiagStatus,
     pub summary: String,
     pub details: Vec<String>,
+    pub fix: Option<AutoFixAction>,
 }
 
 pub struct DiagReport {
@@ -112,6 +135,75 @@ impl DiagReport {
     }
 }
 
+/// Выполняет автоматическое исправление обнаруженной неполадки.
+pub fn execute_fix(action: AutoFixAction) -> Result<String, String> {
+    match action {
+        AutoFixAction::RepairPatch => {
+            let installs = crate::find_all_installs();
+            let mut count = 0;
+            for inst in &installs {
+                let summary = crate::patch_binary::patch_all_binaries(inst);
+                count += summary.ok;
+            }
+            Ok(format!("Применён патч Language Server (модифицировано файлов: {count})"))
+        }
+        AutoFixAction::FlushDns => {
+            if crate::dns::flush_client_cache() {
+                Ok("Кэш DNS успешно очищен".to_string())
+            } else {
+                Err("Не удалось очистить кэш DNS".to_string())
+            }
+        }
+        AutoFixAction::RestartWinNat => {
+            #[cfg(target_os = "windows")]
+            {
+                let mut stop = std::process::Command::new("net");
+                stop.args(["stop", "winnat"]);
+                let _ = crate::utils::bounded_output(crate::utils::no_window(&mut stop), Duration::from_secs(10));
+
+                let mut start = std::process::Command::new("net");
+                start.args(["start", "winnat"]);
+                let out = crate::utils::bounded_output(crate::utils::no_window(&mut start), Duration::from_secs(10));
+                match out {
+                    Some(o) if o.status.success() => Ok("Служба WinNAT успешно перезапущена".to_string()),
+                    _ => Err("Не удалось перезапустить WinNAT (требуются права администратора)".to_string()),
+                }
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                Err("WinNAT поддерживается только в Windows".to_string())
+            }
+        }
+        AutoFixAction::FreePort => {
+            let target = crate::gate::read().and_then(|r| {
+                r.blockers
+                    .into_iter()
+                    .find(|b| b.cause == "held" && !b.by.is_empty())
+            });
+            if let Some(b) = target {
+                crate::portcheck::kill_holding_process(b.pid, &b.by)
+                    .map(|_| format!("Процесс «{}» (pid {}) завершён", b.by, b.pid))
+            } else {
+                Ok("Конфликтующий процесс не найден".to_string())
+            }
+        }
+        AutoFixAction::ReapplyDnsRules => {
+            #[cfg(target_os = "windows")]
+            {
+                match crate::dns::setup_dns_nrpt() {
+                    Ok(_) => Ok("NRPT правила Windows успешно применены".to_string()),
+                    Err(e) => Err(format!("Сбой применения правил: {e}")),
+                }
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                crate::dns::refresh_pinned_hosts();
+                Ok("Пиннинг /etc/hosts обновлён".to_string())
+            }
+        }
+    }
+}
+
 /// Выполняет полную диагностику системы и сети.
 pub fn run_diagnostics() -> DiagReport {
     let mut items = Vec::new();
@@ -151,6 +243,7 @@ pub fn run_diagnostics() -> DiagReport {
         status: DiagStatus::Ok,
         summary: format!("{}-{}", os_name, arch_name),
         details: env_details,
+        fix: None,
     });
 
     // 2. Установки Antigravity
@@ -165,6 +258,7 @@ pub fn run_diagnostics() -> DiagReport {
                 "Если Antigravity установлен в нестандартную папку, запустите программу с путём к ней:".to_string(),
                 "open_antigravity /путь/к/папке".to_string(),
             ],
+            fix: None,
         });
     } else {
         for inst in &installs {
@@ -204,6 +298,7 @@ pub fn run_diagnostics() -> DiagReport {
                 details.push("Компоненты Electron: распакованы в resources/app".to_string());
             }
 
+            let needs_patch = !state.is_empty() && !state.fully_patched();
             items.push(DiagItem {
                 category: "Antigravity",
                 name: label.to_string(),
@@ -214,6 +309,7 @@ pub fn run_diagnostics() -> DiagReport {
                     "Требуется применить разблокировку".to_string()
                 },
                 details,
+                fix: if needs_patch { Some(AutoFixAction::RepairPatch) } else { None },
             });
         }
     }
@@ -252,6 +348,7 @@ pub fn run_diagnostics() -> DiagReport {
         DiagStatus::Info
     };
 
+    let port_conflict = !proxy_online && is_running;
     items.push(DiagItem {
         category: "Локальный сервис",
         name: "Локальный прокси".to_string(),
@@ -262,6 +359,7 @@ pub fn run_diagnostics() -> DiagReport {
             format!("Остановлен (порт {})", listen_port)
         },
         details: proxy_details,
+        fix: if port_conflict { Some(AutoFixAction::FreePort) } else { None },
     });
 
     // 4. DNS-обход
@@ -285,6 +383,7 @@ pub fn run_diagnostics() -> DiagReport {
                 }
                 .to_string(),
             ],
+            fix: if !nrpt_on { Some(AutoFixAction::ReapplyDnsRules) } else { None },
         });
     }
 
@@ -323,6 +422,7 @@ pub fn run_diagnostics() -> DiagReport {
                 "Пиннинг выключен".to_string()
             },
             details,
+            fix: if !hosts_on { Some(AutoFixAction::ReapplyDnsRules) } else { None },
         });
     }
 
@@ -401,6 +501,7 @@ pub fn run_diagnostics() -> DiagReport {
                                 status,
                                 summary,
                                 details: upstream_details,
+                                fix: None,
                             });
                         }
                         None => {
@@ -411,6 +512,7 @@ pub fn run_diagnostics() -> DiagReport {
                                 status: DiagStatus::Ok,
                                 summary: "Туннель работает (страна не определена)".to_string(),
                                 details: upstream_details,
+                                fix: None,
                             });
                         }
                     }
@@ -423,6 +525,7 @@ pub fn run_diagnostics() -> DiagReport {
                         status: DiagStatus::Fail,
                         summary: format!("Прокси отклонил CONNECT ({})", e),
                         details: upstream_details,
+                        fix: None,
                     });
                 }
             }
@@ -434,6 +537,7 @@ pub fn run_diagnostics() -> DiagReport {
                 status: DiagStatus::Fail,
                 summary: "Прокси-сервер недоступен по сети".to_string(),
                 details: upstream_details,
+                fix: None,
             });
         }
     } else {
@@ -446,6 +550,7 @@ pub fn run_diagnostics() -> DiagReport {
                 "В сборку не вшит прокси и не задан свой прокси в настройках.".to_string(),
                 "Укажите прокси в окне программы («Свой прокси») для обхода блокировок.".to_string(),
             ],
+            fix: None,
         });
     }
 
@@ -492,6 +597,7 @@ pub fn run_diagnostics() -> DiagReport {
         status: DiagStatus::Ok,
         summary: format!("Проверено {} провайдеров", crate::resolvers::PROVIDERS.len()),
         details: provider_details,
+        fix: None,
     });
 
     DiagReport {
@@ -526,5 +632,14 @@ mod tests {
         assert!(!report.items.is_empty());
         let s = report.to_string_formatted(false);
         assert!(s.contains("Диагностика системы и сети"));
+    }
+
+    #[test]
+    fn test_autofix_actions() {
+        assert_eq!(AutoFixAction::RepairPatch.label(), "Разблокировать IDE");
+        assert_eq!(AutoFixAction::FlushDns.label(), "Сбросить DNS-кэш");
+        assert_eq!(AutoFixAction::RestartWinNat.label(), "Перезапустить WinNAT");
+        assert_eq!(AutoFixAction::FreePort.label(), "Освободить порт");
+        assert_eq!(AutoFixAction::ReapplyDnsRules.label(), "Восстановить правила");
     }
 }

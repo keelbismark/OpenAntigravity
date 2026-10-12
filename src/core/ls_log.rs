@@ -508,6 +508,173 @@ pub fn history(paths: &[PathBuf], recent: Duration, horizon: Duration) -> Histor
     out
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnStatus {
+    Ok200,
+    Refusal400,
+    Error,
+}
+
+impl TurnStatus {
+    pub fn badge(&self) -> &'static str {
+        match self {
+            TurnStatus::Ok200 => "200 OK",
+            TurnStatus::Refusal400 => "400 BLOCKED",
+            TurnStatus::Error => "ERROR",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelTurnEvent {
+    pub time_hms: String,
+    pub ago_secs: Option<u64>,
+    pub model: String,
+    pub method: String,
+    pub status: TurnStatus,
+    pub response_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ActivitySummary {
+    pub total_turns: usize,
+    pub success_turns: usize,
+    pub blocked_turns: usize,
+    pub newest_event_ago: Option<Duration>,
+    pub recent_events: Vec<ModelTurnEvent>,
+}
+
+fn extract_response_id(line: &str) -> Option<String> {
+    let lower = line.to_ascii_lowercase();
+    let idx = lower.find("responseid:")?;
+    let rest = line[idx + "responseid:".len()..].trim_start();
+    let token: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .take(16)
+        .collect();
+    if token.is_empty() {
+        None
+    } else {
+        Some(token)
+    }
+}
+
+fn extract_model_name(line: &str) -> String {
+    let lower = line.to_ascii_lowercase();
+    if lower.contains("gemini-2.5-pro") {
+        "Gemini 2.5 Pro".to_string()
+    } else if lower.contains("gemini-2.5-flash") {
+        "Gemini 2.5 Flash".to_string()
+    } else if lower.contains("gemini-1.5-pro") {
+        "Gemini 1.5 Pro".to_string()
+    } else if lower.contains("gemini-1.5-flash") {
+        "Gemini 1.5 Flash".to_string()
+    } else if lower.contains("claude-3-5-sonnet") || lower.contains("claude-3.5-sonnet") {
+        "Claude 3.5 Sonnet".to_string()
+    } else if lower.contains("claude") {
+        "Claude".to_string()
+    } else if let Some(pos) = lower.find("models/") {
+        let rest = &line[pos + 7..];
+        let name: String = rest
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+            .take(24)
+            .collect();
+        if !name.is_empty() {
+            format!("models/{}", name)
+        } else {
+            "Gemini (Stream)".to_string()
+        }
+    } else if lower.contains("streamgeneratecontent") {
+        "Gemini (Stream)".to_string()
+    } else {
+        "Gemini API".to_string()
+    }
+}
+
+pub fn inspect_recent_activity(paths: &[PathBuf], max_events: usize) -> ActivitySummary {
+    let now = crate::utils::local_clock();
+    let mut summary = ActivitySummary::default();
+    let mut events = Vec::new();
+
+    for path in paths {
+        let Some(text) = tail(path, HISTORY_TAIL) else {
+            continue;
+        };
+
+        for line in text.lines() {
+            let is_ans = is_answer(line.as_bytes());
+            let refusals = count_refusals(line.as_bytes());
+            let is_call = contains_ci(line.as_bytes(), ANSWER_CALL.as_bytes());
+
+            if !is_ans && refusals == 0 && !is_call {
+                continue;
+            }
+
+            summary.total_turns += 1;
+            let status = if refusals > 0 {
+                summary.blocked_turns += 1;
+                TurnStatus::Refusal400
+            } else if is_ans {
+                summary.success_turns += 1;
+                TurnStatus::Ok200
+            } else {
+                TurnStatus::Ok200
+            };
+
+            let stamp = parse_stamp(line);
+            let time_hms = match stamp {
+                Some((_, _, sec)) => {
+                    let h = sec / 3600;
+                    let m = (sec % 3600) / 60;
+                    let s = sec % 60;
+                    format!("{:02}:{:02}:{:02}", h, m, s)
+                }
+                None => "--:--:--".to_string(),
+            };
+
+            let ago_secs = now.and_then(|n| {
+                stamp.and_then(|st| age_secs(st, n)).map(|s| s as u64)
+            });
+
+            if let Some(s) = ago_secs {
+                let dur = Duration::from_secs(s);
+                if summary.newest_event_ago.is_none_or(|cur| dur < cur) {
+                    summary.newest_event_ago = Some(dur);
+                }
+            }
+
+            let model = extract_model_name(line);
+            let method = if is_call || is_ans {
+                "streamGenerateContent".to_string()
+            } else if line.to_ascii_lowercase().contains("fetchavailablemodels") {
+                "fetchAvailableModels".to_string()
+            } else {
+                "loadCodeAssist".to_string()
+            };
+            let response_id = extract_response_id(line);
+
+            events.push(ModelTurnEvent {
+                time_hms,
+                ago_secs,
+                model,
+                method,
+                status,
+                response_id,
+            });
+        }
+    }
+
+    // Keep the most recent events (newest first)
+    events.reverse();
+    if events.len() > max_events {
+        events.truncate(max_events);
+    }
+    summary.recent_events = events;
+    summary
+}
+
 fn newest_matching(
     paths: &[PathBuf],
     within: Duration,
@@ -1327,5 +1494,19 @@ mod tests {
         assert_eq!(verify_in(unstamped), None);
         let old = "E0925 09:00:00.000000 1 x.go:1] {\"reason\": \"VALIDATION_REQUIRED\", \"validation_url\": \"https://accounts.google.com/x\"}\n";
         assert_eq!(verify_in(old), None);
+    }
+
+    #[test]
+    fn test_extract_model_and_response_id() {
+        let line = "I0912 15:16:02.123 streamGenerateContent?alt=sse ResponseID: resp-89ab12cd model: models/gemini-2.5-pro";
+        assert_eq!(extract_model_name(line), "Gemini 2.5 Pro");
+        assert_eq!(extract_response_id(line), Some("resp-89ab12cd".to_string()));
+
+        let flash_line = "I0912 15:16:02.123 streamGenerateContent ResponseID: resp-4444 gemini-2.5-flash";
+        assert_eq!(extract_model_name(flash_line), "Gemini 2.5 Flash");
+        assert_eq!(extract_response_id(flash_line), Some("resp-4444".to_string()));
+
+        let refusal_line = "E0912 15:16:02.123 User location is not supported for the API use";
+        assert_eq!(count_refusals(refusal_line.as_bytes()), 1);
     }
 }

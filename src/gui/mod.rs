@@ -123,6 +123,12 @@ pub struct App {
     pub show_add_profile: bool,
     /// Last time an automatic background ping check ran.
     pub last_ping_time: Option<std::time::Instant>,
+    /// Notification text for copied terminal proxy environment and timestamp.
+    pub terminal_env_copied: Option<(String, std::time::Instant)>,
+    /// Activity summary from language server logs (Live Inspector).
+    pub activity_summary: Option<crate::core::ls_log::ActivitySummary>,
+    /// Last time activity logs were polled.
+    pub last_activity_poll: Option<std::time::Instant>,
     frames: u8,
 }
 
@@ -216,6 +222,9 @@ impl App {
             new_profile_name: String::new(),
             show_add_profile: false,
             last_ping_time: None,
+            terminal_env_copied: None,
+            activity_summary: None,
+            last_activity_poll: None,
             frames: 0,
         }
     }
@@ -278,18 +287,43 @@ impl App {
             .spawn(move || {
                 let start = std::time::Instant::now();
                 let res = (|| -> Result<(u128, Option<String>), String> {
-                    let first = input.split(';').next().unwrap_or(&input).trim();
-                    let up = crate::upstream::parse(first)?;
-                    let _sock = crate::upstream::open(
-                        &up,
-                        "daily-cloudcode-pa.googleapis.com",
-                        443,
-                        std::time::Duration::from_secs(6),
-                    )?;
-                    let rtt = start.elapsed().as_millis();
-                    let loc = crate::upstream::exit_info(&up)
-                        .map(|(ip, country)| format!("{ip} ({country})"));
-                    Ok((rtt, loc))
+                    let proxies = crate::upstream::parse_multiple(&input)?;
+                    if proxies.is_empty() {
+                        return Err("прокси не указан".to_string());
+                    }
+                    if proxies.len() == 1 {
+                        let up = &proxies[0];
+                        let _sock = crate::upstream::open(
+                            up,
+                            "daily-cloudcode-pa.googleapis.com",
+                            443,
+                            std::time::Duration::from_secs(6),
+                        )?;
+                        let rtt = start.elapsed().as_millis();
+                        let loc = crate::upstream::exit_info(up)
+                            .map(|(ip, country)| format!("{ip} ({country})"));
+                        crate::upstream::record_upstream_result(up, Ok((rtt as u64, loc.clone())));
+                        Ok((rtt, loc))
+                    } else {
+                        // Multi-proxy race: test all nodes and select the fastest responsive one
+                        let race = crate::upstream::race_all_upstreams(std::time::Duration::from_secs(4));
+                        let best = race.iter().filter_map(|(up, res)| {
+                            match res {
+                                Ok((rtt, loc)) => Some((*rtt, loc.clone(), up.display())),
+                                Err(_) => None,
+                            }
+                        }).min_by_key(|(rtt, _, _)| *rtt);
+
+                        if let Some((best_rtt, loc, display)) = best {
+                            let loc_text = match loc {
+                                Some(l) => format!("{l} · лучший узел: {display}"),
+                                None => format!("лучший узел: {display}"),
+                            };
+                            Ok((best_rtt as u128, Some(loc_text)))
+                        } else {
+                            Err("все указанные узлы прокси не ответили".to_string())
+                        }
+                    }
                 })();
                 let _ = tx.send(res);
                 ctx.request_repaint();
@@ -750,6 +784,26 @@ impl eframe::App for App {
         if need_ping && proxy_on && !self.proxy_test_running && !self.own_proxy_input.trim().is_empty() {
             self.last_ping_time = Some(std::time::Instant::now());
             self.start_proxy_test(ctx);
+        }
+
+        // Live IDE activity inspector polling: runs every 3 seconds
+        let need_activity = match self.last_activity_poll {
+            Some(t) => t.elapsed() > std::time::Duration::from_secs(3),
+            None => true,
+        };
+        if need_activity {
+            self.last_activity_poll = Some(std::time::Instant::now());
+            let logs = crate::core::ls_log::candidate_logs();
+            if !logs.is_empty() {
+                self.activity_summary = Some(crate::core::ls_log::inspect_recent_activity(&logs, 8));
+            }
+        }
+
+        // Auto-expire terminal env copied banner after 4 seconds
+        if let Some((_, at)) = &self.terminal_env_copied {
+            if at.elapsed() > std::time::Duration::from_secs(4) {
+                self.terminal_env_copied = None;
+            }
         }
     }
 
