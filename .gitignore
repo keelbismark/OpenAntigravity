@@ -23,6 +23,8 @@ renderer.txt
 .antigravity/
 .gemini/
 scratch/
+AGENTS.md
+CLAUDE.md
 
 # Release packages (keep version.json)
 release/*.tar.gz
