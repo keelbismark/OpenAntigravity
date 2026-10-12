@@ -687,24 +687,35 @@ fn print_help() {
 
 fn main() {
     // Clean up any stale .old binary left by a previous auto-update
+    let mut just_updated = false;
     if let Ok(exe) = std::env::current_exe() {
         let old = exe.with_extension("exe.old");
         if old.exists() {
             let _ = std::fs::remove_file(old);
+            just_updated = true;
         }
         #[cfg(not(target_os = "windows"))]
         {
             let old_unix = exe.with_extension("old");
             if old_unix.exists() {
                 let _ = std::fs::remove_file(old_unix);
+                just_updated = true;
             }
             if let Ok(appimage) = std::env::var("APPIMAGE") {
                 let old_appimage = std::path::PathBuf::from(appimage).with_extension("AppImage.old");
                 if old_appimage.exists() {
                     let _ = std::fs::remove_file(old_appimage);
+                    just_updated = true;
                 }
             }
         }
+    }
+
+    if just_updated {
+        crate::platform::notify::send(
+            "Open Antigravity",
+            &format!("Приложение успешно обновлено до версии v{}!", crate::update::current_version()),
+        );
     }
 
     if env::args().skip(1).any(|a| {

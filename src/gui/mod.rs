@@ -420,12 +420,30 @@ impl App {
         frame.show(ui, |ui| {
             ui.horizontal(|ui| {
                 widgets::show_icon(ui, widgets::Icon::Update, theme::ACCENT, 14.0);
-                ui.label(
+                let ver_label = ui.label(
                     egui::RichText::new(format!("Доступна новая версия v{}", rel.display_version()))
                         .color(theme::TEXT)
                         .size(12.5)
                         .strong(),
                 );
+                if let Some(notes) = &rel.notes {
+                    let trimmed = notes.trim();
+                    if !trimmed.is_empty() {
+                        ver_label.on_hover_text(trimmed);
+                        let first_line = trimmed.lines().next().unwrap_or("").trim();
+                        let preview = if first_line.chars().count() > 40 {
+                            let truncated: String = first_line.chars().take(38).collect();
+                            format!("({truncated}...)")
+                        } else {
+                            format!("({first_line})")
+                        };
+                        ui.label(
+                            egui::RichText::new(preview)
+                                .color(theme::MUTED)
+                                .size(11.5),
+                        ).on_hover_text(trimmed);
+                    }
+                }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.add(
@@ -680,9 +698,23 @@ impl eframe::App for App {
             ctx.request_repaint_after(tray::HIDDEN_TICK);
         }
 
-        // When the user clicks the window's [X], let it close cleanly and exit.
+        // When the user clicks the window's [X], let it close cleanly and exit,
+        // unless an auto-update is actively downloading or extracting.
         if ctx.input(|i| i.viewport().close_requested()) {
-            self.tray_items = None;
+            let updating = matches!(
+                self.auto_update_progress,
+                Some(crate::update::UpdateProgress::Downloading { .. } | crate::update::UpdateProgress::Extracting)
+            );
+            if updating {
+                // Cancel the close request and notify that update is in progress
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                crate::platform::notify::send(
+                    "Open Antigravity",
+                    "Идёт установка обновления. Пожалуйста, подождите завершения...",
+                );
+            } else {
+                self.tray_items = None;
+            }
         }
 
         // When the user clicks minimize [_], hide to the system tray if there
