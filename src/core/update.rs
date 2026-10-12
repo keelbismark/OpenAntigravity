@@ -371,6 +371,8 @@ fn roundtrip<S: Read + Write>(stream: &mut S, url: &ParsedUrl) -> Result<Vec<u8>
          Host: {}\r\n\
          User-Agent: open_antigravity/{}\r\n\
          Accept: application/json\r\n\
+         Cache-Control: no-cache, no-store, must-revalidate\r\n\
+         Pragma: no-cache\r\n\
          Connection: close\r\n\r\n",
         url.path,
         url.host,
@@ -526,10 +528,10 @@ pub fn check_update_cached(force: bool) -> Result<Option<UpdateInfo>, String> {
                 if cached.url == url && now_unix >= cached.checked_at_unix {
                     let elapsed = Duration::from_secs(now_unix - cached.checked_at_unix);
                     if cached.info.is_newer_than_current() {
-                        if elapsed < CHECK_INTERVAL {
+                        if elapsed < Duration::from_secs(30) {
                             return Ok(Some(cached.info));
                         }
-                    } else if elapsed < Duration::from_secs(2 * 60) {
+                    } else if elapsed < Duration::from_secs(30) {
                         return Ok(None);
                     }
                 }

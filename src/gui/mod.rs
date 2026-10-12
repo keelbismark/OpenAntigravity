@@ -419,32 +419,7 @@ impl App {
 
         frame.show(ui, |ui| {
             ui.horizontal(|ui| {
-                widgets::show_icon(ui, widgets::Icon::Update, theme::ACCENT, 14.0);
-                let ver_label = ui.label(
-                    egui::RichText::new(format!("Доступна новая версия v{}", rel.display_version()))
-                        .color(theme::TEXT)
-                        .size(12.5)
-                        .strong(),
-                );
-                if let Some(notes) = &rel.notes {
-                    let trimmed = notes.trim();
-                    if !trimmed.is_empty() {
-                        ver_label.on_hover_text(trimmed);
-                        let first_line = trimmed.lines().next().unwrap_or("").trim();
-                        let preview = if first_line.chars().count() > 40 {
-                            let truncated: String = first_line.chars().take(38).collect();
-                            format!("({truncated}...)")
-                        } else {
-                            format!("({first_line})")
-                        };
-                        ui.label(
-                            egui::RichText::new(preview)
-                                .color(theme::MUTED)
-                                .size(11.5),
-                        ).on_hover_text(trimmed);
-                    }
-                }
-
+                // Right side action buttons rendered first in right_to_left so they occupy their needed space cleanly
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.add(
                         egui::Button::new(
@@ -472,6 +447,44 @@ impl App {
                             crate::utils::open_url(url);
                         }
                     }
+
+                    // Left side title, version and release notes preview inside the remaining horizontal space
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        widgets::show_icon(ui, widgets::Icon::Update, theme::ACCENT, 14.0);
+                        let ver_label = ui.label(
+                            egui::RichText::new(format!("Доступна новая версия v{}", rel.display_version()))
+                                .color(theme::TEXT)
+                                .size(12.5)
+                                .strong(),
+                        );
+                        if let Some(notes) = &rel.notes {
+                            let trimmed = notes.trim();
+                            if !trimmed.is_empty() {
+                                ver_label.on_hover_text(trimmed);
+                                let first_line = trimmed.lines().next().unwrap_or("").trim();
+                                // Clean up redundant repeated version string if present in notes
+                                let cleaned_line = first_line
+                                    .strip_prefix(&format!("Open Antigravity v{}", rel.display_version()))
+                                    .or_else(|| first_line.strip_prefix(&format!("v{}", rel.display_version())))
+                                    .map(|s| s.trim())
+                                    .unwrap_or(first_line);
+
+                                if !cleaned_line.is_empty() {
+                                    let preview = if cleaned_line.chars().count() > 32 {
+                                        let truncated: String = cleaned_line.chars().take(30).collect();
+                                        format!("({truncated}...)")
+                                    } else {
+                                        format!("({cleaned_line})")
+                                    };
+                                    ui.label(
+                                        egui::RichText::new(preview)
+                                            .color(theme::MUTED)
+                                            .size(11.5),
+                                    ).on_hover_text(trimmed);
+                                }
+                            }
+                        }
+                    });
                 });
             });
         });
