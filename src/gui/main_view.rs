@@ -133,9 +133,9 @@ fn doctor_screen(app: &mut App, ui: &mut egui::Ui) {
 fn quick_proxy_card(app: &mut App, ui: &mut egui::Ui) {
     let busy = app.is_busy();
     ui.horizontal(|ui| {
-        widgets::section_header(ui, "ТЕКУЩИЙ ПРОКСИ");
+        widgets::section_header(ui, "ПРОКСИ");
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if widgets::btn(ui, None, "Настройка →", 11.5, None).clicked() {
+            if widgets::btn(ui, None, "Настроить →", 11.5, None).clicked() {
                 app.current_tab = Tab::Proxy;
             }
         });
@@ -197,7 +197,7 @@ fn quick_proxy_card(app: &mut App, ui: &mut egui::Ui) {
 
             ui.horizontal(|ui| {
                 ui.label(
-                    egui::RichText::new("Быстрый выбор:")
+                    egui::RichText::new("Профили:")
                         .size(11.5)
                         .color(theme::MUTED),
                 );
@@ -431,7 +431,7 @@ fn doctor_section(app: &mut App, ui: &mut egui::Ui) {
     let busy = app.is_busy();
 
     ui.horizontal(|ui| {
-        widgets::section_header(ui, "ДИАГНОСТИКА ОКРУЖЕНИЯ (DOCTOR)");
+        widgets::section_header(ui, "ПРОВЕРКА СИСТЕМЫ");
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let running = app.diag_running || app.proxy_test_running;
             let btn_text = if running { "Тестирование…" } else { "Проверить всё" };
@@ -461,7 +461,7 @@ fn doctor_section(app: &mut App, ui: &mut egui::Ui) {
 
         let items: [(&str, String, bool, Option<&str>); 4] = [
             (
-                "Google Antigravity IDE",
+                "Редактор Antigravity",
                 if ide_found {
                     format!("Обнаружено ({})", installs.len())
                 } else {
@@ -487,7 +487,7 @@ fn doctor_section(app: &mut App, ui: &mut egui::Ui) {
                 None,
             ),
             (
-                "Облако Google AI / Апстрим",
+                "Связь с Google AI",
                 if app.proxy_test_running || app.diag_running {
                     "Проверка соединения…".to_string()
                 } else if let Some(rtt) = app.last_rtt {
@@ -563,7 +563,7 @@ fn doctor_section(app: &mut App, ui: &mut egui::Ui) {
                 ui.add_space(6.0);
 
                 ui.label(
-                    egui::RichText::new("Обнаружены проблемы для устранения:")
+                    egui::RichText::new("Рекомендованные исправления:")
                         .size(12.0)
                         .strong()
                         .color(egui::Color32::from_rgb(235, 175, 45)),
@@ -594,7 +594,7 @@ fn doctor_section(app: &mut App, ui: &mut egui::Ui) {
 
         ui.horizontal(|ui| {
             ui.label(
-                egui::RichText::new("Утилиты:")
+                egui::RichText::new("Сетевые инструменты:")
                     .size(11.5)
                     .color(theme::MUTED),
             );
@@ -626,7 +626,7 @@ fn doctor_section(app: &mut App, ui: &mut egui::Ui) {
 // ---------------------------------------------------------------------------
 
 fn activity_inspector_section(app: &mut App, ui: &mut egui::Ui) {
-    widgets::section_header(ui, "МОНИТОРИНГ АКТИВНОСТИ ИИ (LIVE INSPECTOR)");
+    widgets::section_header(ui, "ЖИВЫЕ ЗАПРОСЫ К ИИ");
     ui.add_space(4.0);
 
     widgets::card(ui, |ui| {
@@ -635,14 +635,14 @@ fn activity_inspector_section(app: &mut App, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
 
-            let total_str = format!("Всего запросов: {}", summary.total_turns);
+            let total_str = format!("Всего: {}", summary.total_turns);
             widgets::metric_chip(ui, Some(Icon::Bolt), &total_str);
 
-            let ok_str = format!("200 OK: {}", summary.success_turns);
+            let ok_str = format!("Успешно: {}", summary.success_turns);
             widgets::metric_chip(ui, Some(Icon::Check), &ok_str);
 
             if summary.blocked_turns > 0 {
-                let blocked_str = format!("400 Blocked: {}", summary.blocked_turns);
+                let blocked_str = format!("Заблокировано: {}", summary.blocked_turns);
                 widgets::metric_chip(ui, Some(Icon::Cross), &blocked_str);
             }
 
@@ -667,7 +667,7 @@ fn activity_inspector_section(app: &mut App, ui: &mut egui::Ui) {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 ui.label(
-                    egui::RichText::new("Ожидание активности Language Server в IDE / CLI... Логи отслеживаются в реальном времени.")
+                    egui::RichText::new("Ожидание запросов от редактора. Отправьте сообщение в чат IDE для проверки.")
                         .size(11.5)
                         .color(theme::SUBTLE),
                 );
@@ -739,12 +739,12 @@ fn activity_inspector_section(app: &mut App, ui: &mut egui::Ui) {
 
 fn proxy_section(app: &mut App, ui: &mut egui::Ui) {
     let busy = app.is_busy();
-    widgets::section_header(ui, "ПРОКСИ-СЕРВЕР");
+    widgets::section_header(ui, "ПАРАМЕТРЫ ПРОКСИ");
     ui.add_space(4.0);
 
     widgets::card(ui, |ui| {
         ui.label(
-            egui::RichText::new("Адрес прокси (HTTP / SOCKS5)")
+            egui::RichText::new("Основной адрес (HTTP / SOCKS5)")
                 .size(12.5)
                 .strong()
                 .color(theme::TEXT),
@@ -922,14 +922,14 @@ fn proxy_section(app: &mut App, ui: &mut egui::Ui) {
         let mut own_proxy = app.status.as_ref().map(|s| s.get(Cap::OwnProxy).is_on()).unwrap_or(true);
         if widgets::switch_row(ui, &mut own_proxy, !busy, |ui| {
             ui.label(
-                egui::RichText::new("Использовать указанный прокси")
+                egui::RichText::new("Использовать этот прокси")
                     .size(13.0)
                     .strong()
                     .color(theme::TEXT),
             );
             ui.add_space(1.0);
             ui.label(
-                egui::RichText::new("Направлять запросы Antigravity через этот прокси-сервер")
+                egui::RichText::new("Направлять трафик Language Server через указанный адрес")
                     .size(11.5)
                     .color(theme::MUTED),
             );
@@ -945,14 +945,14 @@ fn proxy_section(app: &mut App, ui: &mut egui::Ui) {
         ui.add_space(8.0);
 
         ui.label(
-            egui::RichText::new("Окружение терминала и консольных утилит (CLI)")
+            egui::RichText::new("Терминал и консоль (CLI)")
                 .size(12.5)
                 .strong()
                 .color(theme::TEXT),
         );
         ui.add_space(2.0);
         ui.label(
-            egui::RichText::new("Экспорт переменных HTTP_PROXY / HTTPS_PROXY для работы curl, git, python и сторонних утилит через шлюз:")
+            egui::RichText::new("Экспорт переменных HTTP_PROXY для curl, git, pip через локальный шлюз:")
                 .size(11.5)
                 .color(theme::MUTED),
         );
@@ -981,7 +981,7 @@ fn proxy_section(app: &mut App, ui: &mut egui::Ui) {
                 app.terminal_env_copied = Some(("Bash/Zsh".to_string(), std::time::Instant::now()));
             }
 
-            let run_resp = widgets::btn(ui, Some(Icon::Desktop), "Запустить терминал", 11.5, None)
+            let run_resp = widgets::btn(ui, Some(Icon::Desktop), "Открыть терминал", 11.5, None)
                 .on_hover_text("Открыть окно терминала с автоматически настроенными переменными прокси");
             if run_resp.clicked() {
                 let _ = crate::utils::launch_terminal_with_proxy(port);
@@ -1010,7 +1010,7 @@ fn proxy_section(app: &mut App, ui: &mut egui::Ui) {
 
 fn components_section(app: &mut App, ui: &mut egui::Ui) {
     let busy = app.is_busy();
-    widgets::section_header(ui, "КОМПОНЕНТЫ ANTIGRAVITY");
+    widgets::section_header(ui, "УСТАНОВКИ IDE");
     ui.add_space(4.0);
 
     widgets::card(ui, |ui| {
@@ -1080,14 +1080,14 @@ fn components_section(app: &mut App, ui: &mut egui::Ui) {
         let mut watchdog = app.status.as_ref().map(|s| s.get(Cap::Watchdog).is_on()).unwrap_or(true);
         if widgets::switch_row(ui, &mut watchdog, !busy, |ui| {
             ui.label(
-                egui::RichText::new("Автовосстановление при обновлениях (Watchdog)")
+                egui::RichText::new("Автопатч при обновлениях")
                     .size(13.0)
                     .strong()
                     .color(theme::TEXT),
             );
             ui.add_space(1.0);
             ui.label(
-                egui::RichText::new("Фоновое восстановление патчей при автообновлении IDE")
+                egui::RichText::new("Автоматически возвращать патч после обновления IDE")
                     .size(11.5)
                     .color(theme::MUTED),
             );
@@ -1105,21 +1105,21 @@ fn components_section(app: &mut App, ui: &mut egui::Ui) {
 // ---------------------------------------------------------------------------
 
 fn system_section(app: &mut App, ui: &mut egui::Ui) {
-    widgets::section_header(ui, "СИСТЕМА И ЗАПУСК");
+    widgets::section_header(ui, "СИСТЕМА");
     ui.add_space(4.0);
 
     widgets::card(ui, |ui| {
         // Autostart toggle
         if widgets::switch_row(ui, &mut app.autostart_enabled, true, |ui| {
             ui.label(
-                egui::RichText::new("Автозапуск при старте системы")
+                egui::RichText::new("Запуск вместе с системой")
                     .size(13.0)
                     .strong()
                     .color(theme::TEXT),
             );
             ui.add_space(1.0);
             ui.label(
-                egui::RichText::new("Запускать утилиту в системном трее при входе в систему")
+                egui::RichText::new("Фоновый запуск в трее при входе в систему")
                     .size(11.5)
                     .color(theme::MUTED),
             );
@@ -1136,7 +1136,7 @@ fn system_section(app: &mut App, ui: &mut egui::Ui) {
         let desk_resp = widgets::btn(
             ui,
             Some(Icon::Desktop),
-            "Создать ярлык на Рабочем столе",
+            "Создать ярлык на рабочем столе",
             12.0,
             Some(egui::vec2(ui.available_width(), 28.0)),
         );
@@ -1169,13 +1169,13 @@ fn system_section(app: &mut App, ui: &mut egui::Ui) {
 fn logs_screen(app: &mut App, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         ui.label(
-            egui::RichText::new("Журнал операций")
+            egui::RichText::new("События и логи")
                 .size(13.0)
                 .strong()
                 .color(theme::TEXT),
         );
         ui.label(
-            egui::RichText::new(format!("{} записей", app.log.len()))
+            egui::RichText::new(format!("{} строк", app.log.len()))
                 .size(12.0)
                 .color(theme::MUTED),
         );
@@ -1188,7 +1188,7 @@ fn logs_screen(app: &mut App, ui: &mut egui::Ui) {
                 app.log.clear();
             }
 
-            let copy_resp = widgets::btn(ui, Some(Icon::Copy), "Скопировать всё", 11.5, None);
+            let copy_resp = widgets::btn(ui, Some(Icon::Copy), "Скопировать", 11.5, None);
             if copy_resp.clicked() {
                 let text = app
                     .log
