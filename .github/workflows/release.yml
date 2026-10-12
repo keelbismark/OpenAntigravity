@@ -258,7 +258,7 @@ jobs:
 
           FEATS=$(git log $COMMITS_RANGE --grep="^feat" --pretty=format:"- %s" 2>/dev/null || true)
           FIXES=$(git log $COMMITS_RANGE --grep="^fix" --pretty=format:"- %s" 2>/dev/null || true)
-          OTHER=$(git log $COMMITS_RANGE --grep="^\(chore\|docs\|refactor\|perf\)" --pretty=format:"- %s" 2>/dev/null || true)
+          OTHER=$(git log $COMMITS_RANGE --grep="^\(chore\|docs\|refactor\|perf\)" --pretty=format:"- %s" 2>/dev/null | grep -Ev "chore\(release\)|bump version" || true)
 
           CHANGELOG=""
           if [ -n "$FEATS" ]; then
