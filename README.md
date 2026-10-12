@@ -1,71 +1,39 @@
 <div align="center">
 
-<img src="icon.png" width="96" height="96" alt="Open Antigravity" />
+<img src="icon.png" width="84" height="84" alt="Open Antigravity" />
 
 # Open Antigravity
 
-**Портативная среда комфортной работы с Google Antigravity для Windows, Linux и SteamOS**
+**Портативная среда для комфортной работы с Google Antigravity в любом регионе**
 
-[![Release](https://img.shields.io/github/v/release/keelbismark/OpenAntigravity?color=24292e&style=flat-square)](https://github.com/keelbismark/OpenAntigravity/releases)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/keelbismark/OpenAntigravity/release.yml?style=flat-square)](https://github.com/keelbismark/OpenAntigravity/actions)
-[![License](https://img.shields.io/badge/license-MIT-24292e?style=flat-square)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20SteamOS-24292e?style=flat-square)](#)
-[![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-24292e?style=flat-square)](https://keelbismark.github.io/OpenAntigravity/)
+[![Release](https://img.shields.io/github/v/release/keelbismark/OpenAntigravity?color=ffffff&labelColor=18181b&style=flat-square)](https://github.com/keelbismark/OpenAntigravity/releases)
+[![License](https://img.shields.io/badge/license-MIT-ffffff?labelColor=18181b&style=flat-square)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20SteamOS-ffffff?labelColor=18181b&style=flat-square)](#)
+[![Website](https://img.shields.io/badge/docs-GitHub%20Pages-ffffff?labelColor=18181b&style=flat-square)](https://keelbismark.github.io/OpenAntigravity/)
 
-[Сайт проекта](https://keelbismark.github.io/OpenAntigravity/) • [Скачать Antigravity](https://antigravity.google/download) • [Возможности](#ключевые-возможности) • [Быстрый запуск](#быстрый-запуск) • [Инструкция](#руководство-по-использованию) • [Свой прокси (Tinyproxy)](PROXY_SETUP.md) • [Сборка](#сборка-из-исходников)
+[Сайт проекта](https://keelbismark.github.io/OpenAntigravity/) • [Скачать Antigravity](https://antigravity.google/download) • [Быстрый старт](#быстрый-запуск) • [Свой прокси (VPS)](PROXY_SETUP.md)
 
 </div>
 
-**Open Antigravity** — легковесная автономная утилита, обеспечивающая стабильный и свободный доступ к Google Antigravity (Antigravity 2.0, IDE, CLI). Позволяет полноценно работать с AI-агентами из любого региона под личным аккаунтом Google без необходимости держать включённым сторонний VPN на всей системе.
-
-Сам редактор загружается отдельно: **[Скачать Google Antigravity (официальный сайт)](https://antigravity.google/download)**.
+> **Open Antigravity** — автономный центр управления для комфортной работы с Google Antigravity (Antigravity 2.0, IDE, CLI). Обеспечивает стабильный доступ к AI-моделям из любого региона под личным Google-аккаунтом без необходимости включать VPN для всей системы.
+>
+> Редактор загружается отдельно: **[Скачать Google Antigravity с официального сайта](https://antigravity.google/download)**.
 
 ---
 
 ## Ключевые возможности
 
-### 🎯 Единый Control Center с 4 специализированными разделами
-
-* **Вкладка «Обзор» (Main)**:
-  * **Hero-карточка статуса** — интерактивный индикатор состояния («Подключено», «Готов к работе», «Настройка», «Внимание») со световой пульсацией.
-  * **Быстрый выбор профилей** — переключение активного узла прокси в один клик прямо на главном экране.
-  * **⚡ Live RTT & Sparkline-мониторинг** — непрерывный замер задержки отклика до серверов Google AI с динамическим графиком пинга в реальном времени.
-  * **🔍 Live Activity Inspector** — инспектор активности Language Server: отображение последних обращений IDE к моделям Google (модель, статус `OK`/`ERR`, время назад).
-  * **Установки IDE** — обнаружение инсталляций Antigravity с ручным добавлением путей и тумблером фонового автопатча (Watchdog).
-
-* **Вкладка «Прокси» (Proxy)**:
-  * **Поддержка собственных прокси** — работа с любыми HTTP/CONNECT серверами (`логин:пароль@хост:порт`).
-  * **🏎️ Multi-Proxy Racing & Ranking** — указание цепочки серверов через точку с запятой (`узел1;узел2;узел3`). Утилита автоматически соревнует узлы по пингу, ранжирует их по RTT и гео-локации и переключается на быстрейший.
-  * **Менеджер профилей** — сохранение неограниченного числа именованных пресетов («Германия», «Нидерланды», «Мой VPS») с быстрым переключением и удалением.
-  * **💻 Окружение терминала и консольных утилит (CLI)** — экспорт команд переменных `HTTP_PROXY` / `HTTPS_PROXY` в один клик для **PowerShell**, **Windows CMD** и **Bash/Zsh**. Сторонние утилиты (`git`, `curl`, `python`, `npm`) работают через локальный шлюз.
-  * **Кнопка «Запустить терминал»** — открытие нового окна консоли с автоматически преднастроенными переменными прокси.
-
-* **Вкладка «Диагностика» (Doctor)**:
-  * **Интерактивный Doctor** — сквозная проверка IDE, статуса побайтового патча Language Server, локального прокси-сервера (`127.0.0.1:45318`), правил DNS/hosts и внешнего апстрима.
-  * **Кнопка «🩺 Проверить всё»** — запуск глубокого селф-теста с генерацией готового отчёта для анализа неполадок.
-
-* **Вкладка «Журнал» (Logs)**:
-  * **Полноэкранный адаптивный терминал логов** — подсветка статусов (зелёный/янтарный/красный/белый), автопрокрутка к новым сообщениям и отсутствие вложенных полос прокрутки.
-  * **Кнопка «Скопировать»** с тактильной обратной связью (*«Скопировано!»* на 3 секунды) и кнопка быстрой очистки.
-
-### 🎨 Современный дизайн и микроанимации
-* **Скользящий индикатор табов** — плавная анимация переключения между разделами в стиле сайта проекта.
-* **Тактильные профильные плашки** — высококонтрастный стильный вид активных и неактивных профилей с мягкими hover-переходами.
-* **Dark Obsidian тема** — глубокий тёмный интерфейс без визуального шума.
-
-### 🔄 Бесшовные автообновления в 1 клик
-* Приложение автоматически проверяет новые релизы. Обновление скачивается, проверяется, распаковывается и перезапускается прямо из шапки интерфейса без необходимости переходить в браузер.
-
-### 🛡️ Изолированный трафик и автопатч
-* **Точечная маршрутизация** — перенаправляются исключительно обращения к AI-моделям. Браузер, игры, git, мессенджеры и системный трафик идут напрямую на максимальной скорости вашего провайдера.
-* **Автоконтроль при обновлениях (Watchdog)** — фоновая служба восстанавливает рабочий патч при автообновлении редактора Antigravity.
-
-### 📦 Полная портативность
-* Все настройки, профили, кэш и логи хранятся в папке `data/` рядом с бинарником. Удаление папки `data/` производит чистый сброс к заводскому состоянию. Права администратора требуются исключительно для применения правил DNS (NRPT на Windows / hosts на Linux).
-
-### 🐧 Поддержка Linux и Steam Deck (SteamOS)
-* Готовый переносимый **AppImage** работает «из коробки» на любом дистрибутиве Linux и на **Steam Deck** (как в Desktop Mode, так и в Game Mode).
-* Встроенный терминальный TUI-режим на базе Ratatui для работы на headless-серверах и по SSH.
+| Возможность | Описание |
+|---|---|
+| 🎯 **Control Center** | Четыре специализированных экрана: **«Обзор»** (статус и пинг), **«Прокси»** (профили и консоль), **«Диагностика»** (Doctor) и **«Журнал»** (события). |
+| ⚡ **Live RTT & Инспектор** | Замер задержки отклика до Google AI в реальном времени, график пинга и Live Inspector обращений Language Server к моделям. |
+| 🏎️ **Multi-Proxy Racing** | Поддержка цепочки серверов (`ip1:port;ip2:port`). Утилита автоматически соревнует узлы по задержке и выбирает быстрейший. |
+| 💻 **CLI и Терминал** | Экспорт переменных `HTTP_PROXY` / `HTTPS_PROXY` в 1 клик для PowerShell, CMD и Bash. Кнопка запуска терминала с преднастроенным шлюзом. |
+| 🛡️ **Watchdog & Автопатч** | Фоновый сторож отслеживает обновления Antigravity и автоматически восстанавливает рабочий патч среды. |
+| 🔄 **1-Click Обновления** | Проверка и установка новых версий прямо из шапки программы без необходимости переходить в браузер. |
+| 🔒 **Изолированный трафик** | Перенаправляются только AI-запросы к Google. Браузер, игры, git, мессенджеры и система работают напрямую на полной скорости сети. |
+| 📦 **100% Портативность** | Все настройки, пресеты и логи хранятся в папке `data/` рядом с программой. Удаление папки возвращает систему в исходный вид. |
+| 🐧 **Steam Deck & Linux** | Готовый 1-click AppImage для любого Linux и SteamOS (Desktop и Game Mode), а также терминальный TUI-режим по SSH. |
 
 ---
 
@@ -75,7 +43,7 @@
 
 Готовые сборки доступны на странице **[GitHub Releases](https://github.com/keelbismark/OpenAntigravity/releases/latest)**:
 
-| Платформа | Формат | Запуск |
+| Платформа | Сборка | Запуск |
 |---|---|---|
 | **Windows 10 / 11** | [OpenAntigravity-windows-portable.zip](https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity-windows-portable.zip) | Распаковать архив и запустить `OpenAntigravity.exe` |
 | **Linux (Steam Deck / Ubuntu / Fedora)** | [OpenAntigravity-x86_64.AppImage](https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity-x86_64.AppImage) | `chmod +x OpenAntigravity-x86_64.AppImage && ./OpenAntigravity-x86_64.AppImage` |
@@ -83,45 +51,37 @@
 
 ### Терминальный режим (TUI) в одну строку
 
-**Linux / Steam Deck:**
-```bash
-curl -fsSL https://raw.githubusercontent.com/keelbismark/OpenAntigravity/main/tui.sh | sh
-```
+* **Linux / Steam Deck:**
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/keelbismark/OpenAntigravity/main/tui.sh | sh
+  ```
 
-**Windows (PowerShell):**
-```powershell
-irm https://raw.githubusercontent.com/keelbismark/OpenAntigravity/main/tui.ps1 | iex
-```
+* **Windows (PowerShell):**
+  ```powershell
+  irm https://raw.githubusercontent.com/keelbismark/OpenAntigravity/main/tui.ps1 | iex
+  ```
 
 ---
 
-## Руководство по использованию
+## Использование
 
-1. Установите Google Antigravity (IDE / CLI) с официального сайта: [antigravity.google/download](https://antigravity.google/download).
-2. Запустите Open Antigravity (на Windows рекомендуется запуск от имени администратора).
+1. Установите Google Antigravity с официального сайта: [antigravity.google/download](https://antigravity.google/download).
+2. Запустите Open Antigravity (на Windows рекомендуется запуск от имени администратора для применения DNS-правил).
 3. Нажмите кнопку **«Подключить Antigravity»** на вкладке «Обзор».
-4. Откройте Antigravity, войдите в аккаунт Google и отправьте запрос в чат — индикатор статуса покажет: *«Подключено»*.
+4. Откройте Antigravity, авторизуйтесь под личным Google-аккаунтом и начните работу — статус покажет: *«Подключено»*.
 
-### Настройка прокси и профилей (вкладка «Прокси»)
-1. В поле **«Свой прокси»** введите адрес сервера: `логин:пароль@хост:порт`.
-2. Нажмите кнопку **«Сохранить как профиль»** и задайте понятное имя (например, *«VPS Германия»*).
-3. Переключайтесь между серверами кликом по плашкам профилей.
-4. Для автоматического состязания и резервирования узлов укажите несколько серверов через точку с запятой:
-   ```text
-   user:pass@ip1:port;user:pass@ip2:port;user:pass@ip3:port
-   ```
-   Open Antigravity замерит отклик всех узлов и автоматически выберет лучший с выводом задержки (например, `38 мс · лучший узел: ip1:port`).
+### Настройка собственного прокси
+* На вкладке **«Прокси»** введите адрес сервера (`логин:пароль@хост:порт`) и нажмите **«Сохранить как профиль»**.
+* Для настройки резервирования или автоматического подбора лучшего узла укажите несколько серверов через точку с запятой:
+  ```text
+  user:pass@ip1:port;user:pass@ip2:port
+  ```
+  Open Antigravity замерит пинг каждого узла и выберет самый отзывчивый.
+* Подробная инструкция по быстрому поднятию своего прокси (Tinyproxy) на VPS за 2 минуты: [**`PROXY_SETUP.md`**](PROXY_SETUP.md).
 
-### Использование консольных утилит и терминала (CLI)
-Если вам необходимо, чтобы консольные команды (`git clone`, `curl`, скрипты Python, `pip`, `npm`) работали через настроенный шлюз:
-1. Перейдите на вкладку **«Прокси»**.
-2. В блоке «Окружение терминала» нажмите кнопку **«PowerShell»**, **«CMD»** или **«Bash / Zsh»** — готовая команда экспорта переменных скопируется в буфер обмена.
-3. Либо нажмите кнопку **«Запустить терминал»** — откроется окно терминала с уже настроенными переменными прокси.
-
-### Диагностика («Doctor») и журнал
-* Если что-то не работает, перейдите на вкладку **«Диагностика»** и нажмите **«🩺 Проверить всё»**. Утилита проверит целостность патча, DNS-правила и доступность внешних шлюзов.
-* На вкладке **«Журнал»** можно просмотреть подробную хронологию событий и скопировать её по кнопке **«Скопировать»** для отправки разработчику.
-* В нижнем футере доступна кнопка **«Экспорт отчёта»**, сохраняющая полный диагностический срез системы в файл отчёта.
+### Работа с консолью и терминалом (CLI)
+* Чтобы утилиты `git`, `curl`, `python`, `npm` работали через шлюз, нажмите кнопку нужной оболочки (**«PowerShell»**, **«CMD»** или **«Bash / Zsh»**) — команда экспорта переменных скопируется в буфер обмена.
+* Либо нажмите кнопку **«Запустить терминал»** — откроется окно с уже настроенным окружением.
 
 ---
 
@@ -133,45 +93,37 @@ irm https://raw.githubusercontent.com/keelbismark/OpenAntigravity/main/tui.ps1 |
 * `--tui`, `--cli` — принудительный запуск в текстовом интерфейсе (TUI).
 * `--shortcut` — создание ярлыков на Рабочем столе и в главном меню приложений.
 * `--minimized`, `-m`, `--tray` — запуск программы свёрнутой в системный трей.
-* `--about`, `--version` — подробная информация о сборке, MSRV и лицензии.
+* `--about`, `--version` — информация о сборке и лицензии.
 
 ---
 
 ## Сборка из исходников
 
-Для сборки требуется компилятор Rust (**MSRV ≥ 1.95**, в связи с API egui/eframe 0.36.1):
+Для сборки требуется компилятор Rust (**MSRV ≥ 1.95**, в связи с API eframe 0.36.1):
 
 ```bash
-# Клонирование репозитория
 git clone https://github.com/keelbismark/OpenAntigravity.git
 cd OpenAntigravity
-
-# Быстрая сборка релизного бинарника
 cargo build --release
 ```
 
-Бинарник будет расположен в `target/release/`.
+Готовый бинарник будет находиться в каталоге `target/release/`.
 
-### Единые сборочные скрипты
+### Сборочные скрипты
 
 * **Windows:**
   ```bat
-  build.cmd            # Сборка и подготовка портативной папки dist_portable\
-  build.cmd --package  # Сборка и упаковка в релизный zip-архив
-  build.cmd --check    # Проверка исходников и прогон полного набора тестов
+  build.cmd            # Сборка портативной папки dist_portable\
+  build.cmd --package  # Упаковка в релизный zip-архив
+  build.cmd --check    # Проверка исходников и запуск тестов
   ```
 
 * **Linux:**
   ```bash
   bash build.sh            # Сборка glibc-версии
-  bash build.sh --musl     # Сборка полностью статической версии (TUI)
+  bash build.sh --musl     # Сборка статической версии (TUI)
   bash build.sh --package  # Упаковка портативного дистрибутива
-  bash build_appimage.sh   # Сборка компактного Linux AppImage
-  ```
-
-* **Вшивание собственного прокси при компиляции:**
-  ```bash
-  OAG_BUILTIN_PROXY="логин:пароль@хост:порт" cargo build --release
+  bash build_appimage.sh   # Сборка Linux AppImage
   ```
 
 ---
