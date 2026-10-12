@@ -1,8 +1,8 @@
 {
-  "version": "1.1.7",
-  "notes": "Open Antigravity v1.1.7",
-  "page": "https://github.com/keelbismark/OpenAntigravity/releases/tag/v1.1.7",
-  "url_windows": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.1.7/OpenAntigravity_windows_v1.1.7.zip",
-  "url_linux": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.1.7/OpenAntigravity_linux_v1.1.7.tar.gz",
-  "url_appimage": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.1.7/OpenAntigravity-x86_64.AppImage"
+  "version": "1.1.8",
+  "notes": "Open Antigravity v1.1.8",
+  "page": "https://github.com/keelbismark/OpenAntigravity/releases/tag/v1.1.8",
+  "url_windows": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.1.8/OpenAntigravity_windows_v1.1.8.zip",
+  "url_linux": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.1.8/OpenAntigravity_linux_v1.1.8.tar.gz",
+  "url_appimage": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.1.8/OpenAntigravity-x86_64.AppImage"
 }
