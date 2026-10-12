@@ -462,7 +462,7 @@ mod tests {
     /// on the second poll, never the first.
     #[test]
     fn a_reverted_binary_in_an_install_is_repatched_after_settling() {
-        let inst = std::env::temp_dir().join("ag_watchdog_wiring");
+        let inst = std::env::temp_dir().join("oag_watchdog_wiring");
         fs::create_dir_all(&inst).expect("temp inst");
         let agy = inst.join("agy.exe");
         // Stand-in for a Language Server an update reverted to the gated name.
@@ -505,7 +505,7 @@ mod tests {
     /// so Antigravity runs and shows its own error.
     #[test]
     fn an_unrecognised_binary_is_left_for_the_app_to_error_on() {
-        let inst = std::env::temp_dir().join("ag_watchdog_giveup");
+        let inst = std::env::temp_dir().join("oag_watchdog_giveup");
         fs::create_dir_all(&inst).expect("temp inst");
         let agy = inst.join("agy.exe");
         let contents = b"a new build shape this patcher does not know";

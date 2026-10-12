@@ -220,7 +220,7 @@ pub fn url_at(port: u16) -> String {
 ///
 /// The port is read again on every try: the relay can move it while this waits
 /// (P26), and a URL built from the port read before the wait named the one it
-/// had just left - a dead port in `AG_LS_PROXY` that the watchdog, asking about
+/// had just left - a dead port in `OAG_GATEWAY` that the watchdog, asking about
 /// the new one, would never take back off. "Ours": in the relay, the listener
 /// this process bound; elsewhere on Windows, a listener owned by the relay's exe,
 /// because somebody else's program on the default port answers too and naming it
@@ -333,7 +333,8 @@ pub fn untrust_ca() {
     fs::remove_file(ca_cert_path()).ok();
     fs::remove_file(ca_key_path()).ok();
     // Also remove legacy CA files if present
-    let legacy_ca_dir = PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default()).join("AGUnlocker");
+    let legacy_ca_dir = PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default())
+        .join(crate::platform::legacy::LOCAL_DIR);
     fs::remove_file(legacy_ca_dir.join("ca.pem")).ok();
     fs::remove_file(legacy_ca_dir.join("ca.key")).ok();
 }

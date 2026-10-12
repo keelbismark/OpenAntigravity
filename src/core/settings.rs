@@ -507,7 +507,7 @@ mod tests {
     /// A save is a whole file or nothing, and leaves no temp behind.
     #[test]
     fn a_save_replaces_the_file_whole() {
-        let dir = std::env::temp_dir().join("ag_settings_replace");
+        let dir = std::env::temp_dir().join("oag_settings_replace");
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("settings.json");
         std::fs::write(&file, "old").unwrap();

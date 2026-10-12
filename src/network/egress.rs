@@ -239,7 +239,11 @@ fn relay_process_name() -> String {
     crate::background::installed_exe()
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "ag_dns".to_string())
+        .unwrap_or_else(|| {
+            crate::platform::service::RELAY_IMAGE
+                .trim_end_matches(".exe")
+                .to_string()
+        })
 }
 
 fn parse_reading(line: &str) -> Reading {
@@ -414,7 +418,7 @@ mod tests {
         // A relay holding both: the connections that do leave through the
         // tunnel will be refused by a provider that serves Russian addresses
         // only, so this is not "outside" — measured live when the owner took
-        // `ag_dns.exe` out of his VPN's exclusions.
+        // `OpenAntigravityRelay.exe` out of his VPN's exclusions.
         assert_eq!(relay("0|0|10|1|4"), ClientEgress::Mixed);
         // The pair the owner's machine was in when the gate refused him: the
         // client talks only to us, and we were the ones inside the tunnel.

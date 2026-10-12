@@ -114,7 +114,7 @@ cargo build --release
 
 Для вшивания собственного прокси на этапе сборки:
 ```bash
-AG_BUILTIN_PROXY="логин:пароль@хост:порт" cargo build --release
+OAG_BUILTIN_PROXY="логин:пароль@хост:порт" cargo build --release
 ```
 
 ---

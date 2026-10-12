@@ -390,7 +390,7 @@ pub fn apply_proxy(url: &str, _ca_path: &str) -> Result<Outcome, String> {
     );
     let already = fs::read_to_string(&path).ok().as_deref() == Some(body.as_str());
     let migrated = remove_legacy_proxy_env(url).unwrap_or(false);
-    // Also remove legacy ag-unlocker.conf if upgrading
+    // Also remove the previous generation's drop-in if upgrading
     if let Ok(legacy_path) = legacy_environment_d_path() {
         let _ = fs::remove_file(legacy_path);
     }
@@ -433,7 +433,9 @@ fn legacy_environment_d_path() -> Result<PathBuf, String> {
         _ => PathBuf::from(std::env::var("HOME").map_err(|_| "HOME не задан".to_string())?)
             .join(".config"),
     };
-    Ok(base.join("environment.d").join("ag-unlocker.conf"))
+    Ok(base
+        .join("environment.d")
+        .join(crate::platform::legacy::ENDPOINT_DROPIN))
 }
 
 /// Removes them, but only while they still hold what we wrote - a user may have

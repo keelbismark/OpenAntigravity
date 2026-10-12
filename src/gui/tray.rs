@@ -68,20 +68,25 @@ pub(super) fn build() -> Option<(TrayIcon, TrayItems)> {
     Some((tray, items))
 }
 
-/// Install the global event handlers that wake the egui paint loop whenever
-/// the user clicks the tray icon or a menu item.  Without this, egui sleeps
-/// until something inside the window changes and the click is silently
-/// queued forever.
-pub(super) fn install_wakeup(ctx: &eframe::egui::Context) {
-    let c1 = ctx.clone();
-    TrayIconEvent::set_event_handler(Some(move |_| {
-        c1.request_repaint();
-    }));
-    let c2 = ctx.clone();
-    MenuEvent::set_event_handler(Some(move |_| {
-        c2.request_repaint();
-    }));
-}
+/// How long to wait before looking at the tray queues again while the window
+/// is in the tray itself.
+///
+/// A hidden window has no mouse to wake it, and on Linux nothing at all
+/// arrives — so without a heartbeat the click would sit in the queue until some
+/// unrelated repaint happened to come along (a status update, a proxy ping), or
+/// forever on an idle app. The lag is a fifth of a second; nobody sees it, and
+/// every tray click lands on the frame that opens the window.
+///
+/// --- Do not "fix" the wakeup by installing event handlers ---
+///
+/// `tray-icon` routes an event to `set_event_handler` **or** to the channel —
+/// never to both (`TrayIconEvent::send`: `if let Some(handler) = .. { handler(event) }
+/// else { channel.send(event) }`). Its own note on `receiver()` says the same:
+/// it gets nothing once a handler is set. An earlier version of this file
+/// installed handlers that only did `request_repaint()`, which woke the paint
+/// loop on every click and left `drain` reading an empty queue forever: the
+/// window went to the tray and no click ever brought it back, on any platform.
+pub(super) const HIDDEN_TICK: std::time::Duration = std::time::Duration::from_millis(200);
 
 /// Drain pending tray events and return the action the main loop should take.
 pub(super) fn drain(items: &TrayItems) -> TrayAction {
@@ -129,5 +134,41 @@ mod tests {
         use tray_icon::menu::MenuItem;
         let _open = MenuItem::new("Открыть", true, None);
         let _quit = MenuItem::new("Выход", true, None);
+    }
+
+    /// A tray click that no one reads is a window that never comes back. The
+    /// two things that makes true are worth a guard each: `tray-icon` hands an
+    /// event to a handler *instead of* to the channel `drain` reads, and a
+    /// hidden window needs someone to ask for a frame before a queued click is
+    /// looked at.
+    #[test]
+    fn a_tray_click_is_read_from_the_channel_and_something_asks_for_a_frame() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        // Comments name the trap on purpose, so they are stripped before the
+        // search: what must not come back is a call, not a word.
+        let code = |p: &str| {
+            std::fs::read_to_string(root.join(p))
+                .unwrap()
+                .lines()
+                .map(|l| l.split("//").next().unwrap_or_default())
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let tray_src = code("src/gui/tray.rs");
+        // Assembled rather than written out: the assertion's own source is
+        // part of the file being searched, and this test must not forbid
+        // itself the way the code once did.
+        let handler = ["set_event", "_handler"].concat();
+        assert!(
+            !tray_src.contains(&handler),
+            "a tray-icon event handler swallows the channel `drain` reads; \
+             wake the window with request_repaint_after instead"
+        );
+        let gui_src = code("src/gui/mod.rs");
+        assert!(
+            gui_src.contains("HIDDEN_TICK"),
+            "nothing wakes the loop while the window is in the tray, so the \
+             click that brings it back is never read"
+        );
     }
 }

@@ -294,21 +294,25 @@ pub fn switch_text(cap: Cap) -> (&'static str, &'static str) {
 /// The card for a listener the relay could not bind, by what stopped it.
 ///
 /// Every text ends in something the user can do; the relay retries each minute,
-/// so the fixes that need no restart say so.
-fn blocked(b: &crate::gate::Blocker, exe: &str) -> Headline {
+/// so the fixes that need no restart say so. A card whose button cannot change
+/// the outcome carries no button: the first version offered «Активировать» on a
+/// port a system service holds, and pressing it reinstalled a service that was
+/// installed already and brought the same card back - three presses, nothing
+/// changed (measured, G80).
+fn blocked(b: &crate::gate::Blocker, exe: &str, admin: bool) -> Headline {
     let port = b.addr.rsplit(':').next().unwrap_or(&b.addr);
     let effect = match b.what.as_str() {
         "door" => "Antigravity обращается к Google мимо обхода и получает ошибку 400",
         "dns" => "подмена адресов не работает и запросы к Google идут медленнее",
         _ => "обход ошибки 400 работает не полностью",
     };
-    // Port 53 held by a service is the one case where the image name is worse
-    // than useless: it is `svchost.exe`, which the user cannot act on. What
-    // actually holds it is nearly always Internet Connection Sharing, started
-    // behind the user's back by the Hyper-V default switch, the mobile hotspot
-    // or a virtual machine - so that is what the card says instead.
+    // Port 53 held by a service is the one case where the image name is worth
+    // nothing: it is `svchost.exe`, which the user cannot act on. What actually
+    // holds it is nearly always Internet Connection Sharing, started behind the
+    // user's back by the Hyper-V default switch, the mobile hotspot or a
+    // virtual machine - so that is what the card says instead.
     let system_holder = b.by.is_empty() || b.by.eq_ignore_ascii_case("svchost.exe");
-    if b.what == "dns" && b.cause == "held" && system_holder {
+    if b.what == "dns" && b.cause == "held" && !b.ours && system_holder {
         return Headline {
             tone: Tone::Action,
             title: format!("Порт {port} занят системной службой"),
@@ -319,7 +323,7 @@ fn blocked(b: &crate::gate::Blocker, exe: &str) -> Headline {
                  «Общий доступ к подключению к Интернету (ICS)» и поставьте тип запуска \
                  «Отключена». Обход займёт порт сам в течение минуты."
             ),
-            action: Some(Action::Repair),
+            action: None,
         };
     }
     let (title, detail, action) = match b.cause.as_str() {
@@ -329,33 +333,38 @@ fn blocked(b: &crate::gate::Blocker, exe: &str) -> Headline {
             } else {
                 format!("программа «{}»", b.by)
             };
-            // Our own stale relay (an ag_dns.exe left from an older install, a
+            // Our own stale relay (a copy of the relay image left from an older install, a
             // copy of the portable exe still running) is the one holder the
             // window can act on itself: ending it is exactly the "close it"
             // the text asks for, and the fresh relay takes the port back
             // immediately after. Offered on Windows only - the kill runs
-            // through taskkill there; elsewhere the card keeps its advice.
-            let own = crate::gate::is_own_relay_image(&b.by) && cfg!(target_os = "windows");
-            if own {
+            // through taskkill there - and with elevation where it is missing,
+            // because disabling the logon task that keeps reviving the copy
+            // needs it.
+            if b.ours && cfg!(target_os = "windows") && !b.by.is_empty() {
                 (
                     format!("Порт {port} занят старой копией обхода"),
                     format!(
                         "Порт {port} на этом компьютере занимает «{}» - оставшаяся копия этой же \
                          программы (после прошлой установки или обновления), поэтому {effect}. \
-                         Нажмите «Завершить процесс»: программа снимет её и поднимет обход заново.",
+                         Нажмите «Освободить порт»: программа завершит её, отключит задачу, \
+                         которая её запускает, и поднимет обход заново.",
                         b.by
                     ),
-                    Action::KillHolder,
+                    if admin {
+                        Some(Action::KillHolder)
+                    } else {
+                        Some(Action::Elevate)
+                    },
                 )
             } else {
                 (
                     format!("Порт {port} занят другой программой"),
                     format!(
                         "Порт {port} на этом компьютере занимает {who}, поэтому {effect}. Закройте её \
-                         или отключите в ней веб-сервер — обход сам займёт порт в течение минуты. \
-                         Или нажмите «Перезапустить»."
+                         или отключите в ней веб-сервер — обход сам займёт порт в течение минуты."
                     ),
-                    Action::Repair,
+                    None,
                 )
             }
         }
@@ -364,35 +373,35 @@ fn blocked(b: &crate::gate::Blocker, exe: &str) -> Headline {
             format!(
                 "Порт {port} зарезервирован системой — так делают Hyper-V, WSL и Docker, — \
                  поэтому {effect}. Откройте командную строку от имени администратора, выполните \
-                 «net stop winnat», затем «net start winnat» и нажмите «Перезапустить».",
+                 «net stop winnat», затем «net start winnat» — обход займёт порт сам в течение минуты.",
             ),
-            Action::Repair,
+            None,
         ),
         "denied" => (
             "Антивирус блокирует обход".to_string(),
             format!(
                 "Антивирус или файрвол не даёт службе обхода открыть порт {port}, поэтому \
                  {effect}. Добавьте в исключения антивируса файл {} — обход заработает сам в \
-                 течение минуты. Или нажмите «Перезапустить».",
+                 течение минуты.",
                 exe_or_default(exe)
             ),
-            Action::Repair,
+            None,
         ),
         _ => (
             format!("Порт {port} недоступен"),
             format!(
                 "Служба обхода не может открыть порт {port} ({}), поэтому {effect}. Нажмите \
-                 «Перезапустить»; не помогло — «Сохранить отчёт» и пришлите файл отчёта в группу.",
+                 «Активировать»; не помогло — «Сохранить отчёт» и пришлите файл отчёта в группу.",
                 b.error
             ),
-            Action::Repair,
+            Some(Action::Repair),
         ),
     };
     Headline {
         tone: Tone::Action,
         title,
         detail,
-        action: Some(action),
+        action,
     }
 }
 
@@ -401,7 +410,7 @@ fn exe_or_default(exe: &str) -> String {
     if !exe.is_empty() {
         exe.to_string()
     } else if cfg!(target_os = "windows") {
-        r"C:\ProgramData\OpenAntigravity\ag_dns.exe".to_string()
+        r"C:\ProgramData\OpenAntigravity\OpenAntigravityRelay.exe".to_string()
     } else {
         "~/.local/share/openantigravity/ag_proxy".to_string()
     }
@@ -512,14 +521,14 @@ pub fn headline(f: &Facts) -> Headline {
     // Something on this machine keeps part of the relay down (P53). Said with
     // the thing to do about it - the 400 it causes says nothing of the sort.
     if let Some(b) = &f.proxy_blocked {
-        return blocked(b, &f.relay_exe);
+        return blocked(b, &f.relay_exe, f.admin);
     }
     // The DNS listener is the other half the relay cannot open by itself. Below
     // the proxy because the proxy carries everything while it is up, and above
     // "cut off" because a dead `:53` is a named, fixable cause and being cut
     // off is a guess.
     if let Some(b) = &f.dns_blocked {
-        return blocked(b, &f.relay_exe);
+        return blocked(b, &f.relay_exe, f.admin);
     }
     if f.cut_off {
         match f.net_ok {
@@ -557,7 +566,7 @@ pub fn headline(f: &Facts) -> Headline {
         // With the door shut, Antigravity's calls go around the bypass: that
         // is the cause, and «Чиним» would promise a fix the relay cannot make.
         if let Some(b) = &f.door_blocked {
-            return blocked(b, &f.relay_exe);
+            return blocked(b, &f.relay_exe, f.admin);
         }
         let (ago, lines) = f.refusal.unwrap_or_default();
         if ago > FIXING_FOR {
@@ -934,11 +943,20 @@ mod tests {
     }
 
     fn blocker(what: &str, cause: &str, by: &str) -> crate::gate::Blocker {
+        ours_blocker(what, cause, by, false)
+    }
+
+    /// The same record with the relay's own verdict on whether the holder is a
+    /// copy of ours - the one thing the window cannot work out by itself, since
+    /// in portable mode the relay and the window are one image name.
+    fn ours_blocker(what: &str, cause: &str, by: &str, ours: bool) -> crate::gate::Blocker {
         crate::gate::Blocker {
             what: what.into(),
             addr: if what == "door" { "127.65.71.1:443" } else { "127.0.0.1:53129" }.into(),
             cause: cause.into(),
             by: by.into(),
+            ours,
+            pid: 11928,
             error: "os error 10013".into(),
         }
     }
@@ -950,15 +968,18 @@ mod tests {
         let f = Facts {
             answer: Some(secs(5)),
             proxy_blocked: Some(blocker("proxy", "denied", "")),
-            relay_exe: r"C:\ProgramData\OpenAntigravity\ag_dns.exe".into(),
+            relay_exe: r"C:\ProgramData\OpenAntigravity\OpenAntigravityRelay.exe".into(),
             ..working()
         };
         let h = headline(&f);
         assert_eq!(h.tone, Tone::Action);
         assert_eq!(h.title, "Антивирус блокирует обход");
-        assert!(h.detail.contains(r"C:\ProgramData\OpenAntigravity\ag_dns.exe"), "{}", h.detail);
+        assert!(h.detail.contains(r"C:\ProgramData\OpenAntigravity\OpenAntigravityRelay.exe"), "{}", h.detail);
         assert!(h.detail.contains("53129"), "{}", h.detail);
-        assert_eq!(h.action, Some(Action::Repair));
+        // Nothing here can be undone by a button: an antivirus exception is the
+        // user's to add, and a restart reinstalled a service that was already
+        // installed - the card just came back (G80).
+        assert_eq!(h.action, None);
     }
 
     /// The door matters when the 400 is happening: then it is the reason, named
@@ -975,6 +996,7 @@ mod tests {
         assert_eq!(h.tone, Tone::Action);
         assert_eq!(h.title, "Порт 443 занят другой программой");
         assert!(h.detail.contains("«vmware-hostd.exe»"), "{}", h.detail);
+        assert_eq!(h.action, None);
         let answering = Facts {
             answer: Some(secs(5)),
             refusal: Some((secs(60), 4)),
@@ -985,23 +1007,32 @@ mod tests {
     }
 
     /// The tool's own leftover relay is the one holder with a kill button -
-    /// on Windows, where taskkill runs it. Anyone else's software (and any
-    /// other platform) keeps the advice-only card.
+    /// on Windows, where taskkill runs it, and with the rights to stop the task
+    /// that keeps reviving it. Anyone else's software (and any other platform)
+    /// keeps the advice-only card.
     #[test]
     fn a_stale_copy_of_ours_gets_the_kill_button_and_others_do_not() {
         let ours = Facts {
             refusal: Some((secs(20), 4)),
-            door_blocked: Some(blocker("door", "held", "ag_dns.exe")),
+            door_blocked: Some(ours_blocker("door", "held", "OpenAntigravityRelay.exe", true)),
             ..working()
         };
         let h = headline(&ours);
         if cfg!(target_os = "windows") {
             assert_eq!(h.title, "Порт 443 занят старой копией обхода");
-            assert!(h.detail.contains("Завершить процесс"), "{}", h.detail);
+            assert!(h.detail.contains("Освободить порт"), "{}", h.detail);
             assert_eq!(h.action, Some(Action::KillHolder));
+            // Without the rights the button cannot do its job - ending the
+            // process is only half of it - so it asks for them first.
+            let plain = Facts {
+                admin: false,
+                door_blocked: ours.door_blocked.clone(),
+                ..ours.clone()
+            };
+            assert_eq!(headline(&plain).action, Some(Action::Elevate));
         } else {
             assert_eq!(h.title, "Порт 443 занят другой программой");
-            assert_eq!(h.action, Some(Action::Repair));
+            assert_eq!(h.action, None);
         }
 
         let theirs = Facts {
@@ -1011,8 +1042,23 @@ mod tests {
         };
         let h = headline(&theirs);
         assert_eq!(h.title, "Порт 443 занят другой программой");
-        assert_eq!(h.action, Some(Action::Repair));
+        assert_eq!(h.action, None);
         assert!(h.detail.contains("Закройте её"), "{}", h.detail);
+    }
+
+    /// Port 53 in the hands of a Windows service: the card says which service,
+    /// and offers no button - the user has to stop ICS by hand, and a press of
+    /// «Активировать» only brought the same card back.
+    #[test]
+    fn a_dns_port_held_by_a_service_is_advice_and_no_button() {
+        let f = Facts {
+            dns_blocked: Some(blocker("dns", "held", "svchost.exe")),
+            ..working()
+        };
+        let h = headline(&f);
+        assert_eq!(h.title, "Порт 53129 занят системной службой");
+        assert!(h.detail.contains("ICS"), "{}", h.detail);
+        assert_eq!(h.action, None);
     }
 
     #[test]

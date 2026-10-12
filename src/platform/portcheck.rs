@@ -32,12 +32,26 @@ pub enum Proto {
     Udp,
 }
 
+/// The program listening where a bind failed.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Holder {
+    /// Its image name, when it could be read (a service run as SYSTEM may not
+    /// tell an unelevated relay).
+    pub by: Option<String>,
+    /// The process id, so the window can end exactly the process it was told
+    /// about rather than whoever holds the port by the time it acts.
+    pub pid: u32,
+    /// Whether this is a leftover copy of our own relay - the one holder the
+    /// window may offer to end, because it is ours and the relay that wants
+    /// the port back is already retrying every minute.
+    pub ours: bool,
+}
+
 /// What stopped a bind, as `gate::Blocker::cause` spells it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Cause {
-    /// Another program listens on the port; its image name when it could be
-    /// read (a service run as SYSTEM may not tell an unelevated relay).
-    Held(Option<String>),
+    /// Another program listens on the port.
+    Held(Holder),
     /// Inside a range Windows excluded from use.
     Reserved,
     /// Access denied with no holder and no reservation: security software.
@@ -56,9 +70,9 @@ impl Cause {
         }
     }
 
-    pub fn holder(&self) -> Option<&str> {
+    pub fn holder(&self) -> Option<&Holder> {
         match self {
-            Cause::Held(name) => name.as_deref(),
+            Cause::Held(h) => Some(h),
             _ => None,
         }
     }
@@ -70,11 +84,16 @@ impl Cause {
         addr: SocketAddr,
         err: &std::io::Error,
     ) -> crate::gate::Blocker {
+        let holder = self.holder();
         crate::gate::Blocker {
             what: what.to_string(),
             addr: addr.to_string(),
             cause: self.code().to_string(),
-            by: self.holder().unwrap_or_default().to_string(),
+            by: holder
+                .and_then(|h| h.by.clone())
+                .unwrap_or_default(),
+            pid: holder.map_or(0, |h| h.pid),
+            ours: holder.is_some_and(|h| h.ours),
             error: err.to_string(),
         }
     }
@@ -100,13 +119,12 @@ pub fn diagnose(addr: SocketAddr, err: &std::io::Error) -> Cause {
 /// when that finds no holder, one `netsh` call: once per failed bind, which
 /// while a blocker lasts is the listener's one retry a minute.
 pub fn diagnose_on(addr: SocketAddr, err: &std::io::Error, proto: Proto) -> Cause {
-    let port = addr.port();
-    if let Some(pid) = listener_pid(addr, proto) {
-        return Cause::Held(process_name(pid));
+    if let Some(holder) = listener_holder(addr, proto) {
+        return Cause::Held(holder);
     }
     if excluded_ranges(proto)
         .iter()
-        .any(|(lo, hi)| (*lo..=*hi).contains(&port))
+        .any(|(lo, hi)| (*lo..=*hi).contains(&addr.port()))
     {
         return Cause::Reserved;
     }
@@ -117,34 +135,86 @@ pub fn diagnose_on(addr: SocketAddr, err: &std::io::Error, proto: Proto) -> Caus
     Cause::Other
 }
 
-// ---------------------------------------------------------------------------
-// Windows
-// ---------------------------------------------------------------------------
+/// ---------------------------------------------------------------------------
+/// Who is listening
+/// ---------------------------------------------------------------------------
+
+/// The holder of `addr` to name: the exact address first, the wildcard only
+/// after it, and a copy of our own relay ahead of anyone else.
+///
+/// Both listener tables come back in an order of Windows' choosing and one port
+/// can have more than one holder - Internet Connection Sharing keeps
+/// `0.0.0.0:53` while a relay of ours keeps `127.0.0.53:53`, and a stale relay
+/// next to a fresh one holds the same addresses twice over. Taking the first
+/// row that matched sent the user after `svchost.exe` and a service they cannot
+/// stop, and offered them a button that cannot free the port, while the copy
+/// that actually had to go sat in the same table (P53, measured on a machine
+/// where exactly this happened).
+fn listener_holder(addr: SocketAddr, proto: Proto) -> Option<Holder> {
+    let mut best: Option<Holder> = None;
+    for pid in listener_pids(addr, proto) {
+        let by = process_name(pid);
+        let holder = Holder {
+            ours: is_our_relay(pid, by.as_deref()),
+            by,
+            pid,
+        };
+        // The list is already exact-address first, so the first candidate is
+        // the one that actually collides with the bind; a copy of ours moves
+        // ahead of it only because it is also the one the window can act on.
+        let take = match &best {
+            None => true,
+            Some(kept) => holder.ours && !kept.ours,
+        };
+        if take {
+            best = Some(holder);
+        }
+    }
+    best
+}
+
+/// The order candidates are offered in: the address asked for, then the
+/// wildcard, one entry per process.
+///
+/// The split is what makes the answer right rather than merely plausible: a
+/// bind for `127.0.0.53:53` collides with whatever holds *that* address, and
+/// Windows lets it sit next to a `0.0.0.0:53` (measured - ICS on a machine
+/// with a working relay on it). A wildcard row is a real blocker only when
+/// there is no exact one, which is the case the advice card is written for.
+fn ordered_holders(rows: &[(Ipv4Addr, u32)], want: Ipv4Addr) -> Vec<u32> {
+    let mut exact = Vec::new();
+    let mut wildcard = Vec::new();
+    for (local, pid) in rows {
+        if *local == want {
+            exact.push(*pid);
+        } else if local.is_unspecified() {
+            wildcard.push(*pid);
+        }
+    }
+    exact.extend(wildcard);
+    exact.dedup();
+    exact
+}
 
 /// The image name of the program listening where `addr` points, when it can be
 /// read. What tells our own proxy from somebody else's program answering on the
 /// same port (`proxy::wait_for_our_listener`).
 pub fn listener_image(addr: SocketAddr) -> Option<String> {
-    listener_pid(addr, Proto::Tcp).and_then(process_name)
+    listener_holder(addr, Proto::Tcp).and_then(|h| h.by)
 }
 
-/// The PID holding `addr` itself, or on the wildcard for its port - the two
-/// that can stand in its way. A listener on another loopback address with the
-/// same port does not, and blaming it would send the user after the wrong
-/// program (a dev server on 127.0.0.1:443 while the door wants 127.65.71.1:443).
+/// Every TCP listener on `addr`'s port, with the address each one holds.
+///
+/// The whole port is read rather than only the wanted address because the
+/// wildcard has to be ranked against the exact one, and a listener on another
+/// loopback address with the same port is neither of those - it does not stand
+/// in the way, and blaming it would send the user after the wrong program (a
+/// dev server on 127.0.0.1:443 while the door wants 127.65.71.1:443).
 #[cfg(windows)]
-fn listener_pid(addr: SocketAddr, proto: Proto) -> Option<u32> {
-    match proto {
-        Proto::Tcp => tcp_listener_pid(addr),
-        Proto::Udp => udp_listener_pid(addr),
-    }
-}
-
-#[cfg(windows)]
-fn tcp_listener_pid(addr: SocketAddr) -> Option<u32> {
-    let (port, want) = match addr {
-        SocketAddr::V4(a) => (a.port(), *a.ip()),
-        SocketAddr::V6(_) => return None,
+fn tcp_rows(addr: SocketAddr) -> Vec<(Ipv4Addr, u32)> {
+    let port = match addr {
+        SocketAddr::V4(a) => a.port(),
+        SocketAddr::V6(_) => return Vec::new(),
     };
     use std::ffi::c_void;
     #[link(name = "iphlpapi")]
@@ -190,24 +260,29 @@ fn tcp_listener_pid(addr: SocketAddr) -> Option<u32> {
         )
     };
     if rc != NO_ERROR {
-        return None;
+        return Vec::new();
     }
     let count = (buf[0] as usize).min((buf.len() - 1) / ROW);
-    (0..count).find_map(|i| {
-        let row = &buf[1 + i * ROW..1 + (i + 1) * ROW];
-        // The port sits in the low 16 bits, in network byte order; the address
-        // is an `in_addr`, i.e. its bytes are already in network order.
-        let local_port = u16::from_be((row[2] & 0xFFFF) as u16);
-        let local = Ipv4Addr::from(row[1].to_ne_bytes());
-        (local_port == port && (local == want || local.is_unspecified())).then_some(row[5])
-    })
+    (0..count)
+        .filter_map(|i| {
+            let row = &buf[1 + i * ROW..1 + (i + 1) * ROW];
+            // The port sits in the low 16 bits, in network byte order; the address
+            // is an `in_addr`, i.e. its bytes are already in network order.
+            let local_port = u16::from_be((row[2] & 0xFFFF) as u16);
+            (local_port == port).then(|| (Ipv4Addr::from(row[1].to_ne_bytes()), row[5]))
+        })
+        .collect()
 }
 
+/// Every bound UDP socket on `addr`'s port, with the address each one holds.
+/// Ranked by `ordered_holders`, so an exclusive `0.0.0.0:53` (Windows'
+/// Internet Connection Sharing does exactly this) is named only when nothing
+/// holds the address actually asked for.
 #[cfg(windows)]
-fn udp_listener_pid(addr: SocketAddr) -> Option<u32> {
-    let (port, want) = match addr {
-        SocketAddr::V4(a) => (a.port(), *a.ip()),
-        SocketAddr::V6(_) => return None,
+fn udp_rows(addr: SocketAddr) -> Vec<(Ipv4Addr, u32)> {
+    let port = match addr {
+        SocketAddr::V4(a) => a.port(),
+        SocketAddr::V6(_) => return Vec::new(),
     };
     use std::ffi::c_void;
     #[link(name = "iphlpapi")]
@@ -253,19 +328,31 @@ fn udp_listener_pid(addr: SocketAddr) -> Option<u32> {
         )
     };
     if rc != NO_ERROR {
-        return None;
+        return Vec::new();
     }
     let count = (buf[0] as usize).min((buf.len() - 1) / ROW);
     // Note: UDP has no LISTEN state, so every bound UDP socket is in this table.
-    // That is what we want, since an exclusive bind on 0.0.0.0:53 (Windows'
-    // Internet Connection Sharing does exactly this) is precisely the holder
-    // we need to name.
-    (0..count).find_map(|i| {
-        let row = &buf[1 + i * ROW..1 + (i + 1) * ROW];
-        let local_port = u16::from_be((row[1] & 0xFFFF) as u16);
-        let local = Ipv4Addr::from(row[0].to_ne_bytes());
-        (local_port == port && (local == want || local.is_unspecified())).then_some(row[2])
-    })
+    (0..count)
+        .filter_map(|i| {
+            let row = &buf[1 + i * ROW..1 + (i + 1) * ROW];
+            let local_port = u16::from_be((row[1] & 0xFFFF) as u16);
+            (local_port == port).then(|| (Ipv4Addr::from(row[0].to_ne_bytes()), row[2]))
+        })
+        .collect()
+}
+
+/// The pids holding `addr`, in the order `listener_holder` wants them.
+#[cfg(windows)]
+fn listener_pids(addr: SocketAddr, proto: Proto) -> Vec<u32> {
+    let want = match addr {
+        SocketAddr::V4(a) => *a.ip(),
+        SocketAddr::V6(_) => return Vec::new(),
+    };
+    let rows = match proto {
+        Proto::Tcp => tcp_rows(addr),
+        Proto::Udp => udp_rows(addr),
+    };
+    ordered_holders(&rows, want)
 }
 
 /// The image name of `pid`: the kernel's answer when this process may open the
@@ -326,6 +413,67 @@ fn process_name(pid: u32) -> Option<String> {
         .then(|| name.to_string())
 }
 
+/// Whether an image name could be this tool's relay at all: the installed
+/// `OpenAntigravityRelay.exe`, or this very exe (the portable relay is the window's own
+/// image).
+fn is_our_relay_image(name: &str) -> bool {
+    let name = name.trim().to_ascii_lowercase();
+    if name.is_empty() {
+        return false;
+    }
+    if name == crate::platform::service::RELAY_IMAGE {
+        return true;
+    }
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.file_name().map(|f| f.to_string_lossy().to_ascii_lowercase()))
+        .is_some_and(|ours| ours == name)
+}
+
+/// Whether the holder is a relay of ours, and so the one the window may offer
+/// to end.
+///
+/// The command line is what separates the portable relay from the window they
+/// are both, and it has to be read: offering to end a process that is the
+/// window the user is reading the card in would take the whole interface down
+/// with the bypass. Measured on the machine this was written for - a stale
+/// installed relay and the portable one side by side, each ready to be told it
+/// was the other.
+#[cfg(windows)]
+fn is_our_relay(pid: u32, name: Option<&str>) -> bool {
+    let Some(name) = name else { return false };
+    if !is_our_relay_image(name) {
+        return false;
+    }
+    // The installed image is the relay by construction - no other program of
+    // ours is ever called that, and the window never is.
+    if name.eq_ignore_ascii_case(crate::platform::service::RELAY_IMAGE) {
+        return true;
+    }
+    let mut cmd = std::process::Command::new("powershell");
+    cmd.args([
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        &format!(
+            "(Get-CimInstance Win32_Process -Filter \"ProcessId = {pid}\" -ErrorAction \
+             SilentlyContinue).CommandLine"
+        ),
+    ]);
+    crate::utils::bounded_output(
+        crate::utils::no_window(&mut cmd),
+        std::time::Duration::from_secs(5),
+    )
+    .is_some_and(|o| String::from_utf8_lossy(&o.stdout).contains(crate::platform::service::FORWARDER_FLAG))
+}
+
+/// Nothing on this platform has ever answered as our relay: the port layer
+/// there is a proxy port, and no field report has asked for a name.
+#[cfg(not(windows))]
+fn is_our_relay(_pid: u32, _name: Option<&str>) -> bool {
+    false
+}
+
 /// The port ranges Windows keeps from use for `proto`.
 #[cfg(windows)]
 fn excluded_ranges(proto: Proto) -> Vec<(u16, u16)> {
@@ -362,8 +510,8 @@ fn parse_excluded_ranges(text: &str) -> Vec<(u16, u16)> {
 // ---------------------------------------------------------------------------
 
 #[cfg(not(windows))]
-fn listener_pid(_addr: SocketAddr, _proto: Proto) -> Option<u32> {
-    None
+fn listener_pids(_addr: SocketAddr, _proto: Proto) -> Vec<u32> {
+    Vec::new()
 }
 
 #[cfg(not(windows))]
@@ -376,23 +524,27 @@ fn excluded_ranges(_proto: Proto) -> Vec<(u16, u16)> {
     Vec::new()
 }
 
-/// Ends the process listening on `addr`, whoever the window says it is. The
-/// caller only offers this for the tool's own leftover relay (`gate`), where
-/// "close the program" and this button are the same action. Returns the pid
-/// that was ended, so the log can name it.
+/// Ends the process the card named, after checking it is still that one.
+///
+/// The pid comes from the record rather than from a fresh table read: the
+/// window shows the user a name, and by the time the button is pressed the
+/// port may be held by a different program entirely - killing that one instead
+/// would be ending somebody else's software on a guess. `expected` is the
+/// image the card showed, and a mismatch is refused rather than acted on.
 #[cfg(windows)]
-pub fn kill_holding_process(addr: &str) -> Result<u32, String> {
+pub fn kill_holding_process(pid: u32, expected: &str) -> Result<u32, String> {
     use std::process::Command;
 
-    let sa: SocketAddr = addr
-        .parse()
-        .map_err(|_| format!("не разобрать адрес «{addr}»"))?;
-    // The DNS relay listens on UDP first and foremost, but a `held` card may
-    // name a TCP listener too (the proxy and the gate doors are TCP) - ask
-    // both, the tables are separate.
-    let pid = listener_pid(sa, Proto::Tcp)
-        .or_else(|| listener_pid(sa, Proto::Udp))
-        .ok_or_else(|| format!("слушающий {addr} процесс уже не найден"))?;
+    if pid == 0 {
+        return Err("в записи не было номера процесса".to_string());
+    }
+    let now = process_name(pid).unwrap_or_default().to_ascii_lowercase();
+    let said = expected.trim().to_ascii_lowercase();
+    if !said.is_empty() && !now.is_empty() && now != said {
+        return Err(format!(
+            "порт уже занят другой программой («{now}» вместо «{said}») — закрывать её не будем"
+        ));
+    }
     let mut cmd = Command::new("taskkill");
     cmd.args(["/F", "/PID", &pid.to_string()]);
     crate::utils::no_window(&mut cmd);
@@ -414,7 +566,7 @@ pub fn kill_holding_process(addr: &str) -> Result<u32, String> {
 /// Nothing to end with on non-Windows from here: the Linux port's DNS layer
 /// is stubbed, and its proxy port holders keep the advice-only card.
 #[cfg(not(windows))]
-pub fn kill_holding_process(_addr: &str) -> Result<u32, String> {
+pub fn kill_holding_process(_pid: u32, _expected: &str) -> Result<u32, String> {
     Err("не поддерживается на этой платформе".to_string())
 }
 
@@ -439,19 +591,44 @@ mod tests {
         assert!(parse_excluded_ranges("  70000 70001\n  9 3\n").is_empty());
     }
 
+    /// The exact address is the blocker; a wildcard beside it is not. Measured
+    /// on a real machine: ICS holding `0.0.0.0:53` while the relay held
+    /// `127.0.0.53:53`, and the first row that matched was ICS' - which put
+    /// `svchost.exe` and a service the user cannot stop on the card, and left
+    /// the stale relay that actually held the port unnamed.
+    #[test]
+    fn the_exact_address_outranks_the_wildcard_beside_it() {
+        let want = Ipv4Addr::new(127, 0, 0, 53);
+        let both = [
+            (Ipv4Addr::UNSPECIFIED, 4),
+            (want, 11928),
+            (Ipv4Addr::new(127, 65, 71, 1), 900),
+        ];
+        assert_eq!(ordered_holders(&both, want), vec![11928, 4]);
+        // Alone on the port, the wildcard is the only answer there is - that is
+        // the ICS case the advice card is written for.
+        assert_eq!(
+            ordered_holders(&[(Ipv4Addr::UNSPECIFIED, 4)], want),
+            vec![4]
+        );
+        // A listener on another address of the same port is in nobody's way.
+        let elsewhere = [(Ipv4Addr::new(127, 65, 71, 1), 900)];
+        assert!(ordered_holders(&elsewhere, want).is_empty());
+    }
+
     /// Live: a port this test holds is found, with this test's own name.
     #[test]
     #[cfg(windows)]
     fn a_port_we_listen_on_is_held_by_us() {
         let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let here = l.local_addr().unwrap();
-        let pid = listener_pid(here, Proto::Tcp).expect("our own listener in the table");
-        assert_eq!(pid, std::process::id());
-        let name = process_name(pid).unwrap_or_default().to_ascii_lowercase();
+        let holder = listener_holder(here, Proto::Tcp).expect("our own listener in the table");
+        assert_eq!(holder.pid, std::process::id());
+        let name = holder.by.unwrap_or_default().to_ascii_lowercase();
         assert!(name.ends_with(".exe"), "{name}");
         // The same port on another loopback address is not in its way.
         let elsewhere = SocketAddr::from(([127, 65, 71, 9], here.port()));
-        assert_eq!(listener_pid(elsewhere, Proto::Tcp), None);
+        assert!(listener_holder(elsewhere, Proto::Tcp).is_none());
     }
 
     #[test]
@@ -459,13 +636,13 @@ mod tests {
     fn a_udp_port_we_hold_is_found() {
         let s = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
         let here = s.local_addr().unwrap();
-        let pid = listener_pid(here, Proto::Udp).expect("our own UDP socket in the table");
-        assert_eq!(pid, std::process::id());
-        let name = process_name(pid).unwrap_or_default().to_ascii_lowercase();
+        let holder = listener_holder(here, Proto::Udp).expect("our own UDP socket in the table");
+        assert_eq!(holder.pid, std::process::id());
+        let name = holder.by.unwrap_or_default().to_ascii_lowercase();
         assert!(name.ends_with(".exe"), "{name}");
         // The same port on another loopback address is not matched.
         let elsewhere = SocketAddr::from(([127, 65, 71, 9], here.port()));
-        assert_eq!(listener_pid(elsewhere, Proto::Udp), None);
+        assert!(listener_holder(elsewhere, Proto::Udp).is_none());
     }
 
     #[test]
@@ -473,10 +650,10 @@ mod tests {
     fn tcp_and_udp_tables_are_asked_separately() {
         let tcp = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let tcp_addr = tcp.local_addr().unwrap();
-        assert_eq!(listener_pid(tcp_addr, Proto::Udp), None);
+        assert!(listener_holder(tcp_addr, Proto::Udp).is_none());
 
         let udp = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
         let udp_addr = udp.local_addr().unwrap();
-        assert_eq!(listener_pid(udp_addr, Proto::Tcp), None);
+        assert!(listener_holder(udp_addr, Proto::Tcp).is_none());
     }
 }

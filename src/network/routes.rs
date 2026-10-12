@@ -1803,7 +1803,7 @@ mod tests {
         let addr = listener.local_addr().expect("addr");
 
         // Two gate tunnels on one route, the way a client's pool makes them.
-        let mut open_one = |host: &'static str| {
+        let open_one = |host: &'static str| {
             let far = TcpStream::connect(addr).expect("connected");
             let (near, _) = listener.accept().expect("accepted");
             let (tx, rx) = std::sync::mpsc::channel();

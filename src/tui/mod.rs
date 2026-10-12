@@ -255,7 +255,7 @@ impl App {
             return;
         }
         if update::update_url().is_none() {
-            self.toast("URL обновлений не задан (AG_UPDATE_URL)");
+            self.toast("URL обновлений не задан (OAG_UPDATE_URL)");
             return;
         }
         self.manual_running = true;

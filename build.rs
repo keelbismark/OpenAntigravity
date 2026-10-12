@@ -225,18 +225,18 @@ fn main() {
 
     println!("cargo:rerun-if-changed=src/canary.rs");
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-env-changed=AG_FULL_VERSION");
-    println!("cargo:rerun-if-env-changed=AG_BUILTIN_PROXY");
-    println!("cargo:rerun-if-env-changed=AG_PORTABLE");
-    println!("cargo:rerun-if-env-changed=AG_UPDATE_URL");
+    println!("cargo:rerun-if-env-changed=OAG_FULL_VERSION");
+    println!("cargo:rerun-if-env-changed=OAG_BUILTIN_PROXY");
+    println!("cargo:rerun-if-env-changed=OAG_PORTABLE");
+    println!("cargo:rerun-if-env-changed=OAG_UPDATE_URL");
 
-    // URL проверки обновлений (AG_UPDATE_URL=https://host/version.json).
+    // URL проверки обновлений (OAG_UPDATE_URL=https://host/version.json).
     // По умолчанию используется GitHub Pages репозитория OpenAntigravity:
     // https://keelbismark.github.io/OpenAntigravity/version.json
     // Вшивается в бинарник через rustc-env и считывается через option_env! в update.rs.
-    // Может быть переопределён переменной AG_UPDATE_URL ("none" / "off" полностью отключает).
+    // Может быть переопределён переменной OAG_UPDATE_URL ("none" / "off" полностью отключает).
     const DEFAULT_UPDATE_URL: &str = "https://keelbismark.github.io/OpenAntigravity/version.json";
-    let effective_update_url = match env::var("AG_UPDATE_URL") {
+    let effective_update_url = match env::var("OAG_UPDATE_URL") {
         Ok(raw) => {
             let trimmed = raw.trim();
             if trimmed.eq_ignore_ascii_case("none") || trimmed.eq_ignore_ascii_case("off") {
@@ -253,31 +253,31 @@ fn main() {
     if let Some(url) = effective_update_url {
         if !(url.starts_with("http://") || url.starts_with("https://")) {
             println!(
-                "cargo:warning=AG_UPDATE_URL не начинается с http:// или https:// — \n                 такой адрес парсер отвергнет: {}",
+                "cargo:warning=OAG_UPDATE_URL не начинается с http:// или https:// — \n                 такой адрес парсер отвергнет: {}",
                 url.split('/').next().unwrap_or("")
             );
         } else {
-            println!("cargo:rustc-env=AG_UPDATE_URL={}", url);
+            println!("cargo:rustc-env=OAG_UPDATE_URL={}", url);
             println!("cargo:warning=update feed -> {}", url);
         }
     } else {
-        println!("cargo:warning=проверка обновлений выключена (AG_UPDATE_URL=none)");
+        println!("cargo:warning=проверка обновлений выключена (OAG_UPDATE_URL=none)");
     }
 
-    // Вшитый прокси (AG_BUILTIN_PROXY=логин:пароль@хост:порт). Строка не должна
+    // Вшитый прокси (OAG_BUILTIN_PROXY=логин:пароль@хост:порт). Строка не должна
     // лежать в exe открытым текстом — пароль от своего прокси в чужих руках это
     // чужой трафик через ваш счёт. Ниже: проверка формата (лог сборки содержит
     // только хост:порт — не пароль) и XOR-обфускация в OUT_DIR (ключ рядом:
     // от целенаправленного реверса это не защита, только от strings-дампа;
     // тот же уровень честности, что и у остальной сборки).
 
-    // Вшитый прокси (AG_BUILTIN_PROXY=логин:пароль@хост:порт): проверяем
+    // Вшитый прокси (OAG_BUILTIN_PROXY=логин:пароль@хост:порт): проверяем
     // формат уже на сборке, чтобы опечатка не превратилась в молчаливое
     // «маршрута нет». В лог сборки попадает только хост:порт — не пароль.
-    if let Some(raw) = env::var_os("AG_BUILTIN_PROXY") {
+    if let Some(raw) = env::var_os("OAG_BUILTIN_PROXY") {
         let raw = raw.to_string_lossy().trim().to_string();
         if raw.is_empty() {
-            println!("cargo:warning=AG_BUILTIN_PROXY пуст — сборка без вшитого прокси (пользователь укажет свой в настройках)");
+            println!("cargo:warning=OAG_BUILTIN_PROXY пуст — сборка без вшитого прокси (пользователь укажет свой в настройках)");
         } else {
             let proxies: Vec<&str> = raw
                 .split(';')
@@ -317,7 +317,7 @@ fn main() {
     // XOR-обфускация вшитого прокси в OUT_DIR/builtin_proxy_gen.rs. Файл пишется
     // всегда (пустая сборка — пустой массив), чтобы include! в upstream.rs был
     // валиден без переменной тоже.
-    let proxy_raw = env::var("AG_BUILTIN_PROXY")
+    let proxy_raw = env::var("OAG_BUILTIN_PROXY")
         .unwrap_or_default()
         .trim()
         .to_string();
@@ -353,10 +353,10 @@ fn main() {
     let file_ver = fs::read_to_string("VERSION")
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|_| "1.1.0".to_string());
-    let full_ver = env::var("AG_FULL_VERSION").unwrap_or_else(|_| file_ver.clone());
+    let full_ver = env::var("OAG_FULL_VERSION").unwrap_or_else(|_| file_ver.clone());
     let trimmed = full_ver.trim();
     if !trimmed.is_empty() {
-        println!("cargo:rustc-env=AG_FULL_VERSION={}", trimmed);
+        println!("cargo:rustc-env=OAG_FULL_VERSION={}", trimmed);
     }
 
     let version = if !trimmed.is_empty() {
@@ -472,10 +472,10 @@ fn main() {
         // Kept in step with Cargo.toml, which build_rust.py rewrites per release.
         res.set("FileVersion", &version);
         res.set("ProductVersion", &version);
-        // AG_NO_RES: кросс-проверка типов с Linux (`cargo check --target
+        // OAG_NO_RES: кросс-проверка типов с Linux (`cargo check --target
         // x86_64-pc-windows-gnu`) — компилятор ресурсов требует rc.exe/windres,
         // которых на другой ОС нет; на обычной сборке под Windows ничего не меняет.
-        if env::var_os("AG_NO_RES").is_none() {
+        if env::var_os("OAG_NO_RES").is_none() {
             res.compile().unwrap();
         }
     }

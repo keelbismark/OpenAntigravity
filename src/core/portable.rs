@@ -15,7 +15,7 @@
 //!   `%ProgramData%`. Автозапуск после перезагрузки — единственное, что требует
 //!   установки, и им портативный режим сознательно жертвует;
 //! * включается режим одним из трёх способов, по убыванию приоритета:
-//!   1. при сборке была задана переменная `AG_PORTABLE` (вшито в билд);
+//!   1. при сборке была задана переменная `OAG_PORTABLE` (вшито в билд);
 //!   2. exe запущен с флагом `--portable`;
 //!   3. рядом с exe лежит пустой файл-маркер `portable.flag`.
 
@@ -41,7 +41,7 @@ pub fn enabled() -> bool {
 fn detect() -> bool {
     // 1. Вшито при сборке: само наличие переменной включает режим, значение
     //    не читается — так правило «есть значит да» не приходится объяснять.
-    if option_env!("AG_PORTABLE").is_some() {
+    if option_env!("OAG_PORTABLE").is_some() {
         return true;
     }
     // 2. Флаг запуска.
@@ -96,7 +96,7 @@ pub fn data_dir() -> Option<PathBuf> {
 }
 
 fn is_writable_dir(dir: &Path) -> bool {
-    let test_file = dir.join(format!(".ag_wprobe_{}", std::process::id()));
+    let test_file = dir.join(format!(".oag_wprobe_{}", std::process::id()));
     if std::fs::write(&test_file, b"").is_ok() {
         let _ = std::fs::remove_file(test_file);
         true
@@ -115,7 +115,7 @@ mod tests {
 
     #[test]
     fn a_marker_next_to_the_exe_enables_portable_mode() {
-        let dir = std::env::temp_dir().join("ag_portable_marker_test");
+        let dir = std::env::temp_dir().join("oag_portable_marker_test");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         assert!(!marker_present(Some(dir.as_path())), "маркера ещё нет");

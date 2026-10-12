@@ -36,7 +36,10 @@
 //!   `ineligible` so the PE layout survives; the specific misspelling is a free
 //!   choice out of a large space and has no reason to be reinvented.
 //! * `OPEN_ANTIGRAVITY_NRPT_V2` - the NRPT rule `Comment` tag in `dns.rs`.
-//! * `// [AG_PROXY_HOOK]` / `/*[AG_PATCHED]*/` - legacy Electron hook fences.
+//! * `// [OAG_PROXY_HOOK]` / `/*[OAG_PATCHED]*/` - the Electron hook fences written
+//!   into patched IDE files. The previous generation wrote the same fences under
+//!   its own prefix; a file carrying those is still recognised as patched, and
+//!   those names live in `platform::legacy` so the tree keeps one copy of them.
 //! * The exact four-host NRPT list and its order, plus precedence `46` for
 //!   `::ffff:0:0/96`.
 //!

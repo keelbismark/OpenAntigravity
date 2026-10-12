@@ -1,7 +1,7 @@
 //! The gate hosts, answered with a loopback address and carried from there.
 //!
 //! Until 2.14.0_1 the only way the route table ever saw a gate connection was
-//! the private proxy variable (`AG_LS_PROXY`, S42) - and an environment
+//! the private proxy variable (`OAG_GATEWAY`, S42) - and an environment
 //! variable reaches a process only when it starts. A user who switched the
 //! bypass on while Antigravity was open (the ordinary order: patch, launch,
 //! then the 400, then this window) had a language server that never asked our

@@ -106,28 +106,17 @@ pub struct Blocker {
     pub cause: String,
     /// The program listening there, when `held` and its name could be read.
     pub by: String,
+    /// Its process id, when `held`. The window ends this exact process rather
+    /// than whoever holds the port by the time the button is pressed.
+    pub pid: u32,
+    /// Whether that program is a leftover copy of our own relay rather than
+    /// someone else's software. Measured once, by the relay that wanted the
+    /// port, because the window cannot tell the portable relay from its own
+    /// window by image name alone and must never offer to end the process the
+    /// user is reading the card in.
+    pub ours: bool,
     /// The OS's own words, for the report.
     pub error: String,
-}
-
-/// Whether a port-holding process image is this tool's own relay: the
-/// installed copy (`ag_dns.exe`) or the running build itself. A holder like
-/// that is a stale leftover of an earlier run, install or update - the one
-/// occupier the window may offer to end for the user, because it is ours and
-/// the relay that wants the port back is minutes from restarting anyway.
-/// Anything else keeps the advice-only card: a blind kill of someone else's
-/// software is not ours to press a button on.
-pub fn is_own_relay_image(name: &str) -> bool {
-    let name = name.trim().to_ascii_lowercase();
-    if name.is_empty() {
-        return false;
-    }
-    let self_name = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.file_name().map(|f| f.to_string_lossy().into_owned()))
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    name == "ag_dns.exe" || (!self_name.is_empty() && name == self_name)
 }
 
 /// How long a relay may run without anything on the internet answering it

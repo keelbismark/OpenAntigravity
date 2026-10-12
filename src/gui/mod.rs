@@ -163,10 +163,7 @@ impl App {
         // D-Bus is down (headless server, Wayland-only without SNI host), the
         // app works normally — just without the tray icon.
         let (tray_icon, tray_items) = match tray::build() {
-            Some((icon, items)) => {
-                tray::install_wakeup(&cc.egui_ctx);
-                (Some(icon), Some(items))
-            }
+            Some((icon, items)) => (Some(icon), Some(items)),
             None => (None, None),
         };
 
@@ -666,17 +663,31 @@ impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.drain_events();
 
-        // --- System tray: hide-to-tray on window close ---
-        // Process tray icon / menu clicks even when the window is hidden
-        // (egui calls logic() on request_repaint while window is hidden).
+        // --- System tray: hide on [_], restore from a click on the icon ---
+        //
+        // The icon click and the menu clicks are read out of the tray-icon
+        // channel here, so this has to run while the window is hidden. eframe
+        // keeps calling `logic` for an invisible viewport, but on Linux nothing
+        // ever wakes it once the window is gone - hence the heartbeat below.
         self.drain_tray_events(ctx);
+
+        // While in the tray the window has no mouse and no redraw to ride on,
+        // so nothing would ask for a frame: the click that brings it back could
+        // sit unread until some unrelated repaint came along. A scheduled
+        // repaint costs nothing when it finds no event - the loop is asleep
+        // between the beats, not spinning.
+        if self.tray_hidden {
+            ctx.request_repaint_after(tray::HIDDEN_TICK);
+        }
 
         // When the user clicks the window's [X], let it close cleanly and exit.
         if ctx.input(|i| i.viewport().close_requested()) {
             self.tray_items = None;
         }
 
-        // When the user clicks minimize [_], hide to system tray if available
+        // When the user clicks minimize [_], hide to the system tray if there
+        // is one to hide into. Not a close: the app keeps running, and the tray
+        // icon is the way back in.
         if self.tray_items.is_some() && !self.tray_hidden {
             if ctx.input(|i| i.viewport().minimized == Some(true)) {
                 self.tray_hidden = true;

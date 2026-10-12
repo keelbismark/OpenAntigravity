@@ -874,7 +874,7 @@ mod tests {
     /// launcher/CLI is a *file*, so a directory named `agy` must not qualify.
     #[test]
     fn a_directory_named_agy_does_not_make_its_parent_an_install() {
-        let base = env::temp_dir().join("ag_isroot_dir_test");
+        let base = env::temp_dir().join("oag_isroot_dir_test");
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(base.join("agy").join("bin")).unwrap();
         assert!(
@@ -891,7 +891,7 @@ mod tests {
     /// file - still resolves as an install root.
     #[test]
     fn a_directory_holding_the_agy_binary_is_an_install() {
-        let base = env::temp_dir().join("ag_isroot_file_test");
+        let base = env::temp_dir().join("oag_isroot_file_test");
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&base).unwrap();
         fs::write(base.join("agy"), b"binary").unwrap();

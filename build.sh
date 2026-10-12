@@ -17,14 +17,14 @@ DO_PACKAGE=0
 DO_CHECK=0
 DO_RELEASE=0
 NEW_REL_VER=""
-AG_MUSL="${AG_MUSL:-0}"
+OAG_MUSL="${OAG_MUSL:-0}"
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --release|-r) DO_RELEASE=1; NEW_REL_VER="$2"; shift 2 ;;
         --package|-p) DO_PACKAGE=1; shift ;;
         --check|-c)   DO_CHECK=1; shift ;;
-        --musl)       AG_MUSL=1; shift ;;
+        --musl)       OAG_MUSL=1; shift ;;
         *)            shift ;;
     esac
 done
@@ -70,9 +70,9 @@ if [ ! -f "$SCRIPT_DIR/VERSION" ]; then
     exit 1
 fi
 ROOT_VERSION="$(tr -d '\r\n' < "$SCRIPT_DIR/VERSION")"
-export AG_FULL_VERSION="${AG_FULL_VERSION:-$ROOT_VERSION}"
-export AG_PORTABLE=1
-export AG_UPDATE_URL="${AG_UPDATE_URL:-https://keelbismark.github.io/OpenAntigravity/version.json}"
+export OAG_FULL_VERSION="${OAG_FULL_VERSION:-$ROOT_VERSION}"
+export OAG_PORTABLE=1
+export OAG_UPDATE_URL="${OAG_UPDATE_URL:-https://keelbismark.github.io/OpenAntigravity/version.json}"
 
 if [ -f "$SCRIPT_DIR/Cargo.toml" ]; then
     sed -i -E 's/^version = "[0-9]+\.[0-9]+\.[0-9]+"/version = "'"$ROOT_VERSION"'"/' "$SCRIPT_DIR/Cargo.toml" 2>/dev/null || true
@@ -93,7 +93,7 @@ echo "  Сборка Open Antigravity v${ROOT_VERSION} (Linux)"
 echo "================================================================"
 
 # Запуск базового сборщика
-export AG_MUSL
+export OAG_MUSL
 bash "$SCRIPT_DIR/build_portable.sh"
 
 if [ "$DO_PACKAGE" -eq 1 ]; then
@@ -101,7 +101,7 @@ if [ "$DO_PACKAGE" -eq 1 ]; then
     echo "  Упаковка релизных архивов (.tar.gz и AppImage)"
     echo "================================================================"
     bash "$SCRIPT_DIR/package_release.sh" --skip-build --version "$ROOT_VERSION"
-    if [ "$AG_MUSL" -eq 0 ] && [ -f "$SCRIPT_DIR/build_appimage.sh" ]; then
+    if [ "$OAG_MUSL" -eq 0 ] && [ -f "$SCRIPT_DIR/build_appimage.sh" ]; then
         bash "$SCRIPT_DIR/build_appimage.sh"
     fi
 fi

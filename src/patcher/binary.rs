@@ -259,8 +259,8 @@ pub fn unpatch_binary(bin_path: &Path) -> Result<usize, String> {
 /// | binary  | variables set              | gate host went via |
 /// |---------|----------------------------|--------------------|
 /// | stock   | `HTTPS_PROXY`              | that proxy         |
-/// | stock   | `AG_LS_PROXY`              | direct - inert     |
-/// | patched | `AG_LS_PROXY`              | **ours**           |
+/// | stock   | `OAG_GATEWAY`              | direct - inert     |
+/// | patched | `OAG_GATEWAY`              | **ours**           |
 /// | patched | `HTTPS_PROXY`              | theirs - unbroken  |
 /// | patched | both                       | **ours**           |
 ///
@@ -278,22 +278,42 @@ pub fn unpatch_binary(bin_path: &Path) -> Result<usize, String> {
 ///
 /// Same length as the name it replaces, so this is the same class of edit as the
 /// eligibility rename: no relocation moves, no size change, byte-exact revert.
-pub const PROXY_VAR_NEW: &str = "AG_LS_PROXY";
+pub const PROXY_VAR_NEW: &str = "OAG_GATEWAY";
+
+/// The name the previous generation renamed the literal to, and what a machine
+/// upgrading from it still carries inside its patched language server. Same
+/// length by design, so moving it onto [`PROXY_VAR_NEW`] is the same byte-exact
+/// edit in place - see `patch_proxy_var`, which does exactly that before it
+/// looks for the original name at all.
+pub const PREV_PROXY_VAR: &str = crate::platform::legacy::LS_GATEWAY_VAR;
 
 /// Points the language server's proxy lookup at [`PROXY_VAR_NEW`].
 ///
 /// Additive, so unlike `patch_binary` a miss is not fatal - `Ok(0)` when the
-/// binary is already renamed, `Err` only when neither name is present, which
-/// callers report rather than treat as a failed patch.
+/// binary is already renamed, `Err` only when none of the three names is
+/// present, which callers report rather than treat as a failed patch.
+///
+/// The first rewrite is the one that matters on upgrade: a binary the previous
+/// generation patched holds *its* name, not the original, so without this the
+/// tool would write a variable no process reads and the local-proxy route would
+/// stop working with nothing on screen to say why.
 pub fn patch_proxy_var(bin_path: &Path) -> Result<usize, String> {
+    let mut written = rewrite(bin_path, PREV_PROXY_VAR.as_bytes(), PROXY_VAR_NEW.as_bytes())
+        .unwrap_or(0);
     let old_bytes = proxy_var_original();
-    rewrite(bin_path, &old_bytes, PROXY_VAR_NEW.as_bytes())
+    written += rewrite(bin_path, &old_bytes, PROXY_VAR_NEW.as_bytes())?;
+    Ok(written)
 }
 
 /// Puts the standard name back.
+///
+/// The previous generation's name is mapped back too, so a revert is complete
+/// on a machine that upgraded without ever running this build's patcher.
 pub fn unpatch_proxy_var(bin_path: &Path) -> Result<usize, String> {
     let old_bytes = proxy_var_original();
-    rewrite(bin_path, PROXY_VAR_NEW.as_bytes(), &old_bytes)
+    let mut written = rewrite(bin_path, PROXY_VAR_NEW.as_bytes(), &old_bytes).unwrap_or(0);
+    written += rewrite(bin_path, PREV_PROXY_VAR.as_bytes(), &old_bytes).unwrap_or(0);
+    Ok(written)
 }
 
 /// What re-patching one binary found. The background watchdog needs to tell
@@ -333,10 +353,14 @@ pub fn repatch_if_needed(bin_path: &Path) -> RepatchOutcome {
         Err(e) => return RepatchOutcome::Failed(e.to_string()),
     };
     let replaced = replace_all(&mut data, &from, &to);
-    // Both renames ride in one read and one write. An update restores both at
-    // once, and a machine upgrading from a build that only knew the first one
-    // gets the second here without a second pass over 150 MB.
-    let proxy = replace_all(&mut data, &proxy_from, PROXY_VAR_NEW.as_bytes());
+    // All three renames ride in one read and one write. An update restores both
+    // at once, and a machine upgrading from a build that only knew the first
+    // gets the second here without a second pass over 150 MB. The previous
+    // generation's proxy name goes first: a binary it patched carries that name
+    // rather than the original, so the original rewrite below would find
+    // nothing and the file would be left reading a variable we no longer write.
+    let proxy = replace_all(&mut data, PREV_PROXY_VAR.as_bytes(), PROXY_VAR_NEW.as_bytes())
+        + replace_all(&mut data, &proxy_from, PROXY_VAR_NEW.as_bytes());
     if replaced == 0 {
         if count_occurrences(&data, &to) == 0 {
             return RepatchOutcome::SignatureMissing;
@@ -741,7 +765,7 @@ mod tests {
                 // as free to move. Read straight off the bytes.
                 let bytes = fs::read(&path).unwrap_or_default();
                 let proxy = if contains_subslice(&bytes, PROXY_VAR_NEW.as_bytes()) {
-                    "AG_LS_PROXY"
+                    "OAG_GATEWAY"
                 } else if contains_subslice(&bytes, &proxy_var_original()) {
                     "не переименован"
                 } else {
@@ -785,7 +809,7 @@ mod tests {
     /// is the classification, not the literals.
     #[test]
     fn repatch_classifies_each_case() {
-        let dir = std::env::temp_dir().join("ag_repatch_test");
+        let dir = std::env::temp_dir().join("oag_repatch_test");
         fs::create_dir_all(&dir).expect("temp dir");
 
         // Reverted by an update: contains the original field name → re-patched.
@@ -904,7 +928,7 @@ mod tests {
     /// signed-by-nobody 150 MB executable and a stray byte is unlaunchable.
     #[test]
     fn the_proxy_rename_round_trips_beside_the_eligibility_one() {
-        let dir = std::env::temp_dir().join("ag_proxyvar_test");
+        let dir = std::env::temp_dir().join("oag_proxyvar_test");
         fs::create_dir_all(&dir).expect("temp dir");
         let bin = dir.join("both.bin");
         let original = b"..ineligible..https_proxy..HTTPS_PROXY..https_proxy..".to_vec();
@@ -935,7 +959,7 @@ mod tests {
     /// has to be able to tell those apart to avoid writing a dead variable.
     #[test]
     fn a_missing_proxy_literal_is_an_error_not_a_silent_success() {
-        let dir = std::env::temp_dir().join("ag_proxyvar_missing_test");
+        let dir = std::env::temp_dir().join("oag_proxyvar_missing_test");
         fs::create_dir_all(&dir).expect("temp dir");
         let bin = dir.join("gate_only.bin");
         fs::write(&bin, b"..ineligible..").unwrap();
@@ -950,7 +974,7 @@ mod tests {
     /// upgrade from a build that only knew the eligibility one.
     #[test]
     fn repatch_restores_the_proxy_name_too() {
-        let dir = std::env::temp_dir().join("ag_repatch_proxy_test");
+        let dir = std::env::temp_dir().join("oag_repatch_proxy_test");
         fs::create_dir_all(&dir).expect("temp dir");
 
         // An update put the stock binary back: both names are stock again.
@@ -983,7 +1007,7 @@ mod tests {
     /// file, stay.
     #[test]
     fn a_stale_temp_is_swept_and_a_fresh_one_is_not() {
-        let dir = std::env::temp_dir().join("ag_sweep_temps");
+        let dir = std::env::temp_dir().join("oag_sweep_temps");
         fs::create_dir_all(&dir).unwrap();
         let target = dir.join("language_server.exe");
         fs::write(&target, b"x").unwrap();
@@ -1022,7 +1046,7 @@ mod tests {
 
     #[test]
     fn inspect_matches_across_buffer_boundary() {
-        let dir = std::env::temp_dir().join("ag_inspect_boundary_test");
+        let dir = std::env::temp_dir().join("oag_inspect_boundary_test");
         fs::create_dir_all(&dir).expect("temp dir");
 
         let chunk_size = 1024 * 1024;
@@ -1046,7 +1070,7 @@ mod tests {
 
     #[test]
     fn inspect_missing_signature_when_neither_present() {
-        let dir = std::env::temp_dir().join("ag_inspect_missing_test");
+        let dir = std::env::temp_dir().join("oag_inspect_missing_test");
         fs::create_dir_all(&dir).expect("temp dir");
         let bin = dir.join("neither.bin");
         fs::write(&bin, b"some content without any known signatures").expect("write");

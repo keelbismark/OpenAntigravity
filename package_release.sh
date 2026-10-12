@@ -47,7 +47,7 @@ done
 # Derive version from build env or binary
 # ---------------------------------------------------------------
 if [ -z "$VERSION" ]; then
-    VERSION="${AG_FULL_VERSION:-}"
+    VERSION="${OAG_FULL_VERSION:-}"
 fi
 
 DISTDIR="$PWD/dist_portable_linux"
@@ -57,7 +57,7 @@ if [ "$SKIP_BUILD" -eq 0 ]; then
     echo "  Этап 1: Сборка портативного дистрибутива"
     echo "══════════════════════════════════════════════════════════"
     if [ -n "$VERSION" ]; then
-        export AG_FULL_VERSION="$VERSION"
+        export OAG_FULL_VERSION="$VERSION"
     fi
     bash build_portable.sh
     echo
@@ -65,7 +65,7 @@ fi
 
 # Get version from the built binary if not set explicitly.
 if [ -z "$VERSION" ]; then
-    for bin_candidate in "$DISTDIR/open_antigravity" "$DISTDIR/ag_unlocker"; do
+    for bin_candidate in "$DISTDIR/open_antigravity"; do
         if [ -x "$bin_candidate" ]; then
             VERSION=$("$bin_candidate" --help 2>/dev/null | head -1 | grep -oP 'v\K[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?' || echo "")
             if [ -n "$VERSION" ]; then break; fi
@@ -91,7 +91,7 @@ for f in "${REQUIRED_FILES[@]}"; do
         exit 1
     fi
 done
-if [ ! -e "$DISTDIR/open_antigravity" ] && [ ! -e "$DISTDIR/ag_unlocker" ]; then
+if [ ! -e "$DISTDIR/open_antigravity" ]; then
     echo "ОШИБКА: Бинарник программы не найден в $DISTDIR. Сначала выполните сборку." >&2
     exit 1
 fi

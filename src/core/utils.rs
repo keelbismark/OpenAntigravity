@@ -156,7 +156,7 @@ pub fn attach_parent_console() {
         //
         // A windows-subsystem process started from a shell normally has no std
         // handles at all, which is why they have to be opened here. But
-        // `AG_2.12.2.exe --about > provenance.txt` starts with a perfectly good
+        // `OpenAntigravity.exe --about > provenance.txt` starts with a perfectly good
         // handle to that file, and repointing stdout at CONOUT$ regardless would
         // put the banner on screen and leave the file empty — breaking the one
         // use the flag exists for.

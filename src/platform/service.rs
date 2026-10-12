@@ -15,6 +15,11 @@ pub const WATCHDOG_FLAG: &str = "--watchdog";
 /// Hidden flag that runs ONLY the local CONNECT proxy (`proxy::run`) - the Linux
 /// phase-2 region route. No DNS listener, so no systemd-resolved conflict.
 pub const PROXY_FLAG: &str = "--proxy";
+/// The image name of the installed relay, and so of every copy of this tool
+/// that has ever been left holding a port (`portcheck`). Renamed with the tool;
+/// the previous generation's name lives in `legacy::RELAY_IMAGE`, which is what
+/// the one-time sweep looks for.
+pub const RELAY_IMAGE: &str = "OpenAntigravityRelay.exe";
 
 #[cfg(target_os = "windows")]
 pub use windows_impl::*;
@@ -52,14 +57,14 @@ mod windows_impl {
     // is the only backstop available for that, since the panic cannot be caught.
 
     const TASK_NAME: &str = "Open Antigravity DNS";
-    const LEGACY_TASK_NAME: &str = "AG Unlocker DNS";
+    
     /// The watchdog's own logon task, separate from the relay's. Decoupling the
     /// re-patch survival from the relay is what lets it keep working when the relay
     /// is stopped (menu 4), has died, or was never installed (a future patch-only
     /// machine) - the case G9 describes today, where no relay means no watchdog.
     const WATCHDOG_TASK_NAME: &str = "Open Antigravity Watchdog";
-    const LEGACY_WATCHDOG_TASK_NAME: &str = "AG Unlocker Watchdog";
-    const EXE_NAME: &str = "ag_dns.exe";
+    
+    const EXE_NAME: &str = super::RELAY_IMAGE;
 
     /// ProgramData, **not** LOCALAPPDATA. Measured on a real machine: a scheduled
     /// task launching anything out of `%LOCALAPPDATA%` fails with 0x80070002, and a
@@ -94,7 +99,7 @@ mod windows_impl {
             .and_then(|s| s.trim().parse().ok())
     }
 
-    /// Имя образа этого exe. В обычной сборке релей называется ag_dns.exe,
+    /// Имя образа этого exe. В обычной сборке релей называется OpenAntigravityRelay.exe,
     /// в портативной — как файл на флешке, поэтому имя не константа.
     fn relay_image_name() -> String {
         env::current_exe()
@@ -226,7 +231,7 @@ mod windows_impl {
             // Плановой задачи нет и не будет: «включено» = релей жив.
             return is_running_portable();
         }
-        task_exists(TASK_NAME) || task_exists(LEGACY_TASK_NAME)
+        task_exists(TASK_NAME)
     }
 
     /// True when the watchdog's own logon task exists.
@@ -235,7 +240,7 @@ mod windows_impl {
         if crate::portable::enabled() {
             return false;
         }
-        task_exists(WATCHDOG_TASK_NAME) || task_exists(LEGACY_WATCHDOG_TASK_NAME)
+        task_exists(WATCHDOG_TASK_NAME)
     }
 
     pub fn is_running() -> bool {
@@ -429,6 +434,12 @@ mod windows_impl {
     /// build. Cheap when everything is already current, so the patch flow can call
     /// it every time.
     pub fn ensure_running() -> Result<(), String> {
+        // Before anything starts, not after: the previous generation's relay
+        // holds `:53` and the gate listeners and comes back by itself, so a
+        // sweep that ran after this one started would leave two copies fighting
+        // over the same ports - and the window would blame a Windows service
+        // for the port neither could bind.
+        crate::platform::legacy::sweep();
         if crate::portable::enabled() {
             // Перезапускать живой релей не нужно: он уже этот же exe.
             return if is_running_portable() {
@@ -532,7 +543,7 @@ mod windows_impl {
         if crate::portable::enabled() {
             return;
         }
-        for task in [WATCHDOG_TASK_NAME, LEGACY_WATCHDOG_TASK_NAME] {
+        for task in [WATCHDOG_TASK_NAME] {
             let cmd = format!(
                 "Stop-ScheduledTask -TaskName '{task}' -ErrorAction SilentlyContinue; \
                  Unregister-ScheduledTask -TaskName '{task}' -Confirm:$false -ErrorAction SilentlyContinue",
@@ -542,7 +553,55 @@ mod windows_impl {
         }
     }
 
-    pub fn disable() -> Result<(), String> {
+    /// Stops and disables the logon task that runs **the other copy** of the relay.
+///
+/// Not the same as `disable`, and deliberately so: this is called when a second
+/// copy of the tool is the one holding a port - an installed relay from an
+/// older release next to the portable one, or two installs side by side. The
+/// task object and the installed file are left exactly where they are (a user
+/// who wants that install back gets it by running it again), but it stops being
+/// started - which is what `Stop-ScheduledTask` alone cannot do. The relay task
+/// restarts itself three times a minute, so a copy stopped and not disabled
+/// takes the port back before the user has read anything.
+///
+/// `Ok(false)` means there was nothing to quiet: no such task, or it was
+/// disabled already. `Err` says what stopped it, which for an unelevated
+/// window is the administrator's rights a task in the root folder wants.
+pub fn quiet_relay_tasks() -> Result<bool, String> {
+    let mut quieted = false;
+    for task in [
+        TASK_NAME,
+        crate::platform::legacy::TASK_NAME,
+        crate::platform::legacy::WATCHDOG_TASK_NAME,
+    ] {
+        let cmd = format!(
+            "$t = Get-ScheduledTask -TaskName '{task}' -ErrorAction SilentlyContinue; \
+             if ($null -eq $t) {{ 'absent' }} \
+             elseif ($t.State -eq 'Disabled') {{ 'already' }} \
+             else {{ Stop-ScheduledTask -TaskName '{task}' -ErrorAction Stop; \
+                    Disable-ScheduledTask -TaskName '{task}' -ErrorAction Stop; \
+                    (Get-ScheduledTask -TaskName '{task}' -ErrorAction SilentlyContinue).State }}",
+            task = task
+        );
+        let Some(out) = powershell(&cmd) else {
+            return Err("не удалось запустить PowerShell".to_string());
+        };
+        if !out.status.success() {
+            let why = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            return Err(if why.is_empty() {
+                format!("задача «{task}» не отключилась")
+            } else {
+                why
+            });
+        }
+        if String::from_utf8_lossy(&out.stdout).trim() == "Disabled" {
+            quieted = true;
+        }
+    }
+    Ok(quieted)
+}
+
+pub fn disable() -> Result<(), String> {
         if crate::portable::enabled() {
             // Симметрично обычному disable: остановить релей и стереть всё,
             // что нагородили, — в портативном случае это папка data целиком.
@@ -550,7 +609,7 @@ mod windows_impl {
             fs::remove_dir(dns_forwarder::log_dir()).ok();
             return Ok(());
         }
-        for task in [TASK_NAME, LEGACY_TASK_NAME] {
+        for task in [TASK_NAME] {
             let cmd = format!(
                 "Stop-ScheduledTask -TaskName '{task}' -ErrorAction SilentlyContinue; \
                  Unregister-ScheduledTask -TaskName '{task}' -Confirm:$false -ErrorAction SilentlyContinue",
@@ -565,8 +624,8 @@ mod windows_impl {
         // Both only succeed while the directory is empty, which is what we want.
         fs::remove_dir(install_dir()).ok();
         let legacy_dir = PathBuf::from(env::var("ProgramData").unwrap_or_else(|_| "C:\\ProgramData".to_string()))
-            .join("AGUnlocker");
-        fs::remove_file(legacy_dir.join(EXE_NAME)).ok();
+            .join(crate::platform::legacy::INSTALL_DIR);
+        fs::remove_file(legacy_dir.join(crate::platform::legacy::RELAY_IMAGE)).ok();
         fs::remove_dir(legacy_dir).ok();
         fs::remove_dir(dns_forwarder::log_dir()).ok();
         Ok(())
@@ -636,7 +695,7 @@ mod windows_impl {
         /// The upgrade path depends on spotting a stale installed copy.
         #[test]
         fn a_differing_installed_copy_is_detected() {
-            let dir = env::temp_dir().join("ag_relay_copy_test");
+            let dir = env::temp_dir().join("oag_relay_copy_test");
             fs::create_dir_all(&dir).expect("temp dir");
             let (a, b) = (dir.join("a.bin"), dir.join("b.bin"));
 
@@ -684,7 +743,7 @@ mod unix_impl {
     use super::PROXY_FLAG;
 
     const UNIT_NAME: &str = "open-antigravity-proxy.service";
-    const LEGACY_UNIT_NAME: &str = "ag-unlocker-proxy.service";
+    const LEGACY_UNIT_NAME: &str = crate::platform::legacy::PROXY_UNIT;
 
     fn home() -> String {
         std::env::var("HOME").unwrap_or_default()
@@ -892,7 +951,7 @@ mod unix_impl {
         let replaced = src != exe && !same_contents(&src, &exe);
         if replaced {
             use std::os::unix::fs::PermissionsExt;
-            let fresh = dir.join(".ag_proxy.new");
+            let fresh = dir.join(".oag_proxy.new");
             fs::copy(&src, &fresh).map_err(|e| format!("копия exe: {}", e))?;
             let _ = fs::set_permissions(&fresh, fs::Permissions::from_mode(0o755));
             fs::rename(&fresh, &exe).map_err(|e| {
@@ -986,6 +1045,12 @@ mod unix_impl {
 
     pub fn disable_watchdog() {}
 
+    /// No relay task on this platform to quiet - the Linux port runs the proxy
+    /// as a user unit, and a second copy of it holds no port the card names.
+    pub fn quiet_relay_tasks() -> Result<bool, String> {
+        Ok(false)
+    }
+
     /// Stops and removes the user unit and the installed copy. Quiet success even
     /// when nothing was installed, so the undo menus never error.
     pub fn disable() -> Result<(), String> {
@@ -1003,7 +1068,7 @@ mod unix_impl {
         systemctl(&["daemon-reload"]);
         let _ = fs::remove_file(installed_exe());
         let _ = fs::remove_dir(install_dir());
-        let legacy_dir = xdg("XDG_DATA_HOME", ".local/share").join("agunlocker");
+        let legacy_dir = xdg("XDG_DATA_HOME", ".local/share").join(crate::platform::legacy::DATA_DIR);
         let _ = fs::remove_file(legacy_dir.join("ag_proxy"));
         let _ = fs::remove_dir(legacy_dir);
         Ok(())

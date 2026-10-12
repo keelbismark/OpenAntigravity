@@ -131,7 +131,7 @@ pub fn run_diagnostics() -> DiagReport {
     env_details.push(format!(
         "Режим: {}",
         if is_portable {
-            "Портативный (AG_PORTABLE=1, данные в data/)"
+            "Портативный (OAG_PORTABLE=1, данные в data/)"
         } else {
             "Стандартный (системный каталог)"
         }

@@ -6,7 +6,7 @@
 | Что | Как |
 |---|---|
 | **Без ключа** | Лицензионная система полностью удалена — GUI и TUI сразу открываются на главном экране |
-| **Прокси вшит в билд** | Адрес задаётся при сборке переменной `AG_BUILTIN_PROXY` и работает по умолчанию, пока вы не вписали в поле «Свой прокси» что-то своё. Пароль хранится в exe в XOR-обфусцированном виде (от `strings`-дампа; от целенаправленного реверса не спасёт) |
+| **Прокси вшит в билд** | Адрес задаётся при сборке переменной `OAG_BUILTIN_PROXY` и работает по умолчанию, пока вы не вписали в поле «Свой прокси» что-то своё. Пароль хранится в exe в XOR-обфусцированном виде (от `strings`-дампа; от целенаправленного реверса не спасёт) |
 | **Портативность** | Все данные — в папке `data\` рядом с exe. Никаких задач в планировщике, копии в `ProgramData`, записей в реестре. Релей запускается из той же папки, его пид лежит в `data\relay.pid` |
 | **Встроенные автообновления** | Проверка релизов GitHub в 1 клик с фоновой загрузкой, распаковкой и бесшовным перезапуском |
 
@@ -35,7 +35,7 @@ build.cmd --proxy "aguser:ПАРОЛЬ@IP_ВАШЕГО_VPS:48123"
 ```
 или:
 ```bat
-set "AG_BUILTIN_PROXY=aguser:ПАРОЛЬ@IP_ВАШЕГО_VPS:48123"
+set "OAG_BUILTIN_PROXY=aguser:ПАРОЛЬ@IP_ВАШЕГО_VPS:48123"
 build.cmd
 ```
 
@@ -63,12 +63,12 @@ dist_portable\
 Если собираете вручную, без скрипта:
 
 ```bat
-set "AG_BUILTIN_PROXY=aguser:ПАРОЛЬ@IP:48123"
-set "AG_PORTABLE=1"
+set "OAG_BUILTIN_PROXY=aguser:ПАРОЛЬ@IP:48123"
+set "OAG_PORTABLE=1"
 cargo build --release
 ```
 
-При сборке с `AG_PORTABLE=1` портативный режим уже скомпилирован в бинарник.
+При сборке с `OAG_PORTABLE=1` портативный режим уже скомпилирован в бинарник.
 
 ## 4. На флешку и запуск
 
@@ -112,7 +112,7 @@ cargo build --release
 | `error: rustc X is not supported by the following packages: ecolor/eframe/egui ... requires rustc 1.95` | Устаревший тулчейн: `rustup update stable`, проверьте `rustc --version` (нужно ≥ 1.95) и собирайте заново. Внутри WSL2/Docker свежий rustup — там ошибки не будет |
 | `cargo not found` | Терминал открыт до установки rustup — откройте новый; или PATH не дописан |
 | `error: linker 'link.exe' not found` | Не установлены VS Build Tools с C++ workload (п.1) |
-| `cargo:warning=AG_BUILTIN_PROXY не похож на ...` | Опечатка в строке прокси; формат `логин:пароль@хост:порт` |
+| `cargo:warning=OAG_BUILTIN_PROXY не похож на ...` | Опечатка в строке прокси; формат `логин:пароль@хост:порт` |
 | «релей не запустился» | Смотрите `data\forwarder.log`: чаще всего порт 127.0.0.53:53 держит старый процесс — перезагрузитесь или `taskkill /F /IM OpenAntigravity.exe` |
 | Прокси сменился на VPS | Впишите новый в поле «Свой прокси» (записанный в поле адрес старше вшитого) и пересоберите, если нужно навсегда |
 | Антивирус ругается на exe | Обычное дело для сборок с NW.js-патчами/прокси; добавьте в исключения или проверьте сборку сами |
@@ -128,7 +128,7 @@ cargo build --release
 В репозитории уже есть Linux-порт (см. `linux/README.md`): окно на OpenGL,
 терминальный режим TUI (сам включается без графического сеанса, например по
 SSH), патч клиентских бинарников и JS, локальный прокси как systemd **user**
-юнит + `AG_LS_PROXY` через `~/.config/environment.d`. Всё под обычным
+юнит + `OAG_GATEWAY` через `~/.config/environment.d`. Всё под обычным
 пользователем, sudo не спрашивается.
 
 На Linux **не работает** DNS-слой (NRPT-правила и релей `:53`) — это
@@ -148,20 +148,20 @@ Windows-механизм, там он заглушен. Для схемы с в�
 ```bash
 cd ~/src   # папка с исходниками, рядом build_portable.sh
 docker run --rm -v "$PWD":/src -w /src \
-  -e AG_BUILTIN_PROXY='aguser:ПАРОЛЬ@IP_ВАШЕГО_VPS:48123' \
+  -e OAG_BUILTIN_PROXY='aguser:ПАРОЛЬ@IP_ВАШЕГО_VPS:48123' \
   rust:1-bookworm bash build_portable.sh
 ```
 
-**Для GUI-окна на Deck добавьте `-e AG_MUSL=0`** — получите обычную
+**Для GUI-окна на Deck добавьте `-e OAG_MUSL=0`** — получите обычную
 glibc-сборку (2.36), которая открывает окно на SteamOS; без этого флага
 будет musl-статика, живущая только в терминале (п. 8.3). Универсальный
 вариант с окном и проверкой обновлений:
 
 ```bash
 docker run --rm -v "$PWD":/src -w /src \
-  -e AG_MUSL=0 \
-  -e AG_BUILTIN_PROXY='aguser:ПАРОЛЬ@IP_ВАШЕГО_VPS:48123' \
-  -e AG_UPDATE_URL='https://ваш-сайт/version.json' \
+  -e OAG_MUSL=0 \
+  -e OAG_BUILTIN_PROXY='aguser:ПАРОЛЬ@IP_ВАШЕГО_VPS:48123' \
+  -e OAG_UPDATE_URL='https://ваш-сайт/version.json' \
   rust:1-bookworm bash build_portable.sh
 ```
 
@@ -196,7 +196,7 @@ cp -r /mnt/c/Users/ВАШ_ЛОГИН/Downloads/repo-antigravity ~/src
 cd ~/src
 
 # 3. Сборка (apt-пакеты скрипт поставит сам через sudo)
-AG_BUILTIN_PROXY='aguser:ПАРОЛЬ@IP_ВАШЕГО_VPS:48123' bash build_portable.sh
+OAG_BUILTIN_PROXY='aguser:ПАРОЛЬ@IP_ВАШЕГО_VPS:48123' bash build_portable.sh
 
 # 4. Забрать результат на Windows
 cp -r ~/src/dist_portable_linux /mnt/c/Users/ВАШ_ЛОГИН/Desktop/
@@ -215,7 +215,7 @@ cp -r ~/src/dist_portable_linux /mnt/c/Users/ВАШ_ЛОГИН/Desktop/
 - DNS-слой на Linux теперь полностью поддержан: адреса unblock-резолверов
   закрепляются в `/etc/hosts` (через графический запрос пароля Polkit/pkexec при
   необходимости) с автоматическим сбросом кэша systemd-resolved.
-- Для полностью статической сборки без glibc (TUI-only) передайте `AG_MUSL=1`.
+- Для полностью статической сборки без glibc (TUI-only) передайте `OAG_MUSL=1`.
 
 ### 8.3 Что получается
 
@@ -251,7 +251,7 @@ dist_portable_linux/
    SteamOS read-only, snap не патчится. Приложение находит установку в
    `~/.local/share/antigravity` само; нашёл не всё — карандаш «✏» в строке.
 5. В окне приложения — «Включить всё», затем **полностью перезапустите
-   Antigravity** (языковой сервер подхватит `AG_LS_PROXY`).
+   Antigravity** (языковой сервер подхватит `OAG_GATEWAY`).
 6. Опционально: `bash install.sh` — ярлык «Open Antigravity» в меню
    приложений.
 
@@ -268,7 +268,7 @@ Desktop Mode.
 | Симптом | Причина / что делать |
 |---|---|
 | `error: failed to run custom build command` (pkg-config) | Не стоят dev-пакеты: `sudo apt install pkg-config libxkbcommon-dev libwayland-dev` (в Docker-способе скрипт ставит сам) |
-| «нет доступа к графическому дисплею» / окно не открывается на Deck | У musl-сборки GUI нет по построению (п. 8.3): работайте в TUI из Konsole (`bash launch.sh`) или пересоберите с glibc в Docker (`AG_MUSL=0`, п. 8.1). Также бывает при запуске через sudo — запускайте без него |
+| «нет доступа к графическому дисплею» / окно не открывается на Deck | У musl-сборки GUI нет по построению (п. 8.3): работайте в TUI из Konsole (`bash launch.sh`) или пересоберите с glibc в Docker (`OAG_MUSL=0`, п. 8.1). Также бывает при запуске через sudo — запускайте без него |
 | Окно не открывается по двойному клику | Нет графического сеанса или права на исполнение: запустите `bash launch.sh` из Konsole — он скажет причину или откроет TUI |
 | `bash: ./open_antigravity: Permission denied` | Так и задумано: запускайте через `bash launch.sh`, он сам выставит права (или `chmod +x open_antigravity`) |
 | Antigravity не найден | Указан путь вручную (карандаш «✏»); установка в `/opt` или snap — перенесите в `~/.local/share` |
@@ -283,12 +283,12 @@ Desktop Mode.
 
 ### 9.1 Как это работает
 
-- **Адрес фида** вшивается при сборке переменной `AG_UPDATE_URL` (как и
+- **Адрес фида** вшивается при сборке переменной `OAG_UPDATE_URL` (как и
   прокси). Пока она не задана — проверка полностью выключена: ни запросов,
   ни баннера, кнопка в TUI честно скажет «URL не задан».
 - В рантайме адрес можно переопределить той же переменной:
-  `AG_UPDATE_URL='https://зеркало/version.json' ./open_antigravity` — например,
-  чтобы переключить зеркало или отключить проверку (`AG_UPDATE_URL= `).
+  `OAG_UPDATE_URL='https://зеркало/version.json' ./open_antigravity` — например,
+  чтобы переключить зеркало или отключить проверку (`OAG_UPDATE_URL= `).
 - Поддерживаются http и https (VPS с Dokploy без сертификата — не проблема),
   редиректы 301–308 следуются.
 - Результат кэшируется в temp на 8 часов; кнопка «Проверить обновления»

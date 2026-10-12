@@ -75,7 +75,7 @@ fn written_dirs(inst: &Path) -> Vec<PathBuf> {
 /// other failure is left for the patch itself to report.
 #[cfg(not(target_os = "windows"))]
 fn can_write(dir: &Path) -> bool {
-    let probe = dir.join(format!(".ag_write_probe_{}", std::process::id()));
+    let probe = dir.join(format!(".oag_write_probe_{}", std::process::id()));
     match std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -155,7 +155,7 @@ pub fn patch_as_root(inst: &Path) -> Result<Elevated, String> {
 pub fn write_hosts_as_root(updated: &str) -> Result<(), String> {
     use std::process::Command;
     let exe = crate::utils::app_executable()?;
-    let tmp_path = std::env::temp_dir().join(format!(".ag_hosts_{}.tmp", std::process::id()));
+    let tmp_path = std::env::temp_dir().join(format!(".oag_hosts_{}.tmp", std::process::id()));
     std::fs::write(&tmp_path, updated)
         .map_err(|e| format!("не удалось записать временный файл: {e}"))?;
 
@@ -357,7 +357,7 @@ mod tests {
         if crate::utils::is_admin() {
             return; // root writes anywhere; nothing to measure
         }
-        let inst = std::env::temp_dir().join(format!("ag_elevate_{}", std::process::id()));
+        let inst = std::env::temp_dir().join(format!("oag_elevate_{}", std::process::id()));
         let bin = inst.join("resources").join("bin");
         std::fs::create_dir_all(&bin).unwrap();
         std::fs::write(bin.join("language_server_linux_x64"), b"x").unwrap();

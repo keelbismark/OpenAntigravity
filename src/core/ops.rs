@@ -327,7 +327,7 @@ pub enum Cmd {
     /// the rules, restores the proxy variable.
     Repair,
     /// Ends the tool's own leftover copy that holds a relay port (an
-    /// `ag_dns.exe` from an older install, a stale copy of this exe), then
+    /// `OpenAntigravityRelay.exe` from an older install, a stale copy of this exe),
     /// rebuilds the bypass right away - so the freed port is bound by the
     /// fresh relay this second, not "within a minute". The target is re-read
     /// from the gate file here, not carried from the card: the card could be
@@ -616,16 +616,16 @@ fn run_worker(
             Cmd::KillHolder => {
                 ctx.busy(Some("Освобождение порта"));
                 let target = crate::gate::read().and_then(|r| {
-                    r.blockers.into_iter().find(|b| {
-                        b.cause == "held" && crate::gate::is_own_relay_image(&b.by)
-                    })
+                    r.blockers
+                        .into_iter()
+                        .find(|b| b.cause == "held" && b.ours && !b.by.is_empty())
                 });
                 match target {
-                    Some(b) => match crate::portcheck::kill_holding_process(&b.addr) {
+                    Some(b) => match crate::portcheck::kill_holding_process(b.pid, &b.by) {
                         Ok(pid) => ctx.log(
                             Level::Info,
                             format!(
-                                "Порт {} освобождён: «{}» (pid {}) завершён. Обход поднимается заново.",
+                                "Порт {} освобождён: «{}» (pid {}) завершён.",
                                 b.addr, b.by, pid
                             ),
                         ),
@@ -633,7 +633,7 @@ fn run_worker(
                             Level::Warn,
                             format!(
                                 "Не удалось завершить «{}» (порт {}): {}. Закройте её вручную \
-                                 и нажмите «Перезапустить».",
+                                 и нажмите «Освободить порт» ещё раз.",
                                 b.by, b.addr, e
                             ),
                         ),
@@ -641,6 +641,29 @@ fn run_worker(
                     None => ctx.log(
                         Level::Info,
                         "Занимающая порт копия уже не найдена — просто пересобираю обход.",
+                    ),
+                }
+                // Half the fix. A copy started by a logon task comes straight
+                // back - the relay task is registered with RestartCount 3 every
+                // minute - and takes the port with it, so a kill on its own
+                // brings this same card back within the minute the user is
+                // watching (measured, G80). Only the task can be told to stay
+                // quiet, and only an administrator's task may.
+                match background::quiet_relay_tasks() {
+                    Ok(true) => ctx.log(
+                        Level::Info,
+                        "Задача старой копии отключена — порт больше не вернётся сам.",
+                    ),
+                    Ok(false) => {}
+                    Err(e) => ctx.log(
+                        Level::Warn,
+                        format!(
+                            "Задачу, которая запускает старую копию, отключить не удалось ({e}). \
+                             Порт вернётся через минуту. Запустите программу от имени \
+                             администратора и повторите, либо выполните от администратора: \
+                             schtasks /Change /TN \"AG Unlocker DNS\" /Disable и \
+                             schtasks /Change /TN \"Open Antigravity DNS\" /Disable"
+                        ),
                     ),
                 }
                 repair(&mut ctx);
@@ -1050,7 +1073,7 @@ fn probe_dns() -> (bool, bool) {
 
 /// Whether the relay itself is alive, and not only a process of its name.
 ///
-/// `is_running` matches `ag_dns.exe` in the task list, and the watchdog is a
+/// `is_running` matches the relay image in the task list, and the watchdog is a
 /// second process with that same image name - so a relay that died on startup
 /// still read as running for as long as its watchdog lived (P54). A field
 /// report printed both halves of that contradiction in one paste: «Служба:
@@ -1815,7 +1838,7 @@ fn disable_dns(ctx: &mut Ctx) {
     ctx.log(Level::Step, "Отключение обхода через DNS");
 
     // First, because the listener is about to stop existing: the local proxy
-    // runs *inside* the relay, so stopping the relay leaves `AG_LS_PROXY`
+    // runs *inside* the relay, so stopping the relay leaves `OAG_GATEWAY`
     // naming a port nothing answers on, and Antigravity loses its sign-in with
     // `dial tcp 127.0.0.1: ... actively refused` (I53, G31). The user's wish for
     // the proxy is kept in settings, so it comes back when the relay does.

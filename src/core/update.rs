@@ -2,7 +2,7 @@
 //!
 //! The feed is a small JSON document (`version.json`) served by whoever
 //! distributes this build — by default the same site the archive came from.
-//! Its address is baked at compile time with `AG_UPDATE_URL` and can be
+//! Its address is baked at compile time with `OAG_UPDATE_URL` and can be
 //! overridden at runtime with the same variable, so one binary can be pointed
 //! at a mirror without a rebuild:
 //!
@@ -18,7 +18,7 @@
 //!
 //! Only `version` is required; every other field is optional and a missing
 //! download link just means the banner falls back to `page`. When
-//! `AG_UPDATE_URL` is neither baked nor set at runtime the whole subsystem is
+//! `OAG_UPDATE_URL` is neither baked nor set at runtime the whole subsystem is
 //! inert: no thread, no requests, no banner — a build shipped to nobody in
 //! particular must not phone a feed its distributor never chose.
 //!
@@ -51,24 +51,24 @@ const MAX_REDIRECTS: usize = 3;
 /// The version this binary shipped as, in the form the feed's `version` field
 /// uses.
 ///
-/// Read from `AG_FULL_VERSION` (set by build.rs from the `VERSION` file) or falls back
+/// Read from `OAG_FULL_VERSION` (set by build.rs from the `VERSION` file) or falls back
 /// to `CARGO_PKG_VERSION` from Cargo.toml.
 pub fn current_version() -> &'static str {
-    option_env!("AG_FULL_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"))
+    option_env!("OAG_FULL_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"))
 }
 
-/// The feed address: runtime `AG_UPDATE_URL` wins over the value baked at
-/// build time. Empty means "unset" in both places — `AG_UPDATE_URL=` at
+/// The feed address: runtime `OAG_UPDATE_URL` wins over the value baked at
+/// build time. Empty means "unset" in both places — `OAG_UPDATE_URL=` at
 /// runtime can therefore silence a baked-in feed, which is the only way a
 /// misbehaving mirror can be switched off without a rebuild.
 pub fn update_url() -> Option<String> {
-    if let Ok(v) = std::env::var("AG_UPDATE_URL") {
+    if let Ok(v) = std::env::var("OAG_UPDATE_URL") {
         let t = v.trim();
         if !t.is_empty() {
             return Some(t.to_string());
         }
     }
-    option_env!("AG_UPDATE_URL")
+    option_env!("OAG_UPDATE_URL")
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
 }
@@ -473,7 +473,7 @@ fn resolve_redirect(base: &ParsedUrl, location: &str) -> Result<ParsedUrl, Strin
 /// Synchronously fetches and parses the feed, following redirects.
 pub fn fetch_update_info() -> Result<UpdateInfo, String> {
     let url = update_url()
-        .ok_or_else(|| "URL проверки обновлений не задан (AG_UPDATE_URL)".to_string())?;
+        .ok_or_else(|| "URL проверки обновлений не задан (OAG_UPDATE_URL)".to_string())?;
     let mut current = parse_url(&url)?;
 
     for _ in 0..=MAX_REDIRECTS {
@@ -511,7 +511,7 @@ pub fn fetch_update_info() -> Result<UpdateInfo, String> {
 /// matches the running version returns `Ok(None)`.
 pub fn check_update_cached(force: bool) -> Result<Option<UpdateInfo>, String> {
     let url = update_url()
-        .ok_or_else(|| "URL проверки обновлений не задан (AG_UPDATE_URL)".to_string())?;
+        .ok_or_else(|| "URL проверки обновлений не задан (OAG_UPDATE_URL)".to_string())?;
     let now_unix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -1127,11 +1127,11 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "performs a real network request; point AG_UPDATE_URL at a live feed to exercise the happy path"]
+    #[ignore = "performs a real network request; point OAG_UPDATE_URL at a live feed to exercise the happy path"]
     fn test_live_fetch_update_info() {
-        let url = std::env::var("AG_UPDATE_URL")
+        let url = std::env::var("OAG_UPDATE_URL")
             .unwrap_or_else(|_| "http://localhost:1/version.json".to_string());
-        std::env::set_var("AG_UPDATE_URL", &url);
+        std::env::set_var("OAG_UPDATE_URL", &url);
         match fetch_update_info() {
             Ok(info) => {
                 // A live feed answered: the document must at least name a version.

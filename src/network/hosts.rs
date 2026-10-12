@@ -17,8 +17,8 @@ use std::path::PathBuf;
 
 const BEGIN: &str = "# OPEN_ANTIGRAVITY_HOSTS_BEGIN";
 const END: &str = "# OPEN_ANTIGRAVITY_HOSTS_END";
-const LEGACY_BEGIN: &str = "# AG_UNLOCKER_HOSTS_BEGIN";
-const LEGACY_END: &str = "# AG_UNLOCKER_HOSTS_END";
+const LEGACY_BEGIN: &str = crate::platform::legacy::HOSTS_FENCE_BEGIN;
+const LEGACY_END: &str = crate::platform::legacy::HOSTS_FENCE_END;
 
 pub fn hosts_path() -> PathBuf {
     #[cfg(target_os = "windows")]

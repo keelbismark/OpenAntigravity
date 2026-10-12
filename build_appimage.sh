@@ -81,7 +81,7 @@ cat > "$APPDIR/AppRun" <<'EOF'
 HERE="$(dirname "$(readlink -f "${0}")")"
 export PATH="${HERE}/usr/bin:${PATH}"
 export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
-export AG_PORTABLE=1
+export OAG_PORTABLE=1
 
 # Интеграция системной иконки для панели задач и меню приложений
 if [ -n "$APPIMAGE" ]; then

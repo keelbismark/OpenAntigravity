@@ -116,10 +116,10 @@ if %DO_CHECK%==1 (
 )
 
 rem --- Настройка окружения для портативной сборки ---
-set "AG_PORTABLE=1"
-set "AG_FULL_VERSION=%VERSION%"
+set "OAG_PORTABLE=1"
+set "OAG_FULL_VERSION=%VERSION%"
 if defined CUSTOM_PROXY (
-    set "AG_BUILTIN_PROXY=%CUSTOM_PROXY%"
+    set "OAG_BUILTIN_PROXY=%CUSTOM_PROXY%"
 )
 
 echo ================================================================

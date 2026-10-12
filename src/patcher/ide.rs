@@ -12,7 +12,7 @@ use crate::patch_binary::RepatchOutcome;
 /// patched bytes alone. Without a pristine copy, "Полный откат" left the IDE's
 /// `main.js` patched forever (G25). The backup is written once, before the first
 /// edit, and the revert restores from it.
-const JS_BAK: &str = ".ag_backup";
+const JS_BAK: &str = ".oag_backup";
 
 fn backup_path(target: &Path) -> PathBuf {
     let mut s = target.as_os_str().to_os_string();
@@ -20,7 +20,7 @@ fn backup_path(target: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
-/// Copies `target` to its `.ag_backup` once - never overwriting an existing one,
+/// Copies `target` to its `.oag_backup` once - never overwriting an existing one,
 /// which is by construction the pristine copy from before we ever touched it.
 /// Best-effort: a failed backup must not stop a patch (the same-marker check
 /// still prevents double-patching), but it is logged so a missing backup is not
@@ -121,17 +121,32 @@ pub fn unpatch_ide_js(inst: &Path) -> Vec<(String, Result<bool, String>)> {
 }
 
 fn detect_stacked_ide(content: &str) -> bool {
-    content.contains("/*[AG_PATCHED]*/") || content.contains("[AG_PROXY_HOOK]")
+    content.contains(HOOK_FENCE)
+        || content.contains(STACKED_FENCE_INNER)
+        // A file the previous generation patched is still ours to recognise.
+        || content.contains(crate::platform::legacy::HOOK_FENCE_INNER)
+        || content.contains(crate::platform::legacy::STACKED_FENCE)
 }
 
-/// Every file we rewrite ends with this comment. Older releases wrote legacy
-/// prefixes; newer ones append the canaries (see `canary::file_marker`), so
-/// detection matches on the prefix and stays compatible with installs patched by
-/// an older build - `has_marker` decides "already patched", and getting that
-/// wrong would either re-patch a patched file or refuse to revert one.
+/// Fences around the Electron hook we write into `main.js`. Only the opening
+/// fence is written; the closing one marks where the block ends, and both are
+/// found again by `strip_desktop_hook`.
+const HOOK_FENCE: &str = "// [OAG_PROXY_HOOK]";
+const HOOK_FENCE_END: &str = "// [/OAG_PROXY_HOOK]";
+
+/// Fences it left as the idempotence check on `main.js` and `extension.js`.
+const STACKED_FENCE_INNER: &str = "[OAG_PATCHED]";
+const EXT_FENCE: &str = "[OAG_EXT_PATCHED]";
+
+/// Every file we rewrite ends with this comment. Older releases wrote the
+/// previous generation's prefixes; newer ones append the canaries (see
+/// `canary::file_marker`), so detection matches on the prefix and stays
+/// compatible with installs patched by an older build - `has_marker` decides
+/// "already patched", and getting that wrong would either re-patch a patched
+/// file or refuse to revert one.
 const MARKER_PREFIX: &str = "// OPEN-ANTIGRAVITY";
-const LEGACY_MARKER_PREFIX: &str = "// UNLOCKED";
-const LEGACY_MARKER_PREFIX_ALT: &str = "// AG-UNLOCKER";
+const LEGACY_MARKER_PREFIX: &str = crate::platform::legacy::MARKER_PREFIX;
+const LEGACY_MARKER_PREFIX_ALT: &str = crate::platform::legacy::MARKER_PREFIX_ALT;
 
 /// True when the last non-empty line is our marker, tokenised or legacy.
 fn has_marker(content: &str) -> bool {
@@ -280,15 +295,15 @@ pub fn patch_desktop(_inst: &Path, main_js: &Path) -> Result<bool, String> {
     let inline_patched = apply_desktop_inline_patches(&cleaned);
 
     obfstr::obfstr! {
-        let hook = r#"// [AG_PROXY_HOOK]
+        let hook = r#"// [OAG_PROXY_HOOK]
 const _elec = require('electron');
 const http = require('http');
 const https = require('https');
 const zlib = require('zlib');
 
-let agProxyPort = 0;
+let oagProxyPort = 0;
 let realLsPort = 0;
-let agApiPort = 0;
+let oagApiPort = 0;
 
 const proxyServer = http.createServer((req, res) => {
     if (!realLsPort) {
@@ -352,7 +367,7 @@ const proxyServer = http.createServer((req, res) => {
     req.pipe(proxyReq, { end: true });
 });
 
-proxyServer.listen(0, '127.0.0.1', () => { agProxyPort = proxyServer.address().port; });
+proxyServer.listen(0, '127.0.0.1', () => { oagProxyPort = proxyServer.address().port; });
 
 const apiProxyServer = http.createServer((req, res) => {
     res.setHeader('Content-Type', 'application/json');
@@ -417,7 +432,7 @@ const apiProxyServer = http.createServer((req, res) => {
     });
 });
 
-apiProxyServer.listen(0, '127.0.0.1', () => { agApiPort = apiProxyServer.address().port; });
+apiProxyServer.listen(0, '127.0.0.1', () => { oagApiPort = apiProxyServer.address().port; });
 
 const _origWhenReady = _elec.app.whenReady;
 _elec.app.whenReady = function() {
@@ -425,12 +440,12 @@ _elec.app.whenReady = function() {
         _elec.session.defaultSession.webRequest.onBeforeRequest({ urls: ['*://*.googleapis.com/*', '*://127.0.0.1:*/*', '*://localhost:*/*'] }, (details, callback) => {
             const urlObj = new URL(details.url);
             if (urlObj.hostname.includes('googleapis.com')) {
-                return callback({ redirectURL: `http://127.0.0.1:${agApiPort}${urlObj.pathname}` });
+                return callback({ redirectURL: `http://127.0.0.1:${oagApiPort}${urlObj.pathname}` });
             }
-            if (urlObj.port != agProxyPort && !details.url.includes('ag_bypass')) {
+            if (urlObj.port != oagProxyPort && !details.url.includes('oag_bypass')) {
                 realLsPort = urlObj.port;
                 if (details.url.includes('.js') || details.url.includes('.css') || details.url.includes('.png') || details.url.includes('.woff') || details.url.includes('main.js') || details.url.includes('index.html') || details.url.includes('/')) {
-                    urlObj.protocol = 'http:'; urlObj.port = agProxyPort; urlObj.searchParams.set('ag_bypass', '1');
+                    urlObj.protocol = 'http:'; urlObj.port = oagProxyPort; urlObj.searchParams.set('oag_bypass', '1');
                     return callback({ redirectURL: urlObj.toString() });
                 }
             }
@@ -438,7 +453,7 @@ _elec.app.whenReady = function() {
         });
     });
 };
-// [/AG_PROXY_HOOK]
+// [/OAG_PROXY_HOOK]
 "#;
     }
 
@@ -452,10 +467,21 @@ _elec.app.whenReady = function() {
     Ok(true)
 }
 
+/// Cuts the Electron hook back out of `main.js`.
+///
+/// Both fence spellings are looked for: a file the previous generation patched
+/// has to revert too, and this is the code that does the reverting. A half
+/// removed hook - opening fence gone, body still there - would leave a broken
+/// `main.js` behind, so the pair has to match before anything is cut.
 fn strip_desktop_hook(content: &str) -> String {
-    if let Some(start) = content.find("// [AG_PROXY_HOOK]") {
-        if let Some(end) = content[start..].find("// [/AG_PROXY_HOOK]") {
-            let after = start + end + "// [/AG_PROXY_HOOK]".len();
+    let legacy = crate::platform::legacy::HOOK_FENCE;
+    for (open, close) in [
+        (HOOK_FENCE, HOOK_FENCE_END),
+        (legacy.0, legacy.1),
+    ] {
+        if let Some(start) = content.find(open) {
+            let Some(end) = content[start..].find(close) else { continue };
+            let after = start + end + close.len();
             let mut rest = content[after..].to_string();
             if let Some(stripped) = strip_marker(&rest) {
                 rest = stripped;
@@ -545,7 +571,7 @@ mod tests {
     /// is then removed. Without this the full revert left main.js patched.
     #[test]
     fn a_backup_restores_the_exact_original_and_is_removed() {
-        let dir = std::env::temp_dir().join("ag_js_restore_test");
+        let dir = std::env::temp_dir().join("oag_js_restore_test");
         fs::create_dir_all(&dir).unwrap();
         let target = dir.join("main.js");
         let original = "// pristine main.js\nconst x = 1;\n";
@@ -572,7 +598,7 @@ mod tests {
     /// resort (the body stays rewritten) rather than doing nothing.
     #[test]
     fn restore_without_a_backup_at_least_strips_the_marker() {
-        let dir = std::env::temp_dir().join("ag_js_restore_nombak");
+        let dir = std::env::temp_dir().join("oag_js_restore_nombak");
         fs::create_dir_all(&dir).unwrap();
         let target = dir.join("main.js");
         fs::write(&target, "body\n// UNLOCKED").unwrap();
@@ -588,7 +614,7 @@ mod tests {
     /// the temp is cleaned up.
     #[test]
     fn atomic_write_replaces_and_leaves_no_temp() {
-        let dir = std::env::temp_dir().join("ag_js_atomic");
+        let dir = std::env::temp_dir().join("oag_js_atomic");
         fs::create_dir_all(&dir).unwrap();
         let target = dir.join("f.js");
         fs::write(&target, "old").unwrap();
@@ -657,7 +683,7 @@ pub fn patch_extension_js(inst: &Path) -> Result<bool, String> {
     }
 
     let content = fs::read_to_string(&ext_path).map_err(|e| e.to_string())?;
-    if content.contains("/*[AG_EXT_PATCHED]*/") {
+    if content.contains(EXT_FENCE) || content.contains(crate::platform::legacy::EXT_FENCE) {
         return Ok(true);
     }
 
@@ -683,7 +709,7 @@ pub fn patch_extension_js(inst: &Path) -> Result<bool, String> {
     // Leading fence stays the idempotence check; the trailing marker is the
     // canary trailer every rewritten file carries.
     let marked = format!(
-        "/*[AG_EXT_PATCHED]*/\n{}\n{}",
+        "/*[OAG_EXT_PATCHED]*/\n{}\n{}",
         new_content,
         crate::canary::file_marker()
     );

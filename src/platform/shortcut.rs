@@ -114,7 +114,7 @@ fn create_linux_shortcuts() -> Result<String, String> {
     // 1. Меню приложений (~/.local/share/applications)
     let apps_dir = PathBuf::from(&home).join(".local").join("share").join("applications");
     let _ = std::fs::create_dir_all(&apps_dir);
-    let _ = std::fs::remove_file(apps_dir.join("ag-unlocker.desktop"));
+    let _ = std::fs::remove_file(apps_dir.join(crate::platform::legacy::DESKTOP_FILE));
     let app_shortcut = apps_dir.join("open-antigravity.desktop");
     if std::fs::write(&app_shortcut, &desktop_content).is_ok() {
         make_executable(&app_shortcut);
@@ -124,7 +124,7 @@ fn create_linux_shortcuts() -> Result<String, String> {
     // 2. Рабочий стол пользователя (Desktop)
     let desktop_dir = get_linux_desktop_dir(&home);
     if desktop_dir.is_dir() {
-        let _ = std::fs::remove_file(desktop_dir.join("ag-unlocker.desktop"));
+        let _ = std::fs::remove_file(desktop_dir.join(crate::platform::legacy::DESKTOP_FILE));
         let desk_shortcut = desktop_dir.join("open-antigravity.desktop");
         if std::fs::write(&desk_shortcut, &desktop_content).is_ok() {
             make_executable(&desk_shortcut);

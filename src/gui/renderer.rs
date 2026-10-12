@@ -151,7 +151,7 @@ pub fn dev_break(kind: Kind) -> Option<&'static str> {
         return None;
     }
     let spec = std::env::var("OPEN_ANTIGRAVITY_DEV_BREAK")
-        .or_else(|_| std::env::var("AG_UNLOCKER_DEV_BREAK"))
+        .or_else(|_| std::env::var("OAG_DEV_BREAK"))
         .ok()?;
     spec.split(',').find_map(|part| {
         let (k, how) = part.split_once(':')?;

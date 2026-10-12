@@ -22,14 +22,12 @@ use crate::utils::{bounded_output, no_window, powershell};
 //
 // Rules are tagged via Comment so they can be found and removed later without
 // touching rules created by other tools.
-const AG_NRPT_TAG: &str = "OPEN_ANTIGRAVITY_NRPT_V2";
+const NRPT_TAG: &str = "OPEN_ANTIGRAVITY_NRPT_V2";
 // Tags written by earlier releases; removed on cleanup so upgrades don't leave
-// stale (and much broader) rules behind.
-const AG_NRPT_LEGACY_TAGS: &[&str] = &[
-    "OPEN_ANTIGRAVITY_NRPT",
-    "AG_UNLOCKER_NRPT_V2",
-    "AG_UNLOCKER_NRPT",
-];
+// stale (and much broader) rules behind. The previous generation's tags live in
+// `platform::legacy` - they name rules on a machine, not a brand.
+const NRPT_OLD_TAGS: &[&str] = &["OPEN_ANTIGRAVITY_NRPT"];
+const NRPT_LEGACY_TAGS: &[&str] = &crate::platform::legacy::NRPT_TAGS;
 
 // The only names that actually need unblock DNS, measured end-to-end.
 //
@@ -56,7 +54,7 @@ const AG_NRPT_LEGACY_TAGS: &[&str] = &[
 // a foreign rule on either name is left alone (so is a subtree rule, I44).
 // Everything else Antigravity talks to - oauth2/www/play/accounts and
 // jetski-webchannel - works on real Google and is deliberately not listed.
-const AG_NRPT_CORE: &[&str] = &[
+const NRPT_CORE: &[&str] = &[
     "cloudcode-pa.googleapis.com",
     "daily-cloudcode-pa.googleapis.com",
 ];
@@ -65,7 +63,7 @@ const AG_NRPT_CORE: &[&str] = &[
 /// the relay keeps a fresh answer for. Warming anything else would put queries
 /// on a third party for names Windows never sends here.
 pub fn core_namespaces() -> &'static [&'static str] {
-    AG_NRPT_CORE
+    NRPT_CORE
 }
 
 /// Drops what the Windows DNS Client has cached for the gate names, so a client
@@ -188,8 +186,9 @@ fn ps_string_list(items: &[&str]) -> String {
 }
 
 fn all_tags() -> Vec<&'static str> {
-    let mut tags = vec![AG_NRPT_TAG];
-    tags.extend_from_slice(AG_NRPT_LEGACY_TAGS);
+    let mut tags = vec![NRPT_TAG];
+    tags.extend_from_slice(NRPT_OLD_TAGS);
+    tags.extend_from_slice(NRPT_LEGACY_TAGS);
     tags
 }
 
@@ -274,7 +273,7 @@ fn installed_namespaces() -> Vec<String> {
     let cmd = format!(
         "Get-DnsClientNrptRule -ErrorAction SilentlyContinue | \
          Where-Object {{$_.Comment -eq '{}'}} | ForEach-Object {{ $_.Namespace }}",
-        AG_NRPT_TAG
+        NRPT_TAG
     );
     match powershell(&cmd) {
         Some(o) => String::from_utf8_lossy(&o.stdout)
@@ -312,7 +311,7 @@ pub fn is_nrpt_applied() -> bool {
     }
 
     let installed = installed_namespaces();
-    let applied = AG_NRPT_CORE
+    let applied = NRPT_CORE
         .iter()
         .all(|ns| installed.iter().any(|i| i == &ns.to_lowercase()));
 
@@ -441,7 +440,7 @@ fn take_over_conflicting_rules(namespaces: &[&str]) -> Vec<String> {
                 .map(|s| s.as_str())
                 .collect::<Vec<_>>()
         ),
-        tag = AG_NRPT_TAG
+        tag = NRPT_TAG
     );
     match powershell(&cmd) {
         Some(out) => parse_conflicts(&String::from_utf8_lossy(&out.stdout), namespaces),
@@ -539,7 +538,7 @@ pub fn setup_dns_nrpt() -> Result<DnsOutcome, String> {
     // Не вызываем предварительный remove_dns_nrpt(): hosts_pin::write_entries
     // атомарно заменяет существующий блок на новый за один проход.
     // Это исключает появление двух подряд модальных окон ввода пароля pkexec.
-    let namespaces = AG_NRPT_CORE.to_vec();
+    let namespaces = NRPT_CORE.to_vec();
     let pinned = pin_substituted_hosts(&namespaces, 0)?;
 
     if pinned.is_empty() {
@@ -586,7 +585,7 @@ pub fn setup_dns_nrpt() -> Result<DnsOutcome, String> {
     // doing when the rules went in.
     let (_, client) = egress::vpn_verdict(egress.as_ref());
 
-    let namespaces: Vec<&str> = AG_NRPT_CORE.to_vec();
+    let namespaces: Vec<&str> = NRPT_CORE.to_vec();
 
     // Before ours go in: a leftover rule from another tool on the same name wins
     // silently and would make everything below pointless for that name.
@@ -619,7 +618,7 @@ pub fn setup_dns_nrpt() -> Result<DnsOutcome, String> {
              catch {{ Write-Error \"{name} :: $($_.Exception.Message)\"; exit 1 }}; ",
             name = name,
             ns = ps_string_list_owned(&servers),
-            tag = AG_NRPT_TAG,
+            tag = NRPT_TAG,
             // DisplayName is cosmetic - rule matching goes through Comment - so it
             // is free real estate for the canaries. Recoverable from any patched
             // machine with `Get-DnsClientNrptRule`.
@@ -811,7 +810,7 @@ pub fn refresh_pinned_hosts() {
     if !is_nrpt_applied() {
         return;
     }
-    let namespaces = AG_NRPT_CORE.to_vec();
+    let namespaces = NRPT_CORE.to_vec();
     pin_substituted_hosts(&namespaces, 0).ok();
     flush_client_cache();
 }
@@ -912,7 +911,7 @@ mod tests {
         let out = "daily-cloudcode-pa.googleapis.com|NOVA_DNS_UNBLOCK\n\
                    chatgpt.com|NOVA_DNS_UNBLOCK\n";
         assert_eq!(
-            parse_conflicts(out, AG_NRPT_CORE),
+            parse_conflicts(out, NRPT_CORE),
             vec!["daily-cloudcode-pa.googleapis.com (NOVA_DNS_UNBLOCK)"]
         );
     }
@@ -920,7 +919,7 @@ mod tests {
     /// Windows writes names with a trailing dot; that is the same name.
     #[test]
     fn a_trailing_dot_still_matches() {
-        let found = parse_conflicts("cloudcode-pa.googleapis.com.|OTHER\n", AG_NRPT_CORE);
+        let found = parse_conflicts("cloudcode-pa.googleapis.com.|OTHER\n", NRPT_CORE);
         assert_eq!(found, vec!["cloudcode-pa.googleapis.com (OTHER)"]);
     }
 
@@ -929,19 +928,19 @@ mod tests {
     #[test]
     fn a_subtree_rule_is_left_alone() {
         let out = ".daily-cloudcode-pa.googleapis.com|OTHER\n.googleapis.com|OTHER\n";
-        assert!(parse_conflicts(out, AG_NRPT_CORE).is_empty());
+        assert!(parse_conflicts(out, NRPT_CORE).is_empty());
     }
 
     #[test]
     fn the_same_collision_is_reported_once() {
         let out = "daily-cloudcode-pa.googleapis.com|X\nDAILY-CLOUDCODE-PA.GOOGLEAPIS.COM|X\n";
-        assert_eq!(parse_conflicts(out, AG_NRPT_CORE).len(), 1);
+        assert_eq!(parse_conflicts(out, NRPT_CORE).len(), 1);
     }
 
     #[test]
     fn noise_and_empty_lines_are_ignored() {
         let out = "\n  \nnot-a-rule\n|\nfoo.example|X\n";
-        assert!(parse_conflicts(out, AG_NRPT_CORE).is_empty());
+        assert!(parse_conflicts(out, NRPT_CORE).is_empty());
     }
 
     #[test]
@@ -1033,7 +1032,7 @@ mod tests {
         );
         if let Some(eg) = &eg {
             let server: Ipv4Addr = resolvers::PROVIDERS[0].v4[0].parse().unwrap();
-            for ns in AG_NRPT_CORE {
+            for ns in NRPT_CORE {
                 println!(
                     "  {}\n    isp={:?}\n    tun={:?}\n    best={:?}",
                     ns,

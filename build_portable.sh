@@ -5,22 +5,22 @@
 #  install.sh and README itself; nothing from linux/ is needed).
 #
 #  Run from the repository root:
-#      AG_BUILTIN_PROXY='aguser:PASSWORD@IP:48123' \
-#      AG_UPDATE_URL='https://YOUR_SITE/version.json' \
+#      OAG_BUILTIN_PROXY='aguser:PASSWORD@IP:48123' \
+#      OAG_UPDATE_URL='https://YOUR_SITE/version.json' \
 #      bash build_portable.sh
 #
 #  Default build: universal glibc build (full Wayland/X11 GUI + TUI fallback,
 #  compatible with Steam Deck and all modern Linux distros).
-#  Set AG_MUSL=1 for a static musl build (TUI-only).
+#  Set OAG_MUSL=1 for a static musl build (TUI-only).
 # ================================================================
 set -euo pipefail
 
-# --- BAKED-IN PROXY (optional: leave empty for clean public build, or pass AG_BUILTIN_PROXY) ---
+# --- BAKED-IN PROXY (optional: leave empty for clean public build, or pass OAG_BUILTIN_PROXY) ---
 # Format: login:password@host:port (or multiple separated by semicolon: proxy1;proxy2)
-export AG_BUILTIN_PROXY="${AG_BUILTIN_PROXY:-}"
+export OAG_BUILTIN_PROXY="${OAG_BUILTIN_PROXY:-}"
 
 # --- PORTABLE MODE BAKED INTO THE BUILD -------------------------
-export AG_PORTABLE=1
+export OAG_PORTABLE=1
 
 # --- VERSION REPORTED BY THE BUILD (SemVer from root VERSION file) ---
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -29,7 +29,7 @@ if [ ! -f "$SCRIPT_DIR/VERSION" ]; then
     exit 1
 fi
 ROOT_VERSION="$(tr -d '\r\n' < "$SCRIPT_DIR/VERSION")"
-export AG_FULL_VERSION="${AG_FULL_VERSION:-$ROOT_VERSION}"
+export OAG_FULL_VERSION="${OAG_FULL_VERSION:-$ROOT_VERSION}"
 if [ -f "$SCRIPT_DIR/Cargo.toml" ]; then
     sed -i -E 's/^version = "[0-9]+\.[0-9]+\.[0-9]+"/version = "'"$ROOT_VERSION"'"/' "$SCRIPT_DIR/Cargo.toml" 2>/dev/null || true
 fi
@@ -38,7 +38,7 @@ fi
 # The binary fetches this JSON and shows a banner when its "version"
 # is newer than the one baked here. Empty string disables the check.
 # Leave as-is until your site is up, then point at your host.
-export AG_UPDATE_URL="${AG_UPDATE_URL:-https://keelbismark.github.io/OpenAntigravity/version.json}"
+export OAG_UPDATE_URL="${OAG_UPDATE_URL:-https://keelbismark.github.io/OpenAntigravity/version.json}"
 
 cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 
@@ -66,22 +66,19 @@ apt_install build-essential pkg-config musl-tools libxkbcommon-dev libwayland-de
 
 BIN=""
 KIND="динамическая (glibc хоста сборки)"
-if [ "${AG_MUSL:-0}" = "1" ] \
+if [ "${OAG_MUSL:-0}" = "1" ] \
    && command -v rustup >/dev/null 2>&1 \
    && rustup target add x86_64-unknown-linux-musl >/dev/null 2>&1; then
     echo "Building STATIC musl build (runs on any Linux, incl. SteamOS)..."
     if cargo build --release --target x86_64-unknown-linux-musl; then
         BIN="target/x86_64-unknown-linux-musl/release/open_antigravity"
-        if [ ! -f "$BIN" ]; then
-            BIN="target/x86_64-unknown-linux-musl/release/ag_unlocker"
-        fi
         KIND="статическая (musl) - без привязки к glibc"
         echo "" >&2
         echo "ВАЖНО: у статической musl-сборки нет GUI-окна — только терминальный режим (TUI)." >&2
         echo "Причина: Wayland/X11-библиотеки целевой машины собраны на glibc и не" >&2
         echo "загружаются в musl-бинарник. Окно можно получить только glibc-сборкой" >&2
         echo "на СТАРОМ дистрибутиве (glibc <= целевой), например в Docker на VPS:" >&2
-        echo "  docker run --rm -v \"\$PWD\":/src -w /src -e AG_MUSL=0 rust:1-bookworm bash build_portable.sh" >&2
+        echo "  docker run --rm -v \"\$PWD\":/src -w /src -e OAG_MUSL=0 rust:1-bookworm bash build_portable.sh" >&2
     else
         echo "musl-сборка не удалась, откатываюсь к обычной (динамической)." >&2
     fi
@@ -90,9 +87,6 @@ if [ -z "$BIN" ]; then
     echo "Building normal (glibc) build..."
     cargo build --release
     BIN="target/release/open_antigravity"
-    if [ ! -f "$BIN" ]; then
-        BIN="target/release/ag_unlocker"
-    fi
 fi
 
 OUTDIR="$PWD/dist_portable_linux"

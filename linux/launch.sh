@@ -4,7 +4,7 @@
 # Runs as the normal user - NO sudo. The phase-2 region route is entirely
 # unprivileged: the language server that carries the gate lives in
 # ~/.local/share (user-writable), the local proxy is a systemd *user* unit, and
-# AG_LS_PROXY is a user drop-in. That is also what makes "right-click > Run as a
+# OAG_GATEWAY is a user drop-in. That is also what makes "right-click > Run as a
 # Program" work without a password prompt. A system-wide /opt install would need
 # root to patch, but the per-user copy is the one the app actually runs.
 #
@@ -27,9 +27,6 @@ set -u
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
 DIR="$(cd "$(dirname "$SELF")" && pwd)"
 BIN="$DIR/open_antigravity"
-if [ ! -f "$BIN" ] && [ -f "$DIR/ag_unlocker" ]; then
-    BIN="$DIR/ag_unlocker"
-fi
 chmod +x "$BIN" 2>/dev/null || true
 
 # Anything this script has to say goes to the terminal when there is one, and to

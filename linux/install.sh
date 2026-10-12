@@ -11,9 +11,6 @@ DESKTOP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 
 mkdir -p "$APP_DIR" "$DESKTOP_DIR"
 BIN_SRC="$SRC/open_antigravity"
-if [ ! -f "$BIN_SRC" ] && [ -f "$SRC/ag_unlocker" ]; then
-    BIN_SRC="$SRC/ag_unlocker"
-fi
 install -m 0755 "$BIN_SRC" "$APP_DIR/open_antigravity"
 install -m 0755 "$SRC/launch.sh" "$APP_DIR/launch.sh"
 ICON_LINE=""
@@ -22,7 +19,6 @@ if [ -f "$SRC/icon.png" ]; then
     ICON_LINE="Icon=$APP_DIR/icon.png"
 fi
 
-rm -f "$DESKTOP_DIR/ag-unlocker.desktop"
 DESKTOP_FILE="$DESKTOP_DIR/open-antigravity.desktop"
 cat >"$DESKTOP_FILE" <<EOF
 [Desktop Entry]
