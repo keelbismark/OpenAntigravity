@@ -884,36 +884,71 @@ pub fn restart_with_new_binary(new_exe: &std::path::Path) -> Result<(), String> 
 
     #[cfg(target_os = "windows")]
     {
-        let old_exe = current_exe.with_extension("exe.old");
-        if old_exe.exists() {
-            let _ = fs::remove_file(&old_exe);
-        }
-        if let Err(e) = fs::rename(&current_exe, &old_exe) {
-            // If renaming failed due to permission denial (e.g. running non-elevated in Program Files),
-            // seamlessly elevate via helper with UAC prompt.
-            if e.kind() == io::ErrorKind::PermissionDenied || !crate::utils::is_admin() {
-                let helper_params = format!("--apply-update \"{}\"", new_exe.display());
-                if crate::utils::relaunch_elevated_with(&helper_params) {
-                    // Release instance lock so elevated helper can replace and take over
-                    crate::platform::single_instance::release_active_lock();
-                    std::process::exit(0);
+        // 1. Terminate all background processes holding current_exe
+        crate::platform::service::stop_all_background();
+
+        // 2. Generate unique .old file name to avoid collision with stale locked files
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let old_exe = current_exe.with_extension(format!("exe.old.{}", stamp));
+
+        // Clean up any stale old files in the directory if possible
+        if let Some(parent) = current_exe.parent() {
+            if let Ok(entries) = fs::read_dir(parent) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        if name.starts_with("OpenAntigravity") && name.contains(".old") {
+                            let _ = fs::remove_file(&path);
+                        }
+                    }
                 }
             }
-            return Err(format!("не удалось переместить текущий exe: {e}"));
-        }
-        if let Err(e) = fs::copy(new_exe, &current_exe) {
-            let _ = fs::rename(&old_exe, &current_exe);
-            return Err(format!("не удалось скопировать новый exe: {e}"));
         }
 
-        // Release our single instance mutex right now so the new process doesn't collide
-        crate::platform::single_instance::release_active_lock();
+        // 3. Retry loop for in-place replacement (handles brief AV scans or lock releases)
+        let mut in_place_ok = false;
+        for _ in 0..15 {
+            if fs::rename(&current_exe, &old_exe).is_ok() {
+                let mut copied = false;
+                for _ in 0..10 {
+                    if fs::copy(new_exe, &current_exe).is_ok() {
+                        copied = true;
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                if copied {
+                    let _ = fs::remove_file(&old_exe);
+                    in_place_ok = true;
+                    break;
+                } else {
+                    let _ = fs::rename(&old_exe, &current_exe);
+                }
+            }
+            std::thread::sleep(Duration::from_millis(150));
+        }
 
-        let mut cmd = std::process::Command::new(&current_exe);
-        cmd.args(&clean_args);
-        cmd.spawn()
-            .map_err(|e| format!("не удалось перезапустить обновлённое приложение: {e}"))?;
-        std::process::exit(0);
+        if in_place_ok {
+            crate::platform::single_instance::release_active_lock();
+            let mut cmd = std::process::Command::new(&current_exe);
+            cmd.args(&clean_args);
+            cmd.spawn()
+                .map_err(|e| format!("не удалось перезапустить обновлённое приложение: {e}"))?;
+            std::process::exit(0);
+        }
+
+        // 4. In-place replacement failed (e.g. Program Files permissions).
+        // Relaunch elevated via helper with UAC prompt.
+        let helper_params = format!("--apply-update \"{}\"", new_exe.display());
+        if crate::utils::relaunch_elevated_with(&helper_params) {
+            crate::platform::single_instance::release_active_lock();
+            std::process::exit(0);
+        }
+
+        return Err("не удалось обновить исполняемый файл (отказано в доступе)".to_string());
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -981,25 +1016,84 @@ pub fn run_apply_update_helper(new_exe_str: &str) {
 
     #[cfg(target_os = "windows")]
     {
-        let old_exe = current_exe.with_extension("exe.old");
-        if old_exe.exists() {
-            let _ = fs::remove_file(&old_exe);
+        // 1. Terminate all background relays and watchdogs that might still hold current_exe
+        crate::platform::service::stop_all_background();
+
+        // Extra settle time for Windows kernel to close handles
+        std::thread::sleep(Duration::from_millis(250));
+
+        // 2. Generate unique .old file name
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let old_exe = current_exe.with_extension(format!("exe.old.{}", stamp));
+
+        // Clean up any stale old files in the directory if possible
+        if let Some(parent) = current_exe.parent() {
+            if let Ok(entries) = fs::read_dir(parent) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        if name.starts_with("OpenAntigravity") && name.contains(".old") {
+                            let _ = fs::remove_file(&path);
+                        }
+                    }
+                }
+            }
         }
-        if let Err(e) = fs::rename(&current_exe, &old_exe) {
+
+        // 3. Retry loop: up to 30 attempts with 200ms delays (6 seconds total)
+        // Handles file locks by antivirus scanners, lingering parent handles, etc.
+        let mut rename_ok = false;
+        let mut last_rename_err = String::new();
+        for _ in 0..30 {
+            match fs::rename(&current_exe, &old_exe) {
+                Ok(_) => {
+                    rename_ok = true;
+                    break;
+                }
+                Err(e) => {
+                    last_rename_err = e.to_string();
+                    std::thread::sleep(Duration::from_millis(200));
+                }
+            }
+        }
+
+        if !rename_ok {
             crate::utils::message_box(
                 "Open Antigravity Update",
-                &format!("Не удалось подготовить замену исполняемого файла: {e}"),
+                &format!("Не удалось подготовить замену исполняемого файла: {last_rename_err}"),
             );
             std::process::exit(1);
         }
-        if let Err(e) = fs::copy(&new_exe, &current_exe) {
+
+        let mut copy_ok = false;
+        let mut last_copy_err = String::new();
+        for _ in 0..25 {
+            match fs::copy(&new_exe, &current_exe) {
+                Ok(_) => {
+                    copy_ok = true;
+                    break;
+                }
+                Err(e) => {
+                    last_copy_err = e.to_string();
+                    std::thread::sleep(Duration::from_millis(200));
+                }
+            }
+        }
+
+        if !copy_ok {
             let _ = fs::rename(&old_exe, &current_exe);
             crate::utils::message_box(
                 "Open Antigravity Update",
-                &format!("Не удалось скопировать обновлённый файл: {e}"),
+                &format!("Не удалось скопировать обновлённый файл: {last_copy_err}"),
             );
             std::process::exit(1);
         }
+
+        // Clean up old_exe
+        let _ = fs::remove_file(&old_exe);
 
         // Spawn updated application normally (without helper flags)
         let mut clean_args: Vec<String> = Vec::new();
@@ -1277,5 +1371,29 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_unique_old_file_replacement_cycle() {
+        let dir = std::env::temp_dir().join(format!("oag_test_repl_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let current = dir.join("app.exe");
+        let new_bin = dir.join("app_new.exe");
+        fs::write(&current, b"version1").unwrap();
+        fs::write(&new_bin, b"version2").unwrap();
+
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let old = current.with_extension(format!("exe.old.{}", stamp));
+
+        assert!(fs::rename(&current, &old).is_ok());
+        assert!(fs::copy(&new_bin, &current).is_ok());
+        assert_eq!(fs::read(&current).unwrap(), b"version2");
+        assert_eq!(fs::read(&old).unwrap(), b"version1");
+        assert!(fs::remove_file(&old).is_ok());
+        let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -149,7 +149,7 @@ mod windows_impl {
     /// Останавливает портативный релей: по пиду из файла и по всем
     /// процессам с --dns-forwarder в командной строке. Само окно и другие
     /// его копии не трогаются — у них нет флага релея.
-    fn stop_portable() {
+    pub fn stop_portable() {
         let me = std::process::id();
         let mut pids = read_relay_pid().into_iter().collect::<Vec<_>>();
         pids.extend(relay_pids_by_cmdline());
@@ -262,7 +262,7 @@ mod windows_impl {
     /// what a user upgrading from an older relay saw instead of an install.
     /// Reported from a real machine, never reproduced here, because it only
     /// happens when a relay is already running.
-    fn stop_process() {
+    pub fn stop_process() {
         let mut cmd = Command::new("taskkill");
         cmd.args(["/F", "/IM", EXE_NAME]);
         bounded_output(no_window(&mut cmd), HELPER_LIMIT);
@@ -277,6 +277,13 @@ mod windows_impl {
             }
             thread::sleep(STOP_SETTLE);
         }
+    }
+
+    /// Останавливает все фоновые процессы релея и сторожа (как портативные, так и установленные),
+    /// чтобы освободить любые блокировки дескрипторов исполняемого файла.
+    pub fn stop_all_background() {
+        stop_portable();
+        stop_process();
     }
 
     const STOP_SETTLE: Duration = Duration::from_millis(300);
@@ -826,7 +833,7 @@ mod unix_impl {
         }
     }
 
-    fn stop_portable() {
+    pub fn stop_portable() {
         let me = std::process::id();
         let mut pids = read_proxy_pid().into_iter().collect::<Vec<_>>();
         pids.extend(pids_by_cmdline());
@@ -856,6 +863,10 @@ mod unix_impl {
             }
         }
         let _ = fs::remove_file(proxy_pid_path());
+    }
+
+    pub fn stop_all_background() {
+        stop_portable();
     }
 
     fn enable_portable() -> Result<(), String> {
