@@ -478,7 +478,16 @@ fn resolve_redirect(base: &ParsedUrl, location: &str) -> Result<ParsedUrl, Strin
 pub fn fetch_update_info() -> Result<UpdateInfo, String> {
     let url = update_url()
         .ok_or_else(|| "URL проверки обновлений не задан (OAG_UPDATE_URL)".to_string())?;
-    let mut current = parse_url(&url)?;
+    let now_ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let cachebusting_url = if url.contains('?') {
+        format!("{url}&_t={now_ts}")
+    } else {
+        format!("{url}?_t={now_ts}")
+    };
+    let mut current = parse_url(&cachebusting_url)?;
 
     for _ in 0..=MAX_REDIRECTS {
         let (status, location, body) = http_request(&current)?;

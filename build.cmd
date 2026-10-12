@@ -59,7 +59,7 @@ if errorlevel 1 goto :err
 cargo test --bin open_antigravity
 if errorlevel 1 goto :err
 echo [*] Фиксация изменений в git и создание тега...
-git add "%~dp0VERSION" "%~dp0Cargo.toml" "%~dp0Cargo.lock"
+git add "%~dp0VERSION" "%~dp0Cargo.toml" "%~dp0Cargo.lock" "%~dp0docs\version.json" "%~dp0docs\index.html"
 git commit -m "chore(release): bump version to v%NEW_REL_VER%"
 if errorlevel 1 goto :err
 git tag "v%NEW_REL_VER%"

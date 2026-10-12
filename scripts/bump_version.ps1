@@ -21,4 +21,27 @@ $content = [System.IO.File]::ReadAllText($cargoPath)
 $updated = $content -replace '(?m)^version = "[^"]+"', "version = `"$version`""
 [System.IO.File]::WriteAllText($cargoPath, $updated)
 
-Write-Host "[*] Версия $version успешно записана в VERSION и Cargo.toml"
+# 3. Синхронизация docs/version.json
+$versionJsonPath = Join-Path $rootDir "docs\version.json"
+if (Test-Path $versionJsonPath) {
+    $json = [ordered]@{
+        "version" = $version
+        "notes" = "Open Antigravity v$version"
+        "page" = "https://github.com/keelbismark/OpenAntigravity/releases/tag/v$version"
+        "url_windows" = "https://github.com/keelbismark/OpenAntigravity/releases/download/v$version/OpenAntigravity_windows_v$version.zip"
+        "url_linux" = "https://github.com/keelbismark/OpenAntigravity/releases/download/v$version/OpenAntigravity_linux_v$version.tar.gz"
+        "url_appimage" = "https://github.com/keelbismark/OpenAntigravity/releases/download/v$version/OpenAntigravity-x86_64.AppImage"
+    }
+    $jsonText = $json | ConvertTo-Json -Depth 4
+    [System.IO.File]::WriteAllText($versionJsonPath, $jsonText + [Environment]::NewLine)
+}
+
+# 4. Синхронизация docs/index.html
+$indexPath = Join-Path $rootDir "docs\index.html"
+if (Test-Path $indexPath) {
+    $idxContent = [System.IO.File]::ReadAllText($indexPath)
+    $idxContent = $idxContent -replace 'v[0-9]+\.[0-9]+\.[0-9]+', "v$version"
+    [System.IO.File]::WriteAllText($indexPath, $idxContent)
+}
+
+Write-Host "[*] Версия $version успешно записана в VERSION, Cargo.toml, docs/version.json и docs/index.html"

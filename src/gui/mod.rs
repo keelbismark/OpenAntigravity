@@ -53,7 +53,7 @@ pub struct App {
     manual_tx: std::sync::mpsc::Sender<Result<Option<UpdateInfo>, String>>,
     manual_rx: Receiver<Result<Option<UpdateInfo>, String>>,
     manual_running: bool,
-    pub(crate) manual_result: Option<(String, std::time::Instant)>,
+    pub(crate) manual_result: Option<(String, String, std::time::Instant)>,
 
     worker: Worker,
     events: Receiver<Event>,
@@ -560,21 +560,25 @@ impl App {
         }
         while let Ok(res) = self.manual_rx.try_recv() {
             self.manual_running = false;
-            let text = match res {
+            let (label, tooltip) = match res {
                 Ok(Some(rel)) => {
+                    let ver = rel.display_version().to_string();
                     self.update = Some(rel.clone());
-                    format!(
-                        "Доступна версия {} — ссылка в баннере сверху",
-                        rel.display_version()
+                    (
+                        format!("Доступна v{ver}"),
+                        format!("Доступно обновление v{ver}. Ссылка и кнопка установки доступны в баннере сверху"),
                     )
                 }
-                Ok(None) => format!(
-                    "Обновлений нет — {} актуальна",
-                    update::current_version()
+                Ok(None) => (
+                    "Обновлений нет".to_string(),
+                    format!("У вас установлена последняя версия (v{})", update::current_version()),
                 ),
-                Err(e) => format!("Проверка не удалась: {e}"),
+                Err(e) => (
+                    "Ошибка проверки".to_string(),
+                    format!("Проверка обновлений не удалась: {e}"),
+                ),
             };
-            self.manual_result = Some((text, std::time::Instant::now()));
+            self.manual_result = Some((label, tooltip, std::time::Instant::now()));
         }
         while let Ok(report) = self.diag_rx.try_recv() {
             self.diag_running = false;
@@ -611,7 +615,7 @@ impl App {
             self.last_diag_report = Some(report);
         }
         // The footer message is a receipt, not a fixture: it clears itself.
-        if let Some((_, at)) = &self.manual_result {
+        if let Some((_, _, at)) = &self.manual_result {
             if at.elapsed() > std::time::Duration::from_secs(15) {
                 self.manual_result = None;
             }

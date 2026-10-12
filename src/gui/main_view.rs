@@ -1287,25 +1287,24 @@ fn footer(app: &mut App, ui: &mut egui::Ui) {
 
     ui.horizontal(|ui| {
         let busy = app.is_busy();
-        let report_resp = widgets::btn(ui, Some(Icon::Export), "Экспорт отчёта", FOOTER_TEXT, None)
-            .on_hover_text("Сохранить диагностический отчёт для анализа неполадок");
-
-        if !busy && report_resp.clicked() {
-            copy_report = true;
-        }
-
         let saved = app
             .report_saved
             .clone()
             .filter(|(at, _)| at.elapsed() < REPORT_SHOWN_FOR);
 
         if let Some((_, path)) = &saved {
-            ui.add_space(4.0);
-            let show_resp = widgets::btn(ui, Some(Icon::Folder), "Показать файл", FOOTER_TEXT, None)
-                .on_hover_text("Открыть каталог с файлом отчёта");
+            let show_resp = widgets::btn(ui, Some(Icon::Folder), "Показать отчёт", FOOTER_TEXT, None)
+                .on_hover_text("Открыть каталог с файлом отчёта в проводнике");
 
             if show_resp.clicked() {
                 reveal_report = Some(path.clone());
+            }
+        } else {
+            let report_resp = widgets::btn(ui, Some(Icon::Export), "Экспорт отчёта", FOOTER_TEXT, None)
+                .on_hover_text("Сохранить диагностический отчёт для анализа неполадок");
+
+            if !busy && report_resp.clicked() {
+                copy_report = true;
             }
         }
 
@@ -1320,20 +1319,25 @@ fn footer(app: &mut App, ui: &mut egui::Ui) {
                 DOCS_URL,
             );
             ui.label(egui::RichText::new("·").size(FOOTER_TEXT).color(theme::LINE));
-            let update_label = if app.manual_running {
-                "Проверка…"
-            } else if let Some((msg, _)) = &app.manual_result {
-                msg.as_str()
+
+            let (update_label, update_tooltip) = if app.manual_running {
+                ("Проверка…", Some("Проверка наличия обновлений на сервере…".to_string()))
+            } else if let Some((label, tip, _)) = &app.manual_result {
+                (label.as_str(), Some(tip.clone()))
             } else {
-                "Проверить обновления"
+                ("Проверить обновления", Some("Проверить наличие новой версии программы".to_string()))
             };
-            let update_resp = widgets::btn(
+
+            let mut update_resp = widgets::btn(
                 ui,
                 Some(Icon::Update),
                 update_label,
                 FOOTER_TEXT,
                 None,
             );
+            if let Some(tip) = update_tooltip {
+                update_resp = update_resp.on_hover_text(tip);
+            }
 
             if !app.manual_running && update_resp.clicked() {
                 app.check_update_manually(ui.ctx());

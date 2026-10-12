@@ -49,11 +49,26 @@ if [ "$DO_RELEASE" -eq 1 ]; then
     if [ -f "$SCRIPT_DIR/Cargo.toml" ]; then
         sed -i -E 's/^version = "[0-9]+\.[0-9]+\.[0-9]+"/version = "'"$NEW_REL_VER"'"/' "$SCRIPT_DIR/Cargo.toml"
     fi
+    if [ -f "$SCRIPT_DIR/docs/version.json" ]; then
+        cat > "$SCRIPT_DIR/docs/version.json" <<EOF
+{
+  "version": "$NEW_REL_VER",
+  "notes": "Open Antigravity v$NEW_REL_VER",
+  "page": "https://github.com/keelbismark/OpenAntigravity/releases/tag/v$NEW_REL_VER",
+  "url_windows": "https://github.com/keelbismark/OpenAntigravity/releases/download/v$NEW_REL_VER/OpenAntigravity_windows_v$NEW_REL_VER.zip",
+  "url_linux": "https://github.com/keelbismark/OpenAntigravity/releases/download/v$NEW_REL_VER/OpenAntigravity_linux_v$NEW_REL_VER.tar.gz",
+  "url_appimage": "https://github.com/keelbismark/OpenAntigravity/releases/download/v$NEW_REL_VER/OpenAntigravity-x86_64.AppImage"
+}
+EOF
+    fi
+    if [ -f "$SCRIPT_DIR/docs/index.html" ]; then
+        sed -i -E "s/v[0-9]+\.[0-9]+\.[0-9]+/v${NEW_REL_VER}/g" "$SCRIPT_DIR/docs/index.html"
+    fi
     echo "[*] Проверка кода и тесты перед релизом..."
     cargo check || exit 1
     cargo test --bin open_antigravity || exit 1
     echo "[*] Фиксация изменений в git и создание тега..."
-    git add "$SCRIPT_DIR/VERSION" "$SCRIPT_DIR/Cargo.toml" "$SCRIPT_DIR/Cargo.lock"
+    git add "$SCRIPT_DIR/VERSION" "$SCRIPT_DIR/Cargo.toml" "$SCRIPT_DIR/Cargo.lock" "$SCRIPT_DIR/docs/version.json" "$SCRIPT_DIR/docs/index.html"
     git commit -m "chore(release): bump version to v${NEW_REL_VER}" || exit 1
     git tag "v${NEW_REL_VER}" || exit 1
     echo "[*] Отправка в GitHub (запуск CI/CD релиза)..."
