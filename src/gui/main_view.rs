@@ -16,19 +16,23 @@ pub fn view(app: &mut App, ui: &mut egui::Ui) {
     let footer_h = 58.0;
     let avail_h = (ui.available_height() - footer_h).max(120.0);
 
-    egui::ScrollArea::vertical()
-        .auto_shrink([false, false])
-        .max_height(avail_h)
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            match app.current_tab {
-                Tab::Main => main_screen(app, ui),
-                Tab::Proxy => proxy_screen(app, ui),
-                Tab::Doctor => doctor_screen(app, ui),
-                Tab::Logs => logs_screen(app, ui),
-            }
-            ui.add_space(8.0);
-        });
+    if app.current_tab == Tab::Logs {
+        logs_screen(app, ui, avail_h);
+    } else {
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .max_height(avail_h)
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                match app.current_tab {
+                    Tab::Main => main_screen(app, ui),
+                    Tab::Proxy => proxy_screen(app, ui),
+                    Tab::Doctor => doctor_screen(app, ui),
+                    Tab::Logs => unreachable!(),
+                }
+                ui.add_space(8.0);
+            });
+    }
 
     ui.add_space(6.0);
     ui.separator();
@@ -865,8 +869,14 @@ fn proxy_section(app: &mut App, ui: &mut egui::Ui) {
 
                 let del_btn = egui::Button::new(egui::RichText::new("×").size(11.0).color(theme::MUTED))
                     .fill(theme::SUNKEN)
+                    .stroke(Stroke::new(1.0, theme::LINE))
                     .corner_radius(CornerRadius::same(theme::RADIUS_SMALL));
-                if ui.add_enabled(!busy, del_btn).on_hover_text("Удалить профиль").clicked() {
+                if ui
+                    .add_enabled(!busy, del_btn)
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .on_hover_text("Удалить профиль")
+                    .clicked()
+                {
                     delete_idx = Some(idx);
                 }
             }
@@ -1166,7 +1176,7 @@ fn system_section(app: &mut App, ui: &mut egui::Ui) {
 // Logs Screen
 // ---------------------------------------------------------------------------
 
-fn logs_screen(app: &mut App, ui: &mut egui::Ui) {
+fn logs_screen(app: &mut App, ui: &mut egui::Ui, avail_h: f32) {
     ui.horizontal(|ui| {
         ui.label(
             egui::RichText::new("События и логи")
@@ -1188,7 +1198,17 @@ fn logs_screen(app: &mut App, ui: &mut egui::Ui) {
                 app.log.clear();
             }
 
-            let copy_resp = widgets::btn(ui, Some(Icon::Copy), "Скопировать", 11.5, None);
+            let copied = app
+                .logs_copied_at
+                .map(|t| t.elapsed() < Duration::from_secs(3))
+                .unwrap_or(false);
+            let (copy_icon, copy_label) = if copied {
+                (Icon::Check, "Скопировано!")
+            } else {
+                (Icon::Copy, "Скопировать")
+            };
+
+            let copy_resp = widgets::btn(ui, Some(copy_icon), copy_label, 11.5, None);
             if copy_resp.clicked() {
                 let text = app
                     .log
@@ -1197,11 +1217,14 @@ fn logs_screen(app: &mut App, ui: &mut egui::Ui) {
                     .collect::<Vec<_>>()
                     .join("\n");
                 ui.ctx().copy_text(text);
+                app.logs_copied_at = Some(std::time::Instant::now());
             }
         });
     });
 
     ui.add_space(6.0);
+
+    let card_h = (avail_h - 36.0).max(180.0);
 
     egui::Frame::new()
         .fill(theme::CARD)
@@ -1210,12 +1233,14 @@ fn logs_screen(app: &mut App, ui: &mut egui::Ui) {
         .stroke(Stroke::new(1.0, theme::CARD_BORDER))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
+            let inner_h = (card_h - 20.0).max(160.0);
             egui::ScrollArea::vertical()
-                .max_height(340.0)
+                .auto_shrink([false, false])
+                .max_height(inner_h)
                 .stick_to_bottom(true)
                 .show(ui, |ui| {
                     if app.log.is_empty() {
-                        ui.add_space(20.0);
+                        ui.add_space(40.0);
                         ui.vertical_centered(|ui| {
                             ui.label(
                                 egui::RichText::new("Журнал пуст")
@@ -1223,7 +1248,7 @@ fn logs_screen(app: &mut App, ui: &mut egui::Ui) {
                                     .color(theme::SUBTLE),
                             );
                         });
-                        ui.add_space(20.0);
+                        ui.add_space(40.0);
                         return;
                     }
 
@@ -1232,6 +1257,7 @@ fn logs_screen(app: &mut App, ui: &mut egui::Ui) {
                             Level::Ok => theme::OK,
                             Level::Err => theme::BAD,
                             Level::Warn => theme::WARN,
+                            Level::Step => theme::TEXT,
                             _ => theme::MUTED,
                         };
                         ui.label(

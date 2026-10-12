@@ -289,13 +289,13 @@ pub fn btn(
     min_size: Option<egui::Vec2>,
 ) -> egui::Response {
     let font_id = egui::FontId::proportional(text_size);
-    let galley = ui.painter().layout_no_wrap(text.to_string(), font_id, theme::TEXT);
+    let galley_meas = ui.painter().layout_no_wrap(text.to_string(), font_id.clone(), theme::TEXT);
     let icon_w = if icon.is_some() { 13.0 + 6.0 } else { 0.0 };
     let pad_x = 10.0;
     let pad_y = 5.0;
     let mut desired = egui::vec2(
-        galley.size().x + icon_w + pad_x * 2.0,
-        galley.size().y + pad_y * 2.0,
+        galley_meas.size().x + icon_w + pad_x * 2.0,
+        galley_meas.size().y + pad_y * 2.0,
     );
     if let Some(m) = min_size {
         desired.x = desired.x.max(m.x);
@@ -317,7 +317,7 @@ pub fn btn(
             egui::StrokeKind::Inside,
         );
 
-        let content_width = galley.size().x + icon_w;
+        let content_width = galley_meas.size().x + icon_w;
         let start_x = rect.center().x - content_width / 2.0;
         let icon_col = lerp_color(theme::MUTED, egui::Color32::WHITE, hover_t);
         let text_col = lerp_color(theme::TEXT, egui::Color32::WHITE, hover_t);
@@ -333,6 +333,7 @@ pub fn btn(
             paint_icon(painter, icon_rect, ic, icon_col, ui.input(|i| i.time));
         }
 
+        let galley = painter.layout_no_wrap(text.to_string(), font_id, text_col);
         let text_pos = egui::pos2(start_x + icon_w, rect.center().y - galley.size().y / 2.0);
         painter.galley(text_pos, galley, text_col);
     }
@@ -354,12 +355,12 @@ pub fn show_icon(ui: &mut egui::Ui, icon: Icon, color: egui::Color32, size: f32)
 /// A compact status/metric chip (e.g. Bolt with "38 мс", Gateway with "127.0.0.1:45318") with smooth hover animation.
 pub fn metric_chip(ui: &mut egui::Ui, icon: Option<Icon>, text: &str) -> egui::Response {
     let font_id = egui::FontId::proportional(11.5);
-    let galley = ui.painter().layout_no_wrap(text.to_string(), font_id, theme::MUTED);
+    let galley_meas = ui.painter().layout_no_wrap(text.to_string(), font_id.clone(), theme::MUTED);
     let icon_w = if icon.is_some() { 12.0 + 5.0 } else { 0.0 };
     let padding = egui::vec2(8.0, 3.5);
     let desired_size = egui::vec2(
-        galley.size().x + icon_w + padding.x * 2.0,
-        galley.size().y + padding.y * 2.0,
+        galley_meas.size().x + icon_w + padding.x * 2.0,
+        galley_meas.size().y + padding.y * 2.0,
     );
     let (rect, resp) = ui.allocate_exact_size(desired_size, Sense::click());
     if ui.is_rect_visible(rect) {
@@ -388,6 +389,7 @@ pub fn metric_chip(ui: &mut egui::Ui, icon: Option<Icon>, text: &str) -> egui::R
             paint_icon(painter, icon_rect, ic, icon_col, ui.input(|i| i.time));
         }
 
+        let galley = painter.layout_no_wrap(text.to_string(), font_id, text_col);
         let text_pos = egui::pos2(start_x + icon_w, rect.top() + padding.y);
         painter.galley(text_pos, galley, text_col);
     }
@@ -402,10 +404,10 @@ pub fn profile_pill(
     enabled: bool,
 ) -> egui::Response {
     let font_id = egui::FontId::proportional(11.5);
-    let galley = ui.painter().layout_no_wrap(name.to_string(), font_id, theme::TEXT);
+    let galley_meas = ui.painter().layout_no_wrap(name.to_string(), font_id.clone(), theme::MUTED);
     let pad_x = 9.0;
     let pad_y = 4.0;
-    let size = egui::vec2(galley.size().x + pad_x * 2.0, galley.size().y + pad_y * 2.0);
+    let size = egui::vec2(galley_meas.size().x + pad_x * 2.0, galley_meas.size().y + pad_y * 2.0);
     let (rect, resp) = ui.allocate_exact_size(size, if enabled { Sense::click() } else { Sense::hover() });
 
     if ui.is_rect_visible(rect) {
@@ -419,7 +421,7 @@ pub fn profile_pill(
         let stroke_col = lerp_color(unselected_stroke, egui::Color32::WHITE, active_t);
 
         let unselected_text = lerp_color(theme::TEXT, egui::Color32::WHITE, hover_t);
-        let text_col = lerp_color(unselected_text, egui::Color32::BLACK, active_t);
+        let text_col = lerp_color(unselected_text, egui::Color32::from_rgb(10, 10, 12), active_t);
 
         ui.painter().rect(
             rect,
@@ -429,6 +431,8 @@ pub fn profile_pill(
             egui::StrokeKind::Inside,
         );
 
+        // Layout with text_col so the rendered glyphs carry the dynamic color (black on white when active)
+        let galley = ui.painter().layout_no_wrap(name.to_string(), font_id, text_col);
         let text_pos = egui::pos2(rect.center().x - galley.size().x / 2.0, rect.center().y - galley.size().y / 2.0);
         ui.painter().galley(text_pos, galley, text_col);
     }
@@ -455,8 +459,8 @@ pub fn site_tabs<T: PartialEq + Copy>(
         for (val, label) in options {
             let is_active = *val == *current;
             let font = egui::FontId::proportional(13.5);
-            let galley = ui.painter().layout_no_wrap(label.to_string(), font, theme::MUTED);
-            let size = egui::vec2(galley.size().x, 28.0);
+            let galley_meas = ui.painter().layout_no_wrap(label.to_string(), font.clone(), theme::MUTED);
+            let size = egui::vec2(galley_meas.size().x, 28.0);
             let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
 
             if resp.clicked() && !is_active {
@@ -476,6 +480,7 @@ pub fn site_tabs<T: PartialEq + Copy>(
                 let text_pos = egui::pos2(rect.left(), rect.top() + 4.0);
                 let unselected = lerp_color(theme::MUTED, egui::Color32::WHITE, hover_t);
                 let text_col = lerp_color(unselected, theme::TEXT, active_t);
+                let galley = painter.layout_no_wrap(label.to_string(), font, text_col);
                 painter.galley(text_pos, galley, text_col);
             }
         }

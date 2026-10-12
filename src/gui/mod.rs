@@ -131,6 +131,8 @@ pub struct App {
     pub activity_summary: Option<crate::core::ls_log::ActivitySummary>,
     /// Last time activity logs were polled.
     pub last_activity_poll: Option<std::time::Instant>,
+    /// Last time logs were copied to clipboard (for button feedback).
+    pub logs_copied_at: Option<std::time::Instant>,
     frames: u8,
 }
 
@@ -227,6 +229,7 @@ impl App {
             terminal_env_copied: None,
             activity_summary: None,
             last_activity_poll: None,
+            logs_copied_at: None,
             frames: 0,
         }
     }
