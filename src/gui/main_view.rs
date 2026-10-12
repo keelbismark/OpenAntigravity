@@ -23,6 +23,8 @@ pub fn view(app: &mut App, ui: &mut egui::Ui) {
             ui.set_width(ui.available_width());
             match app.current_tab {
                 Tab::Main => main_screen(app, ui),
+                Tab::Proxy => proxy_screen(app, ui),
+                Tab::Doctor => doctor_screen(app, ui),
                 Tab::Logs => logs_screen(app, ui),
             }
             ui.add_space(8.0);
@@ -91,31 +93,141 @@ fn header(app: &mut App, ui: &mut egui::Ui) {
 
     // Site-style underline tab navigation
     let logs_label = format!("Журнал ({})", app.log.len());
-    let options = [(Tab::Main, "Обзор"), (Tab::Logs, &logs_label)];
+    let options = [
+        (Tab::Main, "Обзор"),
+        (Tab::Proxy, "Прокси"),
+        (Tab::Doctor, "Диагностика"),
+        (Tab::Logs, &logs_label),
+    ];
     widgets::site_tabs(ui, &mut app.current_tab, &options);
 }
 
 // ---------------------------------------------------------------------------
-// Main Control Screen
+// Screens
 // ---------------------------------------------------------------------------
 
 fn main_screen(app: &mut App, ui: &mut egui::Ui) {
     hero_status_card(app, ui);
 
     ui.add_space(14.0);
-    doctor_section(app, ui);
-
-    ui.add_space(14.0);
-    activity_inspector_section(app, ui);
-
-    ui.add_space(14.0);
-    proxy_section(app, ui);
+    quick_proxy_card(app, ui);
 
     ui.add_space(14.0);
     components_section(app, ui);
 
     ui.add_space(14.0);
     system_section(app, ui);
+}
+
+fn proxy_screen(app: &mut App, ui: &mut egui::Ui) {
+    proxy_section(app, ui);
+}
+
+fn doctor_screen(app: &mut App, ui: &mut egui::Ui) {
+    doctor_section(app, ui);
+
+    ui.add_space(14.0);
+    activity_inspector_section(app, ui);
+}
+
+fn quick_proxy_card(app: &mut App, ui: &mut egui::Ui) {
+    let busy = app.is_busy();
+    ui.horizontal(|ui| {
+        widgets::section_header(ui, "ТЕКУЩИЙ ПРОКСИ");
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if widgets::btn(ui, None, "Настройка →", 11.5, None).clicked() {
+                app.current_tab = Tab::Proxy;
+            }
+        });
+    });
+    ui.add_space(4.0);
+
+    widgets::card(ui, |ui| {
+        let own_on = app.status.as_ref().map(|s| s.get(Cap::OwnProxy).is_on()).unwrap_or(true);
+        let proxy_addr = app.own_proxy_input.trim();
+        let profiles = app.status.as_ref().map(|s| s.proxy_profiles.clone()).unwrap_or_default();
+        let selected_profile = profiles.iter().find(|p| p.address.trim() == proxy_addr);
+
+        let display_addr = if !own_on {
+            "Прокси отключён (прямое соединение)".to_string()
+        } else if proxy_addr.is_empty() {
+            "Встроенный прокси (по умолчанию)".to_string()
+        } else if let Some(prof) = selected_profile {
+            format!("{}: {}", prof.name, crate::diag::mask_proxy_line(proxy_addr))
+        } else {
+            crate::diag::mask_proxy_line(proxy_addr)
+        };
+
+        ui.horizontal(|ui| {
+            let (dot, col) = if own_on {
+                ("●", theme::OK)
+            } else {
+                ("○", theme::MUTED)
+            };
+            ui.label(egui::RichText::new(dot).color(col).size(12.0));
+            ui.label(
+                egui::RichText::new(display_addr)
+                    .size(12.5)
+                    .strong()
+                    .color(theme::TEXT),
+            );
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let (ping_icon, ping_label) = if app.proxy_test_running {
+                    (Icon::Refresh { spin: true }, "замер…".to_string())
+                } else if let Some(rtt) = app.last_rtt {
+                    (Icon::Bolt, format!("{rtt} мс"))
+                } else {
+                    (Icon::Bolt, "проверить".to_string())
+                };
+
+                let chip = widgets::metric_chip(ui, Some(ping_icon), &ping_label)
+                    .on_hover_text("Нажмите для проверки задержки к Google API");
+                if chip.clicked() && !app.proxy_test_running {
+                    app.start_proxy_test(ui.ctx());
+                }
+            });
+        });
+
+        // Quick profile chips if profiles exist
+        if !profiles.is_empty() {
+            ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(6.0);
+
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("Быстрый выбор:")
+                        .size(11.5)
+                        .color(theme::MUTED),
+                );
+
+                let mut select_idx: Option<usize> = None;
+                for (idx, prof) in profiles.iter().enumerate() {
+                    let is_selected = app.own_proxy_input.trim() == prof.address.trim();
+                    let prof_btn = egui::Button::new(
+                        egui::RichText::new(&prof.name)
+                            .size(11.0)
+                            .color(if is_selected { egui::Color32::BLACK } else { theme::TEXT }),
+                    )
+                    .fill(if is_selected { egui::Color32::WHITE } else { theme::SUNKEN })
+                    .stroke(Stroke::new(1.0, theme::LINE))
+                    .corner_radius(CornerRadius::same(theme::RADIUS_SMALL));
+
+                    if ui.add_enabled(!busy, prof_btn).on_hover_text(&prof.address).clicked() {
+                        select_idx = Some(idx);
+                    }
+                }
+
+                if let Some(i) = select_idx {
+                    if let Some(p) = profiles.get(i) {
+                        app.own_proxy_input = p.address.clone();
+                    }
+                    app.worker.send(Cmd::SelectProxyProfile(i));
+                }
+            });
+        }
+    });
 }
 
 // ---------------------------------------------------------------------------

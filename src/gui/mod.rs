@@ -25,6 +25,8 @@ use crate::update::{self, UpdateInfo};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
     Main,
+    Proxy,
+    Doctor,
     Logs,
 }
 

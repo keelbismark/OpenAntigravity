@@ -405,7 +405,7 @@ pub fn site_tabs<T: PartialEq + Copy>(
 ) -> bool {
     let mut changed = false;
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 24.0;
+        ui.spacing_mut().item_spacing.x = 18.0;
         for (val, label) in options {
             let is_active = *val == *current;
             let text_color = if is_active {

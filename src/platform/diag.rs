@@ -608,7 +608,7 @@ pub fn run_diagnostics() -> DiagReport {
 }
 
 /// Маскирует учетные данные в строке прокси (login:pass@host:port -> host:port).
-fn mask_proxy_line(s: &str) -> String {
+pub fn mask_proxy_line(s: &str) -> String {
     if let Some((_, hostport)) = s.split_once('@') {
         hostport.to_string()
     } else {
