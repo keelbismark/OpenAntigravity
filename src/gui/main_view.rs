@@ -205,16 +205,8 @@ fn quick_proxy_card(app: &mut App, ui: &mut egui::Ui) {
                 let mut select_idx: Option<usize> = None;
                 for (idx, prof) in profiles.iter().enumerate() {
                     let is_selected = app.own_proxy_input.trim() == prof.address.trim();
-                    let prof_btn = egui::Button::new(
-                        egui::RichText::new(&prof.name)
-                            .size(11.0)
-                            .color(if is_selected { egui::Color32::BLACK } else { theme::TEXT }),
-                    )
-                    .fill(if is_selected { egui::Color32::WHITE } else { theme::SUNKEN })
-                    .stroke(Stroke::new(1.0, theme::LINE))
-                    .corner_radius(CornerRadius::same(theme::RADIUS_SMALL));
-
-                    if ui.add_enabled(!busy, prof_btn).on_hover_text(&prof.address).clicked() {
+                    let prof_resp = widgets::profile_pill(ui, &prof.name, is_selected, !busy);
+                    if prof_resp.on_hover_text(&prof.address).clicked() {
                         select_idx = Some(idx);
                     }
                 }
@@ -285,11 +277,13 @@ fn hero_status_card(app: &mut App, ui: &mut egui::Ui) {
 
             // Top row: Emblem + Title & Detail
             ui.horizontal(|ui| {
-                let (emblem_bg, emblem_color) = if is_active {
-                    (egui::Color32::from_rgba_unmultiplied(34, 197, 94, 25), theme::OK)
-                } else {
-                    (theme::SUNKEN, theme::MUTED)
-                };
+                let active_t = ui.ctx().animate_bool_with_time(ui.id().with("hero_act"), is_active, 0.22);
+                let emblem_bg = widgets::lerp_color(
+                    theme::SUNKEN,
+                    egui::Color32::from_rgba_unmultiplied(34, 197, 94, 25),
+                    active_t,
+                );
+                let emblem_color = widgets::lerp_color(theme::MUTED, theme::OK, active_t);
 
                 let emblem_size = egui::vec2(34.0, 34.0);
                 let (emblem_rect, _) = ui.allocate_exact_size(emblem_size, Sense::hover());
@@ -864,16 +858,8 @@ fn proxy_section(app: &mut App, ui: &mut egui::Ui) {
 
             for (idx, prof) in profiles.iter().enumerate() {
                 let is_selected = app.own_proxy_input.trim() == prof.address.trim();
-                let prof_btn = egui::Button::new(
-                    egui::RichText::new(&prof.name)
-                        .size(11.5)
-                        .color(if is_selected { egui::Color32::BLACK } else { theme::TEXT }),
-                )
-                .fill(if is_selected { egui::Color32::WHITE } else { theme::SUNKEN })
-                .stroke(Stroke::new(1.0, theme::LINE))
-                .corner_radius(CornerRadius::same(theme::RADIUS_SMALL));
-
-                if ui.add_enabled(!busy, prof_btn).on_hover_text(&prof.address).clicked() {
+                let prof_resp = widgets::profile_pill(ui, &prof.name, is_selected, !busy);
+                if prof_resp.on_hover_text(&prof.address).clicked() {
                     select_idx = Some(idx);
                 }
 

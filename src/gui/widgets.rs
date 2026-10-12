@@ -305,16 +305,10 @@ pub fn btn(
     let (rect, resp) = ui.allocate_exact_size(desired, Sense::click());
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
-        let fill = if resp.hovered() {
-            theme::ACCENT_SUBTLE
-        } else {
-            theme::SUNKEN
-        };
-        let stroke_color = if resp.hovered() {
-            theme::LINE.gamma_multiply(1.4)
-        } else {
-            theme::LINE
-        };
+        let hover_t = ui.ctx().animate_bool_with_time(resp.id.with("btn_h"), resp.hovered(), 0.12);
+        let fill = lerp_color(theme::SUNKEN, theme::ACCENT_SUBTLE, hover_t);
+        let stroke_color = lerp_color(theme::LINE, theme::LINE.gamma_multiply(1.4), hover_t);
+
         painter.rect(
             rect,
             CornerRadius::same(theme::RADIUS_SMALL),
@@ -325,8 +319,8 @@ pub fn btn(
 
         let content_width = galley.size().x + icon_w;
         let start_x = rect.center().x - content_width / 2.0;
-        let icon_col = if resp.hovered() { egui::Color32::WHITE } else { theme::MUTED };
-        let text_col = if resp.hovered() { egui::Color32::WHITE } else { theme::TEXT };
+        let icon_col = lerp_color(theme::MUTED, egui::Color32::WHITE, hover_t);
+        let text_col = lerp_color(theme::TEXT, egui::Color32::WHITE, hover_t);
 
         if let Some(ic) = icon {
             if let Icon::Refresh { spin: true } = ic {
@@ -357,7 +351,7 @@ pub fn show_icon(ui: &mut egui::Ui, icon: Icon, color: egui::Color32, size: f32)
     }
 }
 
-/// A compact status/metric chip (e.g. Bolt with "38 мс", Gateway with "127.0.0.1:45318").
+/// A compact status/metric chip (e.g. Bolt with "38 мс", Gateway with "127.0.0.1:45318") with smooth hover animation.
 pub fn metric_chip(ui: &mut egui::Ui, icon: Option<Icon>, text: &str) -> egui::Response {
     let font_id = egui::FontId::proportional(11.5);
     let galley = ui.painter().layout_no_wrap(text.to_string(), font_id, theme::MUTED);
@@ -370,17 +364,20 @@ pub fn metric_chip(ui: &mut egui::Ui, icon: Option<Icon>, text: &str) -> egui::R
     let (rect, resp) = ui.allocate_exact_size(desired_size, Sense::click());
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
-        let fill = if resp.hovered() { theme::ACCENT_SUBTLE } else { theme::SUNKEN };
+        let hover_t = ui.ctx().animate_bool_with_time(resp.id.with("chip_h"), resp.hovered(), 0.12);
+        let fill = lerp_color(theme::SUNKEN, theme::ACCENT_SUBTLE, hover_t);
+        let stroke_color = lerp_color(theme::LINE, theme::LINE.gamma_multiply(1.3), hover_t);
+
         painter.rect(
             rect,
             CornerRadius::same(theme::RADIUS_SMALL),
             fill,
-            Stroke::new(1.0, theme::LINE),
+            Stroke::new(1.0, stroke_color),
             egui::StrokeKind::Inside,
         );
 
-        let icon_col = if resp.hovered() { theme::TEXT } else { theme::MUTED };
-        let text_col = if resp.hovered() { theme::TEXT } else { theme::MUTED };
+        let icon_col = lerp_color(theme::MUTED, theme::TEXT, hover_t);
+        let text_col = lerp_color(theme::MUTED, theme::TEXT, hover_t);
 
         let start_x = rect.left() + padding.x;
         if let Some(ic) = icon {
@@ -397,24 +394,68 @@ pub fn metric_chip(ui: &mut egui::Ui, icon: Option<Icon>, text: &str) -> egui::R
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
-/// Clean navigation tabs matching the website (active tab has white text and underline).
+/// A styled profile selection pill with smooth hover and active state animations.
+pub fn profile_pill(
+    ui: &mut egui::Ui,
+    name: &str,
+    is_selected: bool,
+    enabled: bool,
+) -> egui::Response {
+    let font_id = egui::FontId::proportional(11.5);
+    let galley = ui.painter().layout_no_wrap(name.to_string(), font_id, theme::TEXT);
+    let pad_x = 9.0;
+    let pad_y = 4.0;
+    let size = egui::vec2(galley.size().x + pad_x * 2.0, galley.size().y + pad_y * 2.0);
+    let (rect, resp) = ui.allocate_exact_size(size, if enabled { Sense::click() } else { Sense::hover() });
+
+    if ui.is_rect_visible(rect) {
+        let hover_t = ui.ctx().animate_bool_with_time(resp.id.with("pill_h"), resp.hovered() && enabled, 0.12);
+        let active_t = ui.ctx().animate_bool_with_time(resp.id.with("pill_a"), is_selected, 0.15);
+
+        let unselected_fill = lerp_color(theme::SUNKEN, theme::ACCENT_SUBTLE, hover_t);
+        let fill = lerp_color(unselected_fill, egui::Color32::WHITE, active_t);
+
+        let unselected_stroke = lerp_color(theme::LINE, theme::LINE.gamma_multiply(1.4), hover_t);
+        let stroke_col = lerp_color(unselected_stroke, egui::Color32::WHITE, active_t);
+
+        let unselected_text = lerp_color(theme::TEXT, egui::Color32::WHITE, hover_t);
+        let text_col = lerp_color(unselected_text, egui::Color32::BLACK, active_t);
+
+        ui.painter().rect(
+            rect,
+            CornerRadius::same(theme::RADIUS_SMALL),
+            fill,
+            Stroke::new(1.0, stroke_col),
+            egui::StrokeKind::Inside,
+        );
+
+        let text_pos = egui::pos2(rect.center().x - galley.size().x / 2.0, rect.center().y - galley.size().y / 2.0);
+        ui.painter().galley(text_pos, galley, text_col);
+    }
+
+    if enabled {
+        resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+    } else {
+        resp
+    }
+}
+
+/// Clean navigation tabs matching the website with a smooth sliding active underline indicator.
 pub fn site_tabs<T: PartialEq + Copy>(
     ui: &mut egui::Ui,
     current: &mut T,
     options: &[(T, &str)],
 ) -> bool {
     let mut changed = false;
+    let tabs_id = ui.id().with("site_tabs_slider");
+    let mut target_rect: Option<(f32, f32)> = None;
+
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 18.0;
         for (val, label) in options {
             let is_active = *val == *current;
-            let text_color = if is_active {
-                theme::TEXT
-            } else {
-                theme::MUTED
-            };
             let font = egui::FontId::proportional(13.5);
-            let galley = ui.painter().layout_no_wrap(label.to_string(), font, text_color);
+            let galley = ui.painter().layout_no_wrap(label.to_string(), font, theme::MUTED);
             let size = egui::vec2(galley.size().x, 28.0);
             let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
 
@@ -423,25 +464,19 @@ pub fn site_tabs<T: PartialEq + Copy>(
                 changed = true;
             }
 
+            if is_active {
+                target_rect = Some((rect.left(), rect.right()));
+            }
+
+            let hover_t = ui.ctx().animate_bool_with_time(resp.id.with("tab_h"), resp.hovered(), 0.12);
+            let active_t = ui.ctx().animate_bool_with_time(resp.id.with("tab_a"), is_active, 0.15);
+
             if ui.is_rect_visible(rect) {
                 let painter = ui.painter();
                 let text_pos = egui::pos2(rect.left(), rect.top() + 4.0);
-                let col = if is_active {
-                    theme::TEXT
-                } else if resp.hovered() {
-                    egui::Color32::WHITE
-                } else {
-                    theme::MUTED
-                };
-                painter.galley(text_pos, galley, col);
-
-                if is_active {
-                    let line_y = rect.bottom() - 1.0;
-                    painter.line_segment(
-                        [egui::pos2(rect.left(), line_y), egui::pos2(rect.right(), line_y)],
-                        Stroke::new(2.0, egui::Color32::WHITE),
-                    );
-                }
+                let unselected = lerp_color(theme::MUTED, egui::Color32::WHITE, hover_t);
+                let text_col = lerp_color(unselected, theme::TEXT, active_t);
+                painter.galley(text_pos, galley, text_col);
             }
         }
     });
@@ -449,12 +484,34 @@ pub fn site_tabs<T: PartialEq + Copy>(
     // Subtle baseline underneath tab navigation
     let avail_w = ui.available_width();
     let (line_rect, _) = ui.allocate_exact_size(egui::vec2(avail_w, 1.0), Sense::hover());
+    let baseline_y = line_rect.top();
     ui.painter().line_segment(
-        [line_rect.left_top(), line_rect.right_top()],
+        [egui::pos2(line_rect.left(), baseline_y), egui::pos2(line_rect.right(), baseline_y)],
         Stroke::new(1.0, theme::LINE),
     );
 
+    // Smooth sliding active underline indicator
+    if let Some((target_left, target_right)) = target_rect {
+        let left = ui.ctx().animate_value_with_time(tabs_id.with("slide_l"), target_left, 0.18);
+        let right = ui.ctx().animate_value_with_time(tabs_id.with("slide_r"), target_right, 0.18);
+        ui.painter().line_segment(
+            [egui::pos2(left, baseline_y), egui::pos2(right, baseline_y)],
+            Stroke::new(2.0, egui::Color32::WHITE),
+        );
+    }
+
     changed
+}
+
+/// Smoothly interpolates between two Color32 colors (t from 0.0 to 1.0).
+pub fn lerp_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
+    let t = t.clamp(0.0, 1.0);
+    egui::Color32::from_rgba_premultiplied(
+        egui::lerp((a.r() as f32)..=(b.r() as f32), t).round() as u8,
+        egui::lerp((a.g() as f32)..=(b.g() as f32), t).round() as u8,
+        egui::lerp((a.b() as f32)..=(b.b() as f32), t).round() as u8,
+        egui::lerp((a.a() as f32)..=(b.a() as f32), t).round() as u8,
+    )
 }
 
 /// A styled modern pill badge matching the website (.pill-badge).
