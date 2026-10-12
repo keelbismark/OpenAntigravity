@@ -204,6 +204,9 @@ mod tests {
     fn the_sweep_marker_lives_beside_the_logs_not_in_the_install_dir() {
         let marker = marker_path();
         assert_eq!(marker.file_name().unwrap(), SWEEP_MARKER);
+        #[cfg(target_os = "windows")]
         assert_ne!(marker.parent().unwrap(), crate::platform::service::install_dir());
+        #[cfg(not(target_os = "windows"))]
+        assert_ne!(marker.parent().unwrap().file_name().unwrap(), DATA_DIR);
     }
 }
