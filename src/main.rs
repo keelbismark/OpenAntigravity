@@ -814,6 +814,13 @@ fn main() {
         }
     }
 
+    // Helper for applying binary update elevated (when original location has restricted permissions)
+    if let Some(pos) = env::args().position(|a| a == "--apply-update") {
+        if let Some(new_bin) = env::args().nth(pos + 1) {
+            crate::core::update::run_apply_update_helper(&new_bin);
+        }
+    }
+
     canary::handle_cli_flags();
 
     // If relaunched from another instance (e.g. elevating privileges), wait

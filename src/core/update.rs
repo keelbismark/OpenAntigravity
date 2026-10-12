@@ -886,8 +886,19 @@ pub fn restart_with_new_binary(new_exe: &std::path::Path) -> Result<(), String> 
         if old_exe.exists() {
             let _ = fs::remove_file(&old_exe);
         }
-        fs::rename(&current_exe, &old_exe)
-            .map_err(|e| format!("не удалось переместить текущий exe: {e}"))?;
+        if let Err(e) = fs::rename(&current_exe, &old_exe) {
+            // If renaming failed due to permission denial (e.g. running non-elevated in Program Files),
+            // seamlessly elevate via helper with UAC prompt.
+            if e.kind() == io::ErrorKind::PermissionDenied || !crate::utils::is_admin() {
+                let helper_params = format!("--apply-update \"{}\"", new_exe.display());
+                if crate::utils::relaunch_elevated_with(&helper_params) {
+                    // Release instance lock so elevated helper can replace and take over
+                    crate::platform::single_instance::release_active_lock();
+                    std::process::exit(0);
+                }
+            }
+            return Err(format!("не удалось переместить текущий exe: {e}"));
+        }
         if let Err(e) = fs::copy(new_exe, &current_exe) {
             let _ = fs::rename(&old_exe, &current_exe);
             return Err(format!("не удалось скопировать новый exe: {e}"));
@@ -942,6 +953,83 @@ pub fn restart_with_new_binary(new_exe: &std::path::Path) -> Result<(), String> 
                 .map_err(|e| format!("не удалось перезапустить приложение: {e}"))?;
             std::process::exit(0);
         }
+    }
+}
+
+/// Helper executed when launched with `--apply-update <new_binary>`.
+/// This runs elevated, replaces the application binary, and relaunches it normally.
+pub fn run_apply_update_helper(new_exe_str: &str) {
+    let new_exe = PathBuf::from(new_exe_str);
+    let current_exe = match std::env::current_exe() {
+        Ok(exe) => exe,
+        Err(e) => {
+            crate::utils::message_box("Open Antigravity Update", &format!("Ошибка пути: {e}"));
+            std::process::exit(1);
+        }
+    };
+
+    // If --wait-pid was provided, wait for the previous instance to exit
+    if let Some(pos) = std::env::args().position(|a| a == "--wait-pid") {
+        if let Some(pid_str) = std::env::args().nth(pos + 1) {
+            if let Ok(pid) = pid_str.parse::<u32>() {
+                crate::platform::single_instance::wait_for_process_exit(pid);
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let old_exe = current_exe.with_extension("exe.old");
+        if old_exe.exists() {
+            let _ = fs::remove_file(&old_exe);
+        }
+        if let Err(e) = fs::rename(&current_exe, &old_exe) {
+            crate::utils::message_box(
+                "Open Antigravity Update",
+                &format!("Не удалось подготовить замену исполняемого файла: {e}"),
+            );
+            std::process::exit(1);
+        }
+        if let Err(e) = fs::copy(&new_exe, &current_exe) {
+            let _ = fs::rename(&old_exe, &current_exe);
+            crate::utils::message_box(
+                "Open Antigravity Update",
+                &format!("Не удалось скопировать обновлённый файл: {e}"),
+            );
+            std::process::exit(1);
+        }
+
+        // Spawn updated application normally (without helper flags)
+        let mut clean_args: Vec<String> = Vec::new();
+        let mut skip_next = false;
+        for arg in std::env::args().skip(1) {
+            if skip_next {
+                skip_next = false;
+                continue;
+            }
+            if arg == "--apply-update" || arg == "--wait-pid" {
+                skip_next = true;
+                continue;
+            }
+            clean_args.push(arg);
+        }
+
+        let mut cmd = std::process::Command::new(&current_exe);
+        cmd.args(&clean_args);
+        if let Err(e) = cmd.spawn() {
+            crate::utils::message_box(
+                "Open Antigravity Update",
+                &format!("Не удалось запустить обновлённое приложение: {e}"),
+            );
+            std::process::exit(1);
+        }
+        std::process::exit(0);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = new_exe;
+        std::process::exit(0);
     }
 }
 

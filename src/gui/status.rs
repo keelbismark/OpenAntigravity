@@ -58,7 +58,7 @@ impl Action {
     pub fn label(self) -> &'static str {
         match self {
             Action::EnableAll => "Активировать",
-            Action::Elevate => "Перезапустить с правами администратора",
+            Action::Elevate => "Активировать",
             Action::Repair => "Активировать",
             Action::KillHolder => "Освободить порт",
             Action::Verify => "Подтвердить аккаунт в браузере",
@@ -476,9 +476,9 @@ pub fn headline(f: &Facts) -> Headline {
     if !f.admin && (!f.bypass_on || service_broken) {
         return Headline {
             tone: Tone::Action,
-            title: "Нужны права администратора".into(),
-            detail: "Без них обход ошибки 400 не установить и не перезапустить. Разблокировка входа \
-                     работает и так."
+            title: "Требуется повышение прав".into(),
+            detail: "Для установки сетевого шлюза и обхода ошибки 400 требуются права администратора. \
+                     Нажмите «Активировать» для бесшовного запуска с подтверждением UAC."
                 .into(),
             action: Some(Action::Elevate),
         };
