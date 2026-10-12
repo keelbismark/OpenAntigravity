@@ -780,38 +780,78 @@ pub fn download_file(
     Err(format!("слишком много перенаправлений (>{MAX_REDIRECTS})"))
 }
 
-fn find_binary_in_dir(dir: &std::path::Path) -> Option<PathBuf> {
-    let entries = fs::read_dir(dir).ok()?;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_file() {
-            #[cfg(target_os = "windows")]
-            {
-                if let Some(ext) = path.extension() {
-                    if ext.eq_ignore_ascii_case("exe") {
-                        return Some(path);
+fn collect_binaries(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                #[cfg(target_os = "windows")]
+                {
+                    if path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("exe")) {
+                        out.push(path);
                     }
                 }
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                if name == "open_antigravity" || name.ends_with(".AppImage") {
-                    return Some(path);
+                #[cfg(not(target_os = "windows"))]
+                {
+                    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    if name == "open_antigravity" || name.ends_with(".AppImage") {
+                        out.push(path);
+                    }
                 }
-            }
-        } else if path.is_dir() {
-            if let Some(found) = find_binary_in_dir(&path) {
-                return Some(found);
+            } else if path.is_dir() {
+                collect_binaries(&path, out);
             }
         }
     }
-    None
+}
+
+fn find_binary_in_dir(dir: &std::path::Path) -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    collect_binaries(dir, &mut candidates);
+
+    #[cfg(target_os = "windows")]
+    {
+        for c in &candidates {
+            if let Some(name) = c.file_name().and_then(|n| n.to_str()) {
+                if name.eq_ignore_ascii_case("OpenAntigravity.exe")
+                    || name.eq_ignore_ascii_case("open_antigravity.exe")
+                {
+                    return Some(c.clone());
+                }
+            }
+        }
+        candidates.into_iter().next()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        for c in &candidates {
+            if let Some(name) = c.file_name().and_then(|n| n.to_str()) {
+                if name == "open_antigravity" || name.ends_with(".AppImage") {
+                    return Some(c.clone());
+                }
+            }
+        }
+        candidates.into_iter().next()
+    }
 }
 
 /// Extracts update archive and returns path to the extracted binary.
 pub fn extract_and_apply_update(archive_path: &std::path::Path) -> Result<PathBuf, String> {
-    let extract_dir = std::env::temp_dir().join(format!("oag_update_{}", std::process::id()));
+    let temp = std::env::temp_dir();
+    if let Ok(entries) = fs::read_dir(&temp) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if name.starts_with("oag_update_") {
+                        let _ = fs::remove_dir_all(&path);
+                    }
+                }
+            }
+        }
+    }
+
+    let extract_dir = temp.join(format!("oag_update_{}", std::process::id()));
     if extract_dir.exists() {
         let _ = fs::remove_dir_all(&extract_dir);
     }
@@ -922,6 +962,12 @@ pub fn restart_with_new_binary(new_exe: &std::path::Path) -> Result<(), String> 
                 }
                 if copied {
                     let _ = fs::remove_file(&old_exe);
+                    if let Some(parent) = new_exe.parent() {
+                        let temp = std::env::temp_dir();
+                        if parent.starts_with(&temp) {
+                            let _ = fs::remove_dir_all(parent);
+                        }
+                    }
                     in_place_ok = true;
                     break;
                 } else {
@@ -941,14 +987,14 @@ pub fn restart_with_new_binary(new_exe: &std::path::Path) -> Result<(), String> 
         }
 
         // 4. In-place replacement failed (e.g. Program Files permissions).
-        // Relaunch elevated via helper with UAC prompt.
-        let helper_params = format!("--apply-update \"{}\"", new_exe.display());
+        // Relaunch elevated via helper with UAC prompt, forwarding --wait-pid so the helper waits for this process to exit.
+        let helper_params = format!("--apply-update \"{}\" --wait-pid {}", new_exe.display(), current_pid);
         if crate::utils::relaunch_elevated_with(&helper_params) {
             crate::platform::single_instance::release_active_lock();
             std::process::exit(0);
         }
 
-        return Err("не удалось обновить исполняемый файл (отказано в доступе)".to_string());
+        Err("не удалось обновить исполняемый файл (отказано в доступе)".to_string())
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -1094,6 +1140,14 @@ pub fn run_apply_update_helper(new_exe_str: &str) {
 
         // Clean up old_exe
         let _ = fs::remove_file(&old_exe);
+
+        // Clean up temporary extraction folder if it sits in temp
+        if let Some(parent) = new_exe.parent() {
+            let temp = std::env::temp_dir();
+            if parent.starts_with(&temp) {
+                let _ = fs::remove_dir_all(parent);
+            }
+        }
 
         // Spawn updated application normally (without helper flags)
         let mut clean_args: Vec<String> = Vec::new();

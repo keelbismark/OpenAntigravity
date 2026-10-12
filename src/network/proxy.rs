@@ -263,8 +263,8 @@ fn ours_answers(port: u16) -> bool {
         // A name that cannot be read is given the benefit of the doubt: the
         // relay writes the variable itself anyway, and a refusal here would
         // only keep the window from doing it too.
-        return crate::portcheck::listener_image(addr_at(port))
-            .is_none_or(|n| names.contains(&n.to_ascii_lowercase()));
+        crate::portcheck::listener_image(addr_at(port))
+            .is_none_or(|n| names.contains(&n.to_ascii_lowercase()))
     }
     #[cfg(not(windows))]
     true

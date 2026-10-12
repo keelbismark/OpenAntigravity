@@ -689,22 +689,30 @@ fn main() {
     // Clean up any stale .old binary left by a previous auto-update
     let mut just_updated = false;
     if let Ok(exe) = std::env::current_exe() {
-        let old = exe.with_extension("exe.old");
-        if old.exists() {
-            let _ = std::fs::remove_file(old);
-            just_updated = true;
+        if let Some(parent) = exe.parent() {
+            let exe_name = exe.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if let Ok(entries) = fs::read_dir(parent) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        let is_our_old = (name.starts_with("OpenAntigravity") && name.contains(".old"))
+                            || (!exe_name.is_empty() && name.starts_with(exe_name) && name.contains(".old"));
+                        if is_our_old && fs::remove_file(&path).is_ok() {
+                            just_updated = true;
+                        }
+                    }
+                }
+            }
         }
         #[cfg(not(target_os = "windows"))]
         {
             let old_unix = exe.with_extension("old");
-            if old_unix.exists() {
-                let _ = std::fs::remove_file(old_unix);
+            if old_unix.exists() && fs::remove_file(old_unix).is_ok() {
                 just_updated = true;
             }
             if let Ok(appimage) = std::env::var("APPIMAGE") {
                 let old_appimage = std::path::PathBuf::from(appimage).with_extension("AppImage.old");
-                if old_appimage.exists() {
-                    let _ = std::fs::remove_file(old_appimage);
+                if old_appimage.exists() && fs::remove_file(old_appimage).is_ok() {
                     just_updated = true;
                 }
             }

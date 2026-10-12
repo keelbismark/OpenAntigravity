@@ -88,10 +88,10 @@ fn process_icon_assets() {
             if !asset_icon.exists() || fs::read(asset_icon).map_or(true, |b| b != root_bytes) {
                 let _ = fs::write(asset_icon, &root_bytes);
             }
-            if docs_icon.parent().map_or(false, |p| p.exists()) {
-                if !docs_icon.exists() || fs::read(docs_icon).map_or(true, |b| b != root_bytes) {
-                    let _ = fs::write(docs_icon, &root_bytes);
-                }
+            if docs_icon.parent().is_some_and(|p| p.exists())
+                && (!docs_icon.exists() || fs::read(docs_icon).map_or(true, |b| b != root_bytes))
+            {
+                let _ = fs::write(docs_icon, &root_bytes);
             }
         }
         root_icon
@@ -100,10 +100,10 @@ fn process_icon_assets() {
             if !root_icon.exists() || fs::read(root_icon).map_or(true, |b| b != asset_bytes) {
                 let _ = fs::write(root_icon, &asset_bytes);
             }
-            if docs_icon.parent().map_or(false, |p| p.exists()) {
-                if !docs_icon.exists() || fs::read(docs_icon).map_or(true, |b| b != asset_bytes) {
-                    let _ = fs::write(docs_icon, &asset_bytes);
-                }
+            if docs_icon.parent().is_some_and(|p| p.exists())
+                && (!docs_icon.exists() || fs::read(docs_icon).map_or(true, |b| b != asset_bytes))
+            {
+                let _ = fs::write(docs_icon, &asset_bytes);
             }
         }
         asset_icon
@@ -470,8 +470,8 @@ fn main() {
             ),
         );
         // Kept in step with Cargo.toml, which build_rust.py rewrites per release.
-        res.set("FileVersion", &version);
-        res.set("ProductVersion", &version);
+        res.set("FileVersion", version);
+        res.set("ProductVersion", version);
         // OAG_NO_RES: кросс-проверка типов с Linux (`cargo check --target
         // x86_64-pc-windows-gnu`) — компилятор ресурсов требует rc.exe/windres,
         // которых на другой ОС нет; на обычной сборке под Windows ничего не меняет.

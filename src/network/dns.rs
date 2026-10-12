@@ -117,9 +117,9 @@ pub fn flush_client_cache() -> bool {
     type FlushEntry = unsafe extern "system" fn(*const u16) -> i32;
 
     let entry = unsafe {
-        match LoadLibraryA(b"dnsapi.dll\0".as_ptr()) {
+        match LoadLibraryA(c"dnsapi.dll".as_ptr() as *const u8) {
             0 => 0,
-            dll => GetProcAddress(dll, b"DnsFlushResolverCacheEntry_W\0".as_ptr()),
+            dll => GetProcAddress(dll, c"DnsFlushResolverCacheEntry_W".as_ptr() as *const u8),
         }
     };
     if entry != 0 {
@@ -672,7 +672,7 @@ pub fn setup_dns_nrpt() -> Result<DnsOutcome, String> {
     }
 
     Ok(DnsOutcome {
-        vpn_active: egress.as_ref().map_or(false, |e: &Egress| e.vpn_active),
+        vpn_active: egress.as_ref().is_some_and(|e: &Egress| e.vpn_active),
         stood_down_for_vpn: false,
         client,
         via_relay,

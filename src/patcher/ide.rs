@@ -187,16 +187,17 @@ pub fn patch_ide(_inst: &Path, main_js: &Path) -> Result<(), String> {
         let pattern_str = r#"async\s+([A-Za-z_$0-9]+)\(([A-Za-z_$0-9]+)\)\s*\{\s*if\(this\.([A-Za-z_$0-9]+)\.send\(\{type:[A-Za-z_$0-9]+\.isGcpTos\?"GCP_SIGN_IN":"SIGN_IN"\}\),this\.([A-Za-z_$0-9]+)\.resetIsTierGCPTos\(\),this\.[A-Za-z_$0-9]+\.isGoogleInternal\)\{try\{await this\.([A-Za-z_$0-9]+)\.loadCodeAssist\([A-Za-z_$0-9]+\);const\{settings:([A-Za-z_$0-9]+),userTier:([A-Za-z_$0-9]+)\}=await this\.refreshUserStatus\([A-Za-z_$0-9]+\),([A-Za-z_$0-9]+)=([A-Za-z_$0-9]+)\([A-Za-z_$0-9]+\);this\.([A-Za-z_$0-9]+)\.pushUpdate\([A-Za-z_$0-9]+\),this\.[A-Za-z_$0-9]+\.send\(\{type:"AUTH_SUCCESS",tokenInfo:[A-Za-z_$0-9]+\}\),this\.([A-Za-z_$0-9]+)\.fire\(\{settings:[A-Za-z_$0-9]+,userTier:[A-Za-z_$0-9]+\}\)\}catch\(([A-Za-z_$0-9]+)\)\{.*?(?:return\}|return;\s*\})"#;
     }
 
-    let re = Regex::new(pattern_str).unwrap();
+    let re = Regex::new(pattern_str).map_err(|e| format!("Ошибка компиляции регулярного выражения: {e}"))?;
     if let Some(caps) = re.captures(&content) {
-        let fname = caps.get(1).unwrap().as_str();
-        let var_t = caps.get(2).unwrap().as_str();
-        let var_t_send = caps.get(3).unwrap().as_str();
-        let var_y = caps.get(4).unwrap().as_str();
-        let var_func = caps.get(9).unwrap().as_str();
-        let var_f = caps.get(10).unwrap().as_str();
-        let var_h = caps.get(11).unwrap().as_str();
-        let var_i = caps.get(8).unwrap().as_str();
+        let fname = caps.get(1).map(|m| m.as_str()).ok_or("Не найдена сигнатура функции")?;
+        let var_t = caps.get(2).map(|m| m.as_str()).ok_or("Не найдена сигнатура аргументов")?;
+        let var_t_send = caps.get(3).map(|m| m.as_str()).ok_or("Не найдена сигнатура dispatch")?;
+        let var_y = caps.get(4).map(|m| m.as_str()).ok_or("Не найдена сигнатура контекста")?;
+        let var_func = caps.get(9).map(|m| m.as_str()).ok_or("Не найдена сигнатура трансформера")?;
+        let var_f = caps.get(10).map(|m| m.as_str()).ok_or("Не найдена сигнатура обновлений")?;
+        let var_h = caps.get(11).map(|m| m.as_str()).ok_or("Не найдена сигнатура событий")?;
+        let var_i = caps.get(8).map(|m| m.as_str()).ok_or("Не найдена сигнатура состояния")?;
+        let full_match = caps.get(0).ok_or("Ошибка сопоставления диапазона")?;
 
         let payload = format!(
             r#"async {fname}({var_t}){{
@@ -220,9 +221,9 @@ pub fn patch_ide(_inst: &Path, main_js: &Path) -> Result<(), String> {
 
         let new_content = format!(
             "{}\n{}",
-            content[..caps.get(0).unwrap().start()].to_string()
+            content[..full_match.start()].to_string()
                 + &payload
-                + &content[caps.get(0).unwrap().end()..],
+                + &content[full_match.end()..],
             crate::canary::file_marker()
         );
         // Pristine copy before the first edit, so the revert can restore it (G25),
@@ -501,15 +502,17 @@ fn apply_desktop_inline_patches(content: &str) -> String {
     output = output.replace("ineligible", "inexigible");
 
     let re_getus = Regex::new(
-        r#"let ([A-Za-z_$]+)=.*\.getUserStatus\(\{\}\)\)\)\.userStatus;if\([A-Za-z_$]+\)\{"#,
+        r#"let ([A-Za-z_$]+)=(.*\.getUserStatus\(\{\}\)\)\)\.userStatus);if\(([A-Za-z_$]+)\)\{"#,
     )
     .unwrap();
     output = re_getus.replace_all(&output, |caps: &regex::Captures| {
-        if caps.get(1).map_or("", |m| m.as_str()) != caps.get(2).map_or("", |m| m.as_str()) {
+        let v = caps.get(1).map_or("", |m| m.as_str());
+        let expr = caps.get(2).map_or("", |m| m.as_str());
+        let cond = caps.get(3).map_or("", |m| m.as_str());
+        if v.is_empty() || v != cond {
             return caps.get(0).map_or("", |m| m.as_str()).to_string();
         }
-        let v = caps.get(1).map_or("", |m| m.as_str());
-        format!("let {v}=...getUserStatus({{}}))).userStatus;{v}={{\"planStatus\":{{\"planInfo\":{{\"planName\":\"pro\"}}}},\"disableTelemetry\":false,\"userDataCollectionForceDisabled\":false}};if({v}){{")
+        format!("let {v}={expr};{v}={{\"planStatus\":{{\"planInfo\":{{\"planName\":\"pro\"}}}},\"disableTelemetry\":false,\"userDataCollectionForceDisabled\":false}};if({v}){{")
     }).to_string();
 
     let re_auth = Regex::new(r#"_handleAuthErrorResponse\(([A-Za-z_$]+)\)\{var ([A-Za-z_$]+)=([A-Za-z_$]+)\?\.failureDetails;"#).unwrap();
@@ -533,7 +536,8 @@ fn apply_desktop_inline_patches(content: &str) -> String {
     let re_eligible = Regex::new(r#"(isEligible:\s*)false"#).unwrap();
     output = re_eligible
         .replace_all(&output, |caps: &regex::Captures| {
-            format!("{}true", &caps[1])
+            let prefix = caps.get(1).map_or("isEligible:", |m| m.as_str());
+            format!("{}true", prefix)
         })
         .to_string();
 

@@ -153,6 +153,8 @@ mod windows_impl {
         let me = std::process::id();
         let mut pids = read_relay_pid().into_iter().collect::<Vec<_>>();
         pids.extend(relay_pids_by_cmdline());
+        pids.sort_unstable();
+        pids.dedup();
         let mut killed = false;
         for pid in pids {
             if pid == me {
@@ -249,7 +251,7 @@ mod windows_impl {
         }
         let mut cmd = Command::new("tasklist");
         cmd.args(["/FI", &format!("IMAGENAME eq {}", EXE_NAME), "/NH"]);
-        bounded_output(no_window(&mut cmd), HELPER_LIMIT).map_or(false, |o| {
+        bounded_output(no_window(&mut cmd), HELPER_LIMIT).is_some_and(|o| {
             String::from_utf8_lossy(&o.stdout).contains(EXE_NAME)
         })
     }
@@ -550,14 +552,12 @@ mod windows_impl {
         if crate::portable::enabled() {
             return;
         }
-        for task in [WATCHDOG_TASK_NAME] {
-            let cmd = format!(
-                "Stop-ScheduledTask -TaskName '{task}' -ErrorAction SilentlyContinue; \
-                 Unregister-ScheduledTask -TaskName '{task}' -Confirm:$false -ErrorAction SilentlyContinue",
-                task = task
-            );
-            powershell(&cmd);
-        }
+        let cmd = format!(
+            "Stop-ScheduledTask -TaskName '{task}' -ErrorAction SilentlyContinue; \
+             Unregister-ScheduledTask -TaskName '{task}' -Confirm:$false -ErrorAction SilentlyContinue",
+            task = WATCHDOG_TASK_NAME
+        );
+        powershell(&cmd);
     }
 
     /// Stops and disables the logon task that runs **the other copy** of the relay.
@@ -616,14 +616,12 @@ pub fn disable() -> Result<(), String> {
             fs::remove_dir(dns_forwarder::log_dir()).ok();
             return Ok(());
         }
-        for task in [TASK_NAME] {
-            let cmd = format!(
-                "Stop-ScheduledTask -TaskName '{task}' -ErrorAction SilentlyContinue; \
-                 Unregister-ScheduledTask -TaskName '{task}' -Confirm:$false -ErrorAction SilentlyContinue",
-                task = task
-            );
-            powershell(&cmd);
-        }
+        let cmd = format!(
+            "Stop-ScheduledTask -TaskName '{task}' -ErrorAction SilentlyContinue; \
+             Unregister-ScheduledTask -TaskName '{task}' -Confirm:$false -ErrorAction SilentlyContinue",
+            task = TASK_NAME
+        );
+        powershell(&cmd);
         stop_process();
         fs::remove_file(installed_exe()).ok();
         fs::remove_file(dns_forwarder::log_path()).ok();

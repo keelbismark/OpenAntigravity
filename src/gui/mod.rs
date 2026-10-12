@@ -767,12 +767,13 @@ impl eframe::App for App {
         // When the user clicks minimize [_], hide to the system tray if there
         // is one to hide into. Not a close: the app keeps running, and the tray
         // icon is the way back in.
-        if self.tray_items.is_some() && !self.tray_hidden {
-            if ctx.input(|i| i.viewport().minimized == Some(true)) {
-                self.tray_hidden = true;
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-            }
+        if self.tray_items.is_some()
+            && !self.tray_hidden
+            && ctx.input(|i| i.viewport().minimized == Some(true))
+        {
+            self.tray_hidden = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
         }
 
         // Live proxy ping check: runs automatically every 25 seconds if proxy is configured and enabled

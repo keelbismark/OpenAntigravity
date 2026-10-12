@@ -135,9 +135,9 @@ pub fn diagnose_on(addr: SocketAddr, err: &std::io::Error, proto: Proto) -> Caus
     Cause::Other
 }
 
-/// ---------------------------------------------------------------------------
-/// Who is listening
-/// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Who is listening
+// ---------------------------------------------------------------------------
 
 /// The holder of `addr` to name: the exact address first, the wildcard only
 /// after it, and a copy of our own relay ahead of anyone else.

@@ -315,7 +315,7 @@ pub fn parse(input: &str) -> Result<Upstream, String> {
 /// Parses multiple proxies separated by newline, semicolon, or pipe ('|').
 pub fn parse_multiple(input: &str) -> Result<Vec<Upstream>, String> {
     let parts: Vec<&str> = input
-        .split(|c| c == '\n' || c == '\r' || c == ';' || c == '|')
+        .split(['\n', '\r', ';', '|'])
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
         .collect();
@@ -359,7 +359,7 @@ pub fn save_multiple(list: &[Upstream]) -> Result<(), String> {
 }
 
 pub fn save(up: &Upstream) -> Result<(), String> {
-    save_multiple(&[up.clone()])
+    save_multiple(std::slice::from_ref(up))
 }
 
 pub fn clear() {
