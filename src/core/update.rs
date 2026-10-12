@@ -41,10 +41,10 @@ use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, ClientConnection};
 use serde::{Deserialize, Serialize};
 
-const CHECK_INTERVAL: Duration = Duration::from_secs(8 * 60 * 60);
+const CHECK_INTERVAL: Duration = Duration::from_secs(15 * 60);
 
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
-const IO_TIMEOUT: Duration = Duration::from_secs(10);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(4);
+const IO_TIMEOUT: Duration = Duration::from_secs(6);
 const MAX_BODY: usize = 256 * 1024;
 const MAX_REDIRECTS: usize = 3;
 
@@ -285,10 +285,12 @@ fn parse_url(url: &str) -> Result<ParsedUrl, String> {
 
 /// Connects a TCP stream to `host:port` with a connection timeout.
 fn connect_tcp(host: &str, port: u16) -> Result<TcpStream, String> {
-    let addrs: Vec<_> = (host, port)
+    let mut addrs: Vec<_> = (host, port)
         .to_socket_addrs()
         .map_err(|e| format!("DNS resolution failed for {}: {}", host, e))?
         .collect();
+    // Prioritize IPv4 addresses so systems with broken or unrouted IPv6 do not stall on connection timeouts
+    addrs.sort_by_key(|a| if a.is_ipv4() { 0 } else { 1 });
 
     let mut last_err = None;
     for addr in addrs {
@@ -521,15 +523,15 @@ pub fn check_update_cached(force: bool) -> Result<Option<UpdateInfo>, String> {
     if !force {
         if let Ok(data) = fs::read_to_string(&path) {
             if let Ok(cached) = serde_json::from_str::<CachedCheck>(&data) {
-                if cached.url == url
-                    && now_unix >= cached.checked_at_unix
-                    && Duration::from_secs(now_unix - cached.checked_at_unix) < CHECK_INTERVAL
-                {
-                    return if cached.info.is_newer_than_current() {
-                        Ok(Some(cached.info))
-                    } else {
-                        Ok(None)
-                    };
+                if cached.url == url && now_unix >= cached.checked_at_unix {
+                    let elapsed = Duration::from_secs(now_unix - cached.checked_at_unix);
+                    if cached.info.is_newer_than_current() {
+                        if elapsed < CHECK_INTERVAL {
+                            return Ok(Some(cached.info));
+                        }
+                    } else if elapsed < Duration::from_secs(2 * 60) {
+                        return Ok(None);
+                    }
                 }
             }
         }
@@ -561,12 +563,8 @@ pub fn manual_check() -> Result<Option<UpdateInfo>, String> {
 
 /// Watches the feed for as long as the receiver lives.
 ///
-/// Checked once immediately — the banner has to be up before the licence
-/// screen is even answered — and then every `CHECK_INTERVAL` for a window
-/// that stays open. Only the first pass may answer from the on-disk cache:
-/// after that the thread has already waited the full interval, so re-reading
-/// a cache it wrote itself would just double the wait. Inert unless
-/// `update_url()` says where to look.
+/// Checked immediately on startup (serving from cache if available on frame 0,
+/// followed by an immediate live network verification) and then every `CHECK_INTERVAL`.
 pub fn spawn_watch(tx: std::sync::mpsc::Sender<UpdateInfo>, wake: Box<dyn Fn() + Send>) {
     if update_url().is_none() {
         return;
@@ -574,30 +572,45 @@ pub fn spawn_watch(tx: std::sync::mpsc::Sender<UpdateInfo>, wake: Box<dyn Fn() +
     std::thread::Builder::new()
         .name("update-watch".to_string())
         .spawn(move || {
-            let mut first = true;
+            // 1. Instant cache check: if a newer release was already cached, show it on frame 0
+            if let Ok(Some(cached_info)) = check_update_cached(false) {
+                if tx.send(cached_info).is_err() {
+                    return;
+                }
+                wake();
+            }
+
+            // 2. Immediate live network check on startup to discover newly published versions
+            match check_update_cached(true) {
+                Ok(Some(info)) => {
+                    if tx.send(info).is_err() {
+                        return;
+                    }
+                    wake();
+                }
+                Ok(None) => {}
+                Err(_e) => {
+                    #[cfg(debug_assertions)]
+                    eprintln!("startup update check failed: {}", _e);
+                }
+            }
+
+            // 3. Periodic background check
             loop {
-                match check_update_cached(!first) {
+                std::thread::sleep(CHECK_INTERVAL);
+                match check_update_cached(true) {
                     Ok(Some(info)) => {
-                        // A closed receiver means the window is gone; so is the
-                        // reason to keep checking.
                         if tx.send(info).is_err() {
                             return;
                         }
-                        // egui sleeps until something asks it to repaint, so a
-                        // banner that only lands in a channel stays invisible
-                        // until the user happens to move the mouse.
                         wake();
                     }
                     Ok(None) => {}
                     Err(_e) => {
-                        // Background check: a failure is not the user's problem,
-                        // and there is no UI surface that could act on it.
                         #[cfg(debug_assertions)]
-                        eprintln!("update check failed: {}", _e);
+                        eprintln!("periodic update check failed: {}", _e);
                     }
                 }
-                first = false;
-                std::thread::sleep(CHECK_INTERVAL);
             }
         })
         .ok();
@@ -847,6 +860,25 @@ pub fn extract_and_apply_update(archive_path: &std::path::Path) -> Result<PathBu
 pub fn restart_with_new_binary(new_exe: &std::path::Path) -> Result<(), String> {
     let current_exe = std::env::current_exe()
         .map_err(|e| format!("не удалось определить путь к текущему приложению: {e}"))?;
+    let current_pid = std::process::id();
+
+    // Prepare arguments for restarted process: forward user arguments, strip any previous --wait-pid,
+    // and append --wait-pid <current_pid> so the new instance waits for this one to exit and release its locks.
+    let mut clean_args: Vec<String> = Vec::new();
+    let mut skip_next = false;
+    for arg in std::env::args().skip(1) {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if arg == "--wait-pid" {
+            skip_next = true;
+            continue;
+        }
+        clean_args.push(arg);
+    }
+    clean_args.push("--wait-pid".to_string());
+    clean_args.push(current_pid.to_string());
 
     #[cfg(target_os = "windows")]
     {
@@ -861,8 +893,11 @@ pub fn restart_with_new_binary(new_exe: &std::path::Path) -> Result<(), String> 
             return Err(format!("не удалось скопировать новый exe: {e}"));
         }
 
+        // Release our single instance mutex right now so the new process doesn't collide
+        crate::platform::single_instance::release_active_lock();
+
         let mut cmd = std::process::Command::new(&current_exe);
-        cmd.args(std::env::args().skip(1));
+        cmd.args(&clean_args);
         cmd.spawn()
             .map_err(|e| format!("не удалось перезапустить обновлённое приложение: {e}"))?;
         std::process::exit(0);
@@ -881,8 +916,11 @@ pub fn restart_with_new_binary(new_exe: &std::path::Path) -> Result<(), String> 
             fs::copy(new_exe, &target)
                 .map_err(|e| format!("не удалось обновить AppImage: {e}"))?;
             let _ = fs::set_permissions(&target, fs::Permissions::from_mode(0o755));
+
+            crate::platform::single_instance::release_active_lock();
+
             let mut cmd = std::process::Command::new(&target);
-            cmd.args(std::env::args().skip(1));
+            cmd.args(&clean_args);
             cmd.spawn()
                 .map_err(|e| format!("не удалось перезапустить AppImage: {e}"))?;
             std::process::exit(0);
@@ -895,8 +933,11 @@ pub fn restart_with_new_binary(new_exe: &std::path::Path) -> Result<(), String> 
             fs::copy(new_exe, &current_exe)
                 .map_err(|e| format!("не удалось заменить бинарник: {e}"))?;
             let _ = fs::set_permissions(&current_exe, fs::Permissions::from_mode(0o755));
+
+            crate::platform::single_instance::release_active_lock();
+
             let mut cmd = std::process::Command::new(&current_exe);
-            cmd.args(std::env::args().skip(1));
+            cmd.args(&clean_args);
             cmd.spawn()
                 .map_err(|e| format!("не удалось перезапустить приложение: {e}"))?;
             std::process::exit(0);

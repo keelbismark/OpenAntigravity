@@ -20,22 +20,51 @@ unsafe impl Send for InstanceLock {}
 #[cfg(target_os = "windows")]
 unsafe impl Sync for InstanceLock {}
 
-#[cfg(target_os = "windows")]
-impl Drop for InstanceLock {
-    fn drop(&mut self) {
+impl InstanceLock {
+    pub fn release(&mut self) {
+        #[cfg(target_os = "windows")]
         if !self.handle.is_null() {
             extern "system" {
                 fn CloseHandle(hObject: *mut std::ffi::c_void) -> i32;
             }
             unsafe { CloseHandle(self.handle) };
+            self.handle = std::ptr::null_mut();
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            use std::os::unix::io::AsRawFd;
+            extern "C" {
+                fn flock(fd: i32, operation: i32) -> i32;
+            }
+            const LOCK_UN: i32 = 8;
+            unsafe { flock(self._file.as_raw_fd(), LOCK_UN) };
+            let _ = std::fs::remove_file(&self._path);
         }
     }
 }
 
-#[cfg(not(target_os = "windows"))]
 impl Drop for InstanceLock {
     fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self._path);
+        self.release();
+    }
+}
+
+static ACTIVE_LOCK: std::sync::Mutex<Option<InstanceLock>> = std::sync::Mutex::new(None);
+
+/// Explicitly releases the process's active single-instance lock before spawning a replacement process.
+pub fn release_active_lock() {
+    if let Ok(mut active) = ACTIVE_LOCK.lock() {
+        if let Some(mut lock) = active.take() {
+            lock.release();
+        }
+    }
+}
+
+pub struct InstanceLockGuard;
+
+impl Drop for InstanceLockGuard {
+    fn drop(&mut self) {
+        release_active_lock();
     }
 }
 
@@ -50,17 +79,25 @@ pub fn wait_for_process_exit(pid: u32) {
     unsafe {
         let handle = OpenProcess(SYNCHRONIZE, 0, pid);
         if !handle.is_null() {
-            WaitForSingleObject(handle, 5000);
+            WaitForSingleObject(handle, 6000);
             CloseHandle(handle);
         }
     }
-    // Give OS handle table a brief moment to finish teardown
-    std::thread::sleep(std::time::Duration::from_millis(50));
+    // Give OS handle table a moment to finish teardown
+    std::thread::sleep(std::time::Duration::from_millis(100));
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn wait_for_process_exit(_pid: u32) {
-    std::thread::sleep(std::time::Duration::from_millis(50));
+pub fn wait_for_process_exit(pid: u32) {
+    let start = std::time::Instant::now();
+    let proc_path = std::path::PathBuf::from(format!("/proc/{}", pid));
+    while start.elapsed() < std::time::Duration::from_secs(6) {
+        if !proc_path.exists() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    std::thread::sleep(std::time::Duration::from_millis(100));
 }
 
 #[cfg(target_os = "windows")]
@@ -80,10 +117,10 @@ pub fn try_acquire_named(name: &str) -> Result<InstanceLock, String> {
     let mut wide: Vec<u16> = name.encode_utf16().collect();
     wide.push(0);
 
-    // If an instance is currently terminating (e.g. elevation restart),
+    // If an instance is currently terminating (e.g. elevation restart or auto-update restart),
     // retry briefly before concluding it is a duplicate instance.
     let is_relaunch = std::env::args().any(|a| a == "--wait-pid");
-    let max_attempts = if is_relaunch { 20 } else { 1 };
+    let max_attempts = if is_relaunch { 30 } else { 5 };
 
     for attempt in 0..max_attempts {
         let handle = unsafe { CreateMutexW(std::ptr::null_mut(), 1, wide.as_ptr()) };
@@ -137,29 +174,35 @@ pub fn try_acquire_at(path: &Path) -> Result<InstanceLock, String> {
         .open(path)
         .map_err(|e| format!("Не удалось открыть файл блокировки: {e}"))?;
 
-    let res = unsafe { flock(file.as_raw_fd(), LOCK_EX | LOCK_NB) };
-    if res != 0 {
-        return Err("Приложение уже запущено (в фоновом режиме или в трее).".to_string());
+    let is_relaunch = std::env::args().any(|a| a == "--wait-pid");
+    let max_attempts = if is_relaunch { 30 } else { 5 };
+
+    for attempt in 0..max_attempts {
+        let res = unsafe { flock(file.as_raw_fd(), LOCK_EX | LOCK_NB) };
+        if res == 0 {
+            let _ = file.set_len(0);
+            let _ = writeln!(file, "{}", std::process::id());
+
+            return Ok(InstanceLock {
+                _file: file,
+                _path: path.to_path_buf(),
+            });
+        }
+        if attempt + 1 < max_attempts {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
     }
 
-    let _ = file.set_len(0);
-    let _ = writeln!(file, "{}", std::process::id());
-
-    Ok(InstanceLock {
-        _file: file,
-        _path: path.to_path_buf(),
-    })
+    Err("Приложение уже запущено (в фоновом режиме или в трее).".to_string())
 }
 
 /// Attempts to acquire the global single-instance lock for Open Antigravity.
-pub fn try_acquire() -> Result<InstanceLock, String> {
+pub fn try_acquire() -> Result<InstanceLockGuard, String> {
     #[cfg(target_os = "windows")]
-    {
-        try_acquire_named("Local\\OpenAntigravitySingleInstanceMutex")
-    }
+    let lock = try_acquire_named("Local\\OpenAntigravitySingleInstanceMutex")?;
 
     #[cfg(not(target_os = "windows"))]
-    {
+    let lock = {
         let path = if let Some(dir) = crate::portable::data_dir() {
             if std::fs::create_dir_all(&dir).is_ok() {
                 dir.join("app.lock")
@@ -169,8 +212,14 @@ pub fn try_acquire() -> Result<InstanceLock, String> {
         } else {
             std::env::temp_dir().join("open_antigravity.lock")
         };
-        try_acquire_at(&path)
+        try_acquire_at(&path)?
+    };
+
+    if let Ok(mut active) = ACTIVE_LOCK.lock() {
+        *active = Some(lock);
     }
+
+    Ok(InstanceLockGuard)
 }
 
 #[cfg(test)]
