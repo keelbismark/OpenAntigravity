@@ -51,7 +51,7 @@ pub struct App {
     manual_tx: std::sync::mpsc::Sender<Result<Option<UpdateInfo>, String>>,
     manual_rx: Receiver<Result<Option<UpdateInfo>, String>>,
     manual_running: bool,
-    manual_result: Option<(String, std::time::Instant)>,
+    pub(crate) manual_result: Option<(String, std::time::Instant)>,
 
     worker: Worker,
     events: Receiver<Event>,

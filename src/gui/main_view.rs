@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use super::status::{self, Action, Tone};
 use super::widgets::{self, Icon};
-use super::{theme, App, Tab, DOCS_URL, GITHUB_RELEASES_URL, GITHUB_URL};
+use super::{theme, App, Tab, DOCS_URL, GITHUB_URL};
 use crate::ops::{Cap, Cmd, Level};
 use crate::utils::mask_path;
 
@@ -923,8 +923,10 @@ fn footer(app: &mut App, ui: &mut egui::Ui) {
             ui.label(egui::RichText::new("·").size(FOOTER_TEXT).color(theme::LINE));
             let update_label = if app.manual_running {
                 "Проверка…"
+            } else if let Some((msg, _)) = &app.manual_result {
+                msg.as_str()
             } else {
-                "Обновления"
+                "Проверить обновления"
             };
             let update_resp = widgets::btn(
                 ui,
@@ -936,7 +938,6 @@ fn footer(app: &mut App, ui: &mut egui::Ui) {
 
             if !app.manual_running && update_resp.clicked() {
                 app.check_update_manually(ui.ctx());
-                crate::utils::open_url(GITHUB_RELEASES_URL);
             }
         });
     });
