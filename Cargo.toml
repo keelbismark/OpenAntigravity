@@ -1,6 +1,6 @@
 [package]
 name = "open_antigravity"
-version = "1.1.7"
+version = "1.1.8"
 edition = "2021"
 description = "Портативная утилита для работы с Google Antigravity без постоянного VPN"
 authors = ["keelbismark"]
