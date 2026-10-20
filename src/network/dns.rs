@@ -257,19 +257,27 @@ pub fn remove_dns_nrpt() {
     hosts_pin::remove_entries().ok();
     egress::remove_legacy_routes();
 
-    let cmd = format!(
-        "$tags=@({}); Get-DnsClientNrptRule -ErrorAction SilentlyContinue | \
-         Where-Object {{ $tags -contains $_.Comment }} | \
-         Remove-DnsClientNrptRule -Force -ErrorAction SilentlyContinue; \
-         Clear-DnsClientCache -ErrorAction SilentlyContinue",
-        ps_string_list(&all_tags())
-    );
-    powershell(&cmd);
+    let tags = all_tags();
+    let has_rules = crate::platform::fast_win::has_any_nrpt_rules(&tags).unwrap_or(true);
+    if has_rules {
+        let cmd = format!(
+            "$tags=@({}); Get-DnsClientNrptRule -ErrorAction SilentlyContinue | \
+             Where-Object {{ $tags -contains $_.Comment }} | \
+             Remove-DnsClientNrptRule -Force -ErrorAction SilentlyContinue; \
+             Clear-DnsClientCache -ErrorAction SilentlyContinue",
+            ps_string_list(&tags)
+        );
+        powershell(&cmd);
+    }
     invalidate_cache();
 }
 
 /// Namespaces currently installed under our tag, lowercased.
 fn installed_namespaces() -> Vec<String> {
+    #[cfg(target_os = "windows")]
+    if let Some(ns) = crate::platform::fast_win::get_nrpt_namespaces(&[NRPT_TAG]) {
+        return ns;
+    }
     let cmd = format!(
         "Get-DnsClientNrptRule -ErrorAction SilentlyContinue | \
          Where-Object {{$_.Comment -eq '{}'}} | ForEach-Object {{ $_.Namespace }}",
@@ -418,6 +426,10 @@ pub struct DnsOutcome {
 /// is the one place the tool touches another product's configuration, and it is
 /// deliberately narrowed to the exact names it routes.
 fn take_over_conflicting_rules(namespaces: &[&str]) -> Vec<String> {
+    #[cfg(target_os = "windows")]
+    if let Some(false) = crate::platform::fast_win::has_conflicting_rules(namespaces, NRPT_TAG) {
+        return Vec::new();
+    }
     let cmd = format!(
         "$ours=@({ours}); \
          foreach ($r in @(Get-DnsClientNrptRule -ErrorAction SilentlyContinue | \
@@ -597,7 +609,14 @@ pub fn setup_dns_nrpt() -> Result<DnsOutcome, String> {
     // The probe leaves through the ISP interface so a tunnel does not hide the
     // substitution.
     let probe_if = egress.as_ref().map(|e| e.if_index).unwrap_or(0);
-    let probe_until = Instant::now() + PROBE_BUDGET;
+    let probe_until = if via_relay {
+        // When running through local relay, the relay (127.0.0.53) is always the primary
+        // nameserver in NRPT rules, and static fallback IPs are already known.
+        // Skipping live 25-second ISP probing prevents multi-second UI freezing.
+        Instant::now()
+    } else {
+        Instant::now() + Duration::from_secs(3).min(PROBE_BUDGET)
+    };
     let mut probe_gave_up = false;
     let mut adds = String::new();
     for (i, name) in namespaces.iter().enumerate() {

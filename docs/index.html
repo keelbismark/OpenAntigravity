@@ -448,9 +448,13 @@
       </p>
 
       <div class="cta-group">
-        <a id="dl-win" href="https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity-windows-portable.zip" class="btn btn-primary">
+        <a id="dl-win-setup" href="https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity-windows-setup.exe" class="btn btn-primary">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.949-1.801"/></svg>
-          Скачать для Windows (.zip)
+          Установка Windows (.exe)
+        </a>
+        <a id="dl-win-portable" href="https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity-windows-portable.zip" class="btn btn-secondary">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.949-1.801"/></svg>
+          Windows Portable (.zip)
         </a>
         <a id="dl-appimage" href="https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity-x86_64.AppImage" class="btn btn-secondary">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l6 4.5-6 4.5z"/></svg>
@@ -498,8 +502,8 @@
       </div>
 
       <div class="spec-item">
-        <div class="spec-title">Полная портативность</div>
-        <div class="spec-desc">Никаких записей в реестр или скрытых служб. Все настройки, пресеты и отчёты изолированы в рабочей папке <code>data/</code> рядом с программой.</div>
+        <div class="spec-title">Установка или полная портативность</div>
+        <div class="spec-desc">Выбирайте удобный формат: стандартная установка с ярлыками и фоновой службой или переносимый портативный режим (все настройки и кэш изолированы в папке <code>data/</code>).</div>
       </div>
 
       <div class="spec-item">
@@ -566,7 +570,8 @@
     // Auto-sync latest release info from GitHub Releases API with fallback
     async function syncLatestRelease() {
       let version = null;
-      let winUrl = null;
+      let winSetupUrl = null;
+      let winPortableUrl = null;
       let appImageUrl = null;
       let linuxUrl = null;
 
@@ -578,7 +583,15 @@
           if (data.assets && Array.isArray(data.assets)) {
             for (const asset of data.assets) {
               const name = asset.name || '';
-              if (name.endsWith('.zip') && !name.endsWith('.sha256')) winUrl = asset.browser_download_url;
+              if ((name.includes('setup') || name.includes('Setup')) && name.endsWith('.exe') && !name.endsWith('.sha256')) {
+                winSetupUrl = asset.browser_download_url;
+              } else if (name.includes('setup') && name.endsWith('.zip') && !name.endsWith('.sha256') && !winSetupUrl) {
+                winSetupUrl = asset.browser_download_url;
+              } else if (name.endsWith('.zip') && !name.endsWith('.sha256')) {
+                if (!winPortableUrl || name.includes('portable')) {
+                  winPortableUrl = asset.browser_download_url;
+                }
+              }
               if (name.endsWith('.AppImage') && !name.endsWith('.sha256')) appImageUrl = asset.browser_download_url;
               if (name.endsWith('.tar.gz') && !name.endsWith('.sha256')) linuxUrl = asset.browser_download_url;
             }
@@ -594,8 +607,10 @@
           if (res.ok) {
             const data = await res.json();
             version = data.version ? ('v' + data.version.replace(/^v/, '')) : null;
-            winUrl = data.url_windows;
+            winSetupUrl = data.url_windows_setup || data.url_windows;
+            winPortableUrl = data.url_windows_portable || data.url_windows;
             linuxUrl = data.url_linux;
+            appImageUrl = data.url_appimage;
           }
         } catch (e) {}
       }
@@ -607,9 +622,13 @@
           badge.innerHTML = `<span class="dot"></span>Релиз ${cleanVer} · Доступ из любого региона`;
         }
         document.title = `Open Antigravity ${cleanVer} — Среда комфортной работы с Google Antigravity`;
-        if (winUrl) {
-          const btn = document.getElementById('dl-win');
-          if (btn) btn.href = winUrl;
+        if (winSetupUrl) {
+          const btn = document.getElementById('dl-win-setup');
+          if (btn) btn.href = winSetupUrl;
+        }
+        if (winPortableUrl) {
+          const btn = document.getElementById('dl-win-portable');
+          if (btn) btn.href = winPortableUrl;
         }
         if (appImageUrl) {
           const btn = document.getElementById('dl-appimage');

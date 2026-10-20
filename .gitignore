@@ -29,11 +29,14 @@ CLAUDE.md
 # Release packages (keep version.json)
 release/*.tar.gz
 release/*.tar.gz.sha256
+release/*.exe
+release/*.exe.sha256
 release/*.zip
 release/*.zip.sha256
 release/*.AppImage*
 dist_portable/
 dist_portable_windows/
+dist_standard/
 dist_portable_linux/open_antigravity
 dist_portable_linux/data/
 

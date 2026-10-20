@@ -109,12 +109,17 @@ mod windows_impl {
     }
 
     fn pid_alive(pid: u32) -> bool {
-        let name = relay_image_name();
-        let mut cmd = Command::new("tasklist");
-        cmd.args(["/FI", &format!("PID eq {}", pid), "/NH"]);
-        bounded_output(no_window(&mut cmd), HELPER_LIMIT).is_some_and(|o| {
-            String::from_utf8_lossy(&o.stdout).contains(&name)
-        })
+        #[cfg(target_os = "windows")]
+        return crate::platform::fast_win::pid_alive(pid);
+        #[cfg(not(target_os = "windows"))]
+        {
+            let name = relay_image_name();
+            let mut cmd = Command::new("tasklist");
+            cmd.args(["/FI", &format!("PID eq {}", pid), "/NH"]);
+            bounded_output(no_window(&mut cmd), HELPER_LIMIT).is_some_and(|o| {
+                String::from_utf8_lossy(&o.stdout).contains(&name)
+            })
+        }
     }
 
     /// Пиды процессов этого образа, чья командная строка содержит
@@ -142,7 +147,13 @@ mod windows_impl {
         match read_relay_pid() {
             // Свой пид в файле — ошибка записи, не признак жизни.
             Some(pid) => pid != std::process::id() && pid_alive(pid),
-            None => !relay_pids_by_cmdline().is_empty(),
+            None => {
+                #[cfg(target_os = "windows")]
+                if !crate::platform::fast_win::has_other_instance(&relay_image_name(), std::process::id()) {
+                    return false;
+                }
+                !relay_pids_by_cmdline().is_empty()
+            }
         }
     }
 
@@ -152,7 +163,13 @@ mod windows_impl {
     pub fn stop_portable() {
         let me = std::process::id();
         let mut pids = read_relay_pid().into_iter().collect::<Vec<_>>();
-        pids.extend(relay_pids_by_cmdline());
+        #[cfg(target_os = "windows")]
+        let check_cmdline = crate::platform::fast_win::has_other_instance(&relay_image_name(), me);
+        #[cfg(not(target_os = "windows"))]
+        let check_cmdline = true;
+        if check_cmdline {
+            pids.extend(relay_pids_by_cmdline());
+        }
         pids.sort_unstable();
         pids.dedup();
         let mut killed = false;
@@ -248,6 +265,10 @@ mod windows_impl {
     pub fn is_running() -> bool {
         if crate::portable::enabled() {
             return is_running_portable();
+        }
+        #[cfg(target_os = "windows")]
+        if !crate::platform::fast_win::find_pids_by_name(EXE_NAME).is_empty() {
+            return true;
         }
         let mut cmd = Command::new("tasklist");
         cmd.args(["/FI", &format!("IMAGENAME eq {}", EXE_NAME), "/NH"]);

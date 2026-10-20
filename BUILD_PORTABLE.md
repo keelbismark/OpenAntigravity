@@ -49,14 +49,23 @@ build.cmd
 
 ## 3. Соберите
 
-Запустите `build.cmd` (двойной клик или из терминала из корня папки с исходниками). Скрипт:
+Запустите `build.cmd` (двойной клик или из терминала из корня папки с исходниками). Доступные флаги:
+- `build.cmd` — собирает оба варианта (Portable + Standard с установщиком)
+- `build.cmd --portable` — собирает только портативную сборку в `dist_portable\`
+- `build.cmd --standard` — собирает стандартную сборку с инсталлятором в `dist_standard\`
+- `build.cmd --package` — собирает и упаковывает релизные zip-архивы в `release\`
 
-1. вызывает `cargo build --release` с нужными переменными;
-2. складывает результат в `dist_portable\`:
-
+Структура каталогов после сборки:
 ```
-dist_portable\
-├── OpenAntigravity.exe          — сама программа (иконка и портативный режим уже вшиты)
+dist_standard\OpenAntigravity_windows_v{VERSION}_setup\
+├── OpenAntigravity.exe          — приложение (стандартный режим: %LOCALAPPDATA%\OpenAntigravity)
+├── install.cmd                  — быстрая установка: копирует в Programs, создаёт ярлыки
+├── uninstall.cmd                — чистое удаление из системы
+└── README.txt                   — инструкция
+
+dist_portable\OpenAntigravity_windows_v{VERSION}_portable\
+├── OpenAntigravity.exe          — портативная программа (данные в папке data\)
+├── portable.flag                — маркер портативного режима
 └── README.txt                   — короткая памятка
 ```
 

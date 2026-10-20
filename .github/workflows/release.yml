@@ -136,53 +136,29 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Build Windows release binary
+      - name: Install Inno Setup
         shell: pwsh
+        run: |
+          choco install innosetup --no-progress
+
+      - name: Build & Package Windows Distributions (Setup & Portable)
+        shell: cmd
         env:
-          OAG_PORTABLE: "1"
+          VERSION: ${{ steps.ver.outputs.VERSION }}
           OAG_FULL_VERSION: ${{ steps.ver.outputs.VERSION }}
           # Secret is still stored under the old name in repo settings (backwards compatibility).
           OAG_BUILTIN_PROXY: ${{ secrets.AG_BUILTIN_PROXY }}
           OAG_UPDATE_URL: "https://keelbismark.github.io/OpenAntigravity/version.json"
         run: |
-          cargo build --release
-
-      - name: Assemble Windows portable distribution
-        shell: pwsh
-        env:
-          VERSION: ${{ steps.ver.outputs.VERSION }}
-        run: |
-          $distDir = "dist_portable\OpenAntigravity_windows_v$env:VERSION"
-          New-Item -ItemType Directory -Force -Path $distDir | Out-Null
-          New-Item -ItemType Directory -Force -Path "release" | Out-Null
-
-          Copy-Item "target\release\open_antigravity.exe" "$distDir\OpenAntigravity.exe" -Force
-
-          $readme = @"
-          Portable Open Antigravity v$env:VERSION
-          ========================================
-
-          Запуск:
-            OpenAntigravity.exe
-
-          - Программа полностью портативна: настройки и кэш живут в папке "data" рядом с exe.
-          - Удаление папки "data" = полный сброс. В систему ничего не ставится.
-          - Встроенный прокси уже активен.
-          - Диагностика, создание ярлыка и управление доступны прямо в окне программы.
-          "@
-          Set-Content -Path "$distDir\README.txt" -Value $readme -Encoding UTF8
-
-          $zipPath = "release\OpenAntigravity_windows_v$env:VERSION.zip"
-          Compress-Archive -Path "$distDir" -DestinationPath $zipPath -Force
-
-          $hash = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLower()
-          Set-Content -Path "$zipPath.sha256" -Value $hash -Encoding ASCII
+          call build.cmd --package
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-dist
           path: |
+            release/OpenAntigravity_windows_v*.exe
+            release/OpenAntigravity_windows_v*.exe.sha256
             release/OpenAntigravity_windows_v*.zip
             release/OpenAntigravity_windows_v*.zip.sha256
 
@@ -224,7 +200,7 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           mkdir -p dist_release
-          find artifacts -type f \( -name "*.tar.gz*" -o -name "*.zip*" -o -name "*.AppImage*" \) -exec cp {} dist_release/ \;
+          find artifacts -type f \( -name "*.tar.gz*" -o -name "*.zip*" -o -name "*.AppImage*" -o -name "*.exe*" \) -exec cp {} dist_release/ \;
 
           TAG="v${VERSION}"
           RELEASE_URL="https://github.com/${REPO}/releases/tag/${TAG}"
@@ -235,7 +211,9 @@ jobs:
             "version": "${VERSION}",
             "notes": "Open Antigravity v${VERSION}",
             "page": "${RELEASE_URL}",
-            "url_windows": "${DL_URL}/OpenAntigravity_windows_v${VERSION}.zip",
+            "url_windows": "${DL_URL}/OpenAntigravity_windows_v${VERSION}_setup.exe",
+            "url_windows_setup": "${DL_URL}/OpenAntigravity_windows_v${VERSION}_setup.exe",
+            "url_windows_portable": "${DL_URL}/OpenAntigravity_windows_v${VERSION}_portable.zip",
             "url_linux": "${DL_URL}/OpenAntigravity_linux_v${VERSION}.tar.gz",
             "url_appimage": "${DL_URL}/OpenAntigravity-x86_64.AppImage"
           }
@@ -243,10 +221,13 @@ jobs:
 
           cd dist_release
           # Создаем стабильные ссылки без номера версии в имени файла для постоянных ссылок
-          [ -f "OpenAntigravity_windows_v${VERSION}.zip" ] && cp "OpenAntigravity_windows_v${VERSION}.zip" "OpenAntigravity-windows-portable.zip"
+          [ -f "OpenAntigravity_windows_v${VERSION}_setup.exe" ] && cp "OpenAntigravity_windows_v${VERSION}_setup.exe" "OpenAntigravity-windows-setup.exe"
+          [ -f "OpenAntigravity_windows_v${VERSION}_setup.zip" ] && cp "OpenAntigravity_windows_v${VERSION}_setup.zip" "OpenAntigravity-windows-setup.zip"
+          [ -f "OpenAntigravity_windows_v${VERSION}_portable.zip" ] && cp "OpenAntigravity_windows_v${VERSION}_portable.zip" "OpenAntigravity-windows-portable.zip"
+          [ -f "OpenAntigravity_windows_v${VERSION}.zip" ] && cp "OpenAntigravity_windows_v${VERSION}.zip" "OpenAntigravity-windows.zip"
           [ -f "OpenAntigravity_linux_v${VERSION}.tar.gz" ] && cp "OpenAntigravity_linux_v${VERSION}.tar.gz" "OpenAntigravity-linux-portable.tar.gz"
 
-          sha256sum OpenAntigravity*.zip OpenAntigravity*.tar.gz OpenAntigravity*.AppImage > SHA256SUMS.txt 2>/dev/null || true
+          sha256sum OpenAntigravity*.exe OpenAntigravity*.zip OpenAntigravity*.tar.gz OpenAntigravity*.AppImage > SHA256SUMS.txt 2>/dev/null || true
 
           # Сбор списка изменений из Conventional Commits
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
@@ -281,9 +262,10 @@ jobs:
               echo ""
             fi
             echo "### 📦 Скачать сборку"
+            echo "- 🪟 **Windows (установщик .exe):** [OpenAntigravity_windows_v${VERSION}_setup.exe](${DL_URL}/OpenAntigravity_windows_v${VERSION}_setup.exe)"
+            echo "- 🪟 **Windows (портативная версия в data/):** [OpenAntigravity_windows_v${VERSION}_portable.zip](${DL_URL}/OpenAntigravity_windows_v${VERSION}_portable.zip)"
             echo "- 🐧 **Linux (AppImage, рекомендуется для Steam Deck / Ubuntu / Fedora):** [OpenAntigravity-x86_64.AppImage](${DL_URL}/OpenAntigravity-x86_64.AppImage)"
             echo "- 🐧 **Linux (архив .tar.gz):** [OpenAntigravity_linux_v${VERSION}.tar.gz](${DL_URL}/OpenAntigravity_linux_v${VERSION}.tar.gz)"
-            echo "- 🪟 **Windows (архив .zip):** [OpenAntigravity_windows_v${VERSION}.zip](${DL_URL}/OpenAntigravity_windows_v${VERSION}.zip)"
             echo ""
             echo "### 🚀 Особенности"
             echo "- **Избирательное проксирование:** через прокси идут только вызовы моделей Google, остальной трафик системы и IDE не затрагивается."
@@ -305,8 +287,10 @@ jobs:
           name: Open Antigravity v${{ steps.ver.outputs.VERSION }}
           body_path: dist_release/RELEASE_NOTES.md
           files: |
-            dist_release/OpenAntigravity_windows_v*.zip
-            dist_release/OpenAntigravity_windows_v*.zip.sha256
+            dist_release/OpenAntigravity*.exe
+            dist_release/OpenAntigravity*.exe.sha256
+            dist_release/OpenAntigravity*.zip
+            dist_release/OpenAntigravity*.zip.sha256
             dist_release/OpenAntigravity_linux_v*.tar.gz
             dist_release/OpenAntigravity_linux_v*.tar.gz.sha256
             dist_release/OpenAntigravity*.AppImage*

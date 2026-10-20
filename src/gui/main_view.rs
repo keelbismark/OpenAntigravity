@@ -406,10 +406,7 @@ fn hero_status_card(app: &mut App, ui: &mut egui::Ui) {
         });
 
     if flip_off {
-        app.worker.send(Cmd::Set(Cap::ClientPatch, false));
-        for cap in crate::ops::bypass_order(false) {
-            app.worker.send(Cmd::Set(cap, false));
-        }
+        app.worker.send(Cmd::DisableAll);
     } else if let Some(action) = pressed_action {
         match action {
             Action::EnableAll => app.worker.send(Cmd::EnableAll),

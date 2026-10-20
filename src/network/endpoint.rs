@@ -725,6 +725,9 @@ pub fn remove_proxy_if_ours(url: &str, ca_path: &str) -> Result<bool, String> {
 
 #[cfg(target_os = "windows")]
 fn current_env_in(name: &str, scope: &str) -> Option<String> {
+    if let Some(val) = crate::platform::fast_win::get_env(name, scope) {
+        return Some(val);
+    }
     let out = powershell(&format!(
         "[Environment]::GetEnvironmentVariable('{}','{}')",
         name, scope
@@ -788,6 +791,9 @@ pub fn clear_node_ca(ca_path: &str) -> Result<(), String> {
 
 #[cfg(target_os = "windows")]
 fn set_env(name: &str, value: Option<&str>) -> Result<(), String> {
+    if crate::platform::fast_win::set_user_env(name, value).is_ok() {
+        return Ok(());
+    }
     let literal = match value {
         Some(v) => format!("'{}'", v),
         None => "$null".to_string(),
@@ -819,6 +825,9 @@ fn set_env(name: &str, value: Option<&str>) -> Result<(), String> {
 
 #[cfg(target_os = "windows")]
 fn current_env(name: &str) -> Option<String> {
+    if let Some(val) = crate::platform::fast_win::get_user_env(name) {
+        return Some(val);
+    }
     let out = powershell(&format!(
         "[Environment]::GetEnvironmentVariable('{}','User')",
         name

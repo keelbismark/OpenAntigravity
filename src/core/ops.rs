@@ -322,6 +322,9 @@ pub enum Cmd {
     /// Everything on, in the order that works: the patch, auto-patch, then the
     /// bypass. The one button a user who is not a programmer needs.
     EnableAll,
+    /// Everything off in one pass: proxy variable removed, relay stopped,
+    /// DNS rules cleared, settings saved once, status pushed once.
+    DisableAll,
     /// Puts the service back the way the switches say it should be: reinstalls
     /// the relay when it is missing, stopped or older than this build, rewrites
     /// the rules, restores the proxy variable.
@@ -462,21 +465,19 @@ fn run_worker(
     settle_decline(&mut ctx);
     startup_housekeeping(&mut ctx);
 
-    // The first snapshot is deep: the window opens on the licence screen, so
-    // reading the binaries costs the user nothing here and the main screen is
-    // already truthful when it appears.
-    push_status(&mut ctx, Scan::Deep);
+    // First snapshot is fast System scan: UI renders its initial status in milliseconds
+    // rather than waiting on deep binary reads and external network probes.
+    push_status(&mut ctx, Scan::System);
 
     while let Ok(cmd) = rx.recv() {
         match cmd {
             Cmd::Stop => return,
             Cmd::Unlocked => {
-                // The first snapshot was taken while the licence screen was up;
-                // a fresh one either way, deep when auto-patch just wrote.
+                // Background deep scan runs once the UI is up.
                 if auto_patch_found(&mut ctx) {
                     push_status(&mut ctx, Scan::Deep);
                 } else {
-                    push_status(&mut ctx, Scan::System);
+                    push_status(&mut ctx, Scan::Deep);
                 }
                 ctx.busy(None);
             }
@@ -605,6 +606,13 @@ fn run_worker(
                 enable_all(&mut ctx);
                 ctx.settings.save();
                 push_status(&mut ctx, Scan::Deep);
+                ctx.busy(None);
+            }
+            Cmd::DisableAll => {
+                ctx.busy(Some("Отключение компонентов"));
+                disable_all(&mut ctx);
+                ctx.settings.save();
+                push_status(&mut ctx, Scan::System);
                 ctx.busy(None);
             }
             Cmd::Repair => {
@@ -828,10 +836,12 @@ fn push_status(ctx: &mut Ctx, scan: Scan) {
     // about it. So it is taken on the deep pass and when it has never been
     // taken, and a settings flip inherits it rather than paying a PowerShell
     // round trip to be told the same thing.
-    if scan == Scan::Deep || ctx.vpn.is_none() {
+    if scan == Scan::Deep {
         let (vpn, relay_egress) = measure_vpn();
         ctx.vpn = Some(vpn);
         ctx.relay_egress = relay_egress;
+    } else if ctx.vpn.is_none() {
+        ctx.vpn = Some(VpnSeen::None);
     }
 
     let status = match scan {
@@ -1442,6 +1452,23 @@ fn enable_all(ctx: &mut Ctx) {
         Level::Ok,
         "Готово. Откройте Antigravity и напишите что-нибудь в чат — здесь появится подтверждение, что модель ответила.",
     );
+}
+
+fn disable_all(ctx: &mut Ctx) {
+    if endpoint::proxy_env_is_ours() {
+        apply(ctx, Cap::LocalProxy, false);
+    }
+    if ctx.settings.builtin_exits {
+        apply(ctx, Cap::BuiltinExits, false);
+    }
+    apply(ctx, Cap::Dns, false);
+    if background::is_watchdog_enabled() {
+        apply(ctx, Cap::Watchdog, false);
+    }
+    if patch_is_on(ctx) {
+        apply(ctx, Cap::ClientPatch, false);
+    }
+    ctx.log(Level::Ok, "Все компоненты обхода и патча отключены.");
 }
 
 fn patch_is_on(ctx: &Ctx) -> bool {

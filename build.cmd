@@ -5,8 +5,10 @@ rem ================================================================
 rem  Open Antigravity - Единый скрипт сборки и упаковки (Windows)
 rem ================================================================
 rem  Использование:
-rem    build.cmd               - сборка портативного дистрибутива в dist_portable/
-rem    build.cmd --package     - сборка и упаковка в release/OpenAntigravity_windows_v{VERSION}.zip
+rem    build.cmd               - сборка обоих дистрибутивов (Portable + Standard)
+rem    build.cmd --portable    - сборка только портативной версии
+rem    build.cmd --standard    - сборка только стандартной версии (с инсталлятором)
+rem    build.cmd --package     - сборка и упаковка всех релизных архивов в release/
 rem    build.cmd --check       - проверка компиляции и прогон всех юнит-тестов
 rem    build.cmd --clean       - очистка артефактов сборки
 rem ================================================================
@@ -17,22 +19,33 @@ set "DO_PACKAGE=0"
 set "DO_CHECK=0"
 set "DO_CLEAN=0"
 set "DO_RELEASE=0"
+set "DO_PORTABLE=0"
+set "DO_STANDARD=0"
 set "NEW_REL_VER="
 set "CUSTOM_PROXY="
 
 :argloop
 if "%~1"=="" goto argdone
-if /i "%~1"=="--release"  ( set "DO_RELEASE=1"& set "NEW_REL_VER=%~2"& shift& shift& goto argloop )
-if /i "%~1"=="-r"         ( set "DO_RELEASE=1"& set "NEW_REL_VER=%~2"& shift& shift& goto argloop )
-if /i "%~1"=="--package"  ( set "DO_PACKAGE=1"& shift& goto argloop )
-if /i "%~1"=="-p"         ( set "DO_PACKAGE=1"& shift& goto argloop )
-if /i "%~1"=="--check"    ( set "DO_CHECK=1"& shift& goto argloop )
-if /i "%~1"=="-c"         ( set "DO_CHECK=1"& shift& goto argloop )
-if /i "%~1"=="--clean"    ( set "DO_CLEAN=1"& shift& goto argloop )
-if /i "%~1"=="--proxy"    ( set "CUSTOM_PROXY=%~2"& shift& shift& goto argloop )
+if /i "%~1"=="--release"   ( set "DO_RELEASE=1"& set "NEW_REL_VER=%~2"& shift& shift& goto argloop )
+if /i "%~1"=="-r"          ( set "DO_RELEASE=1"& set "NEW_REL_VER=%~2"& shift& shift& goto argloop )
+if /i "%~1"=="--package"   ( set "DO_PACKAGE=1"& shift& goto argloop )
+if /i "%~1"=="-p"          ( set "DO_PACKAGE=1"& shift& goto argloop )
+if /i "%~1"=="--check"     ( set "DO_CHECK=1"& shift& goto argloop )
+if /i "%~1"=="-c"          ( set "DO_CHECK=1"& shift& goto argloop )
+if /i "%~1"=="--clean"     ( set "DO_CLEAN=1"& shift& goto argloop )
+if /i "%~1"=="--portable"  ( set "DO_PORTABLE=1"& shift& goto argloop )
+if /i "%~1"=="--standard"  ( set "DO_STANDARD=1"& shift& goto argloop )
+if /i "%~1"=="--setup"     ( set "DO_STANDARD=1"& shift& goto argloop )
+if /i "%~1"=="--proxy"     ( set "CUSTOM_PROXY=%~2"& shift& shift& goto argloop )
 shift
 goto argloop
 :argdone
+
+rem Если не выбран конкретный режим сборки, собираем оба варианта
+if %DO_PORTABLE%==0 if %DO_STANDARD%==0 (
+    set "DO_PORTABLE=1"
+    set "DO_STANDARD=1"
+)
 
 if not %DO_RELEASE%==1 goto :skip_release
 if "%NEW_REL_VER%"=="" (
@@ -83,6 +96,7 @@ exit /b 0
 if %DO_CLEAN%==1 (
     echo [*] Очистка артефактов сборки...
     if exist "dist_portable" rd /s /q "dist_portable"
+    if exist "dist_standard" rd /s /q "dist_standard"
     if exist "release" rd /s /q "release"
     cargo clean
     echo [*] Очистка завершена.
@@ -115,73 +129,141 @@ if %DO_CHECK%==1 (
     exit /b 0
 )
 
-rem --- Настройка окружения для портативной сборки ---
-set "OAG_PORTABLE=1"
 set "OAG_FULL_VERSION=%VERSION%"
 if defined CUSTOM_PROXY (
     set "OAG_BUILTIN_PROXY=%CUSTOM_PROXY%"
 )
+set "RELDIR=%~dp0release"
+if not exist "!RELDIR!" mkdir "!RELDIR!"
 
-echo ================================================================
-echo   Сборка Open Antigravity v%VERSION% (Windows Portable)
-echo ================================================================
-
-cargo build --release
-if errorlevel 1 goto :err
-
-set "OUTDIR=%~dp0dist_portable\OpenAntigravity_windows_v%VERSION%"
-if not exist "%OUTDIR%" mkdir "%OUTDIR%"
-
-if exist "target\release\open_antigravity.exe" (
-    copy /y "target\release\open_antigravity.exe" "%OUTDIR%\OpenAntigravity.exe" >nul
-) else (
-    echo [!] Ошибка: целевой файл open_antigravity.exe не найден.
-    goto :err
-)
-
-> "%OUTDIR%\README.txt" (
-    echo Open Antigravity v%VERSION% (Портативная версия^)
-    echo ================================================
-    echo.
-    echo Запуск:
-    echo   OpenAntigravity.exe
-    echo.
-    echo - Программа полностью портативна: настройки и кэш сохраняются в папке "data" рядом с программой.
-    echo - Удаление папки "data" = полный сброс. В систему ничего лишнего не устанавливается.
-    echo - Встроенный прокси уже активен по умолчанию.
-    echo - Управление и диагностика доступны прямо в интерфейсе программы.
-)
-
-echo [*] Портативная сборка готова: %OUTDIR%
-
-if %DO_PACKAGE%==1 (
-    echo.
+rem ================================================================
+rem  1. Сборка стандартной версии (с инсталлятором, без OAG_PORTABLE)
+rem ================================================================
+if %DO_STANDARD%==1 (
     echo ================================================================
-    echo   Упаковка релиза в ZIP
+    echo   Сборка Open Antigravity v%VERSION% (Windows Standard / Setup)
     echo ================================================================
-    set "RELDIR=%~dp0release"
-    if not exist "!RELDIR!" mkdir "!RELDIR!"
-    
-    set "ZIP_PATH=!RELDIR!\OpenAntigravity_windows_v%VERSION%.zip"
-    if exist "!ZIP_PATH!" del "!ZIP_PATH!"
-    
-    echo [*] Сжатие в архив: !ZIP_PATH!
-    powershell -NoProfile -Command "Compress-Archive -Path '%OUTDIR%' -DestinationPath '!ZIP_PATH!' -Force"
+    set "OAG_PORTABLE="
+    cargo build --release
     if errorlevel 1 goto :err
-    
-    set "SHA_PATH=!ZIP_PATH!.sha256"
-    for /f %%H in ('certutil -hashfile "!ZIP_PATH!" SHA256 ^| findstr /v ":"') do (
-        set "SHA=%%H"
-        goto :sha_done
+
+    set "STD_OUTDIR=%~dp0dist_standard\OpenAntigravity_windows_v%VERSION%_setup"
+    if not exist "!STD_OUTDIR!" mkdir "!STD_OUTDIR!"
+
+    copy /y "target\release\open_antigravity.exe" "!STD_OUTDIR!\OpenAntigravity.exe" >nul
+    copy /y "%~dp0scripts\install.cmd" "!STD_OUTDIR!\install.cmd" >nul
+    copy /y "%~dp0scripts\uninstall.cmd" "!STD_OUTDIR!\uninstall.cmd" >nul
+
+    > "!STD_OUTDIR!\README.txt" (
+        echo Open Antigravity v%VERSION% (Стандартная версия с установщиком^)
+        echo ==============================================================
+        echo.
+        echo Быстрая установка:
+        echo   Запустите OpenAntigravity_windows_v%VERSION%_setup.exe или install.cmd
+        echo.
+        echo - Приложение установится в %%LOCALAPPDATA%%\Programs\OpenAntigravity.
+        echo - Создадутся ярлыки на Рабочем столе и в меню «Пуск».
+        echo - Фоновая служба и автозапуск интегрируются в систему.
+        echo - Удаление доступно через «Параметры Windows -^> Приложения» или uninstall.cmd.
+        echo.
+        echo Прямой запуск без установки:
+        echo   Можно запустить OpenAntigravity.exe напрямую.
+        echo   В этом случае настройки будут храниться в %%LOCALAPPDATA%%\OpenAntigravity.
     )
-    :sha_done
-    echo !SHA!> "!SHA_PATH!"
-    echo [*] SHA256: !SHA!
-    echo [*] Архив релиза готов: !ZIP_PATH!
+
+    echo [*] Стандартная сборка готова: !STD_OUTDIR!
+
+    rem Поиск компилятора Inno Setup (ISCC.exe)
+    set "ISCC_EXE="
+    where iscc >nul 2>&1 && set "ISCC_EXE=iscc"
+    if not defined ISCC_EXE if exist "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" set "ISCC_EXE=%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
+    if not defined ISCC_EXE if exist "%ProgramFiles%\Inno Setup 6\ISCC.exe" set "ISCC_EXE=%ProgramFiles%\Inno Setup 6\ISCC.exe"
+    if not defined ISCC_EXE if exist "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" set "ISCC_EXE=%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"
+
+    if defined ISCC_EXE (
+        echo [*] Компиляция единого exe-установщика (Inno Setup^)...
+        "!ISCC_EXE!" /DMyAppVersion=%VERSION% "%~dp0scripts\installer.iss"
+        if errorlevel 1 goto :err
+
+        set "STD_EXE=!RELDIR!\OpenAntigravity_windows_v%VERSION%_setup.exe"
+        if exist "!STD_EXE!" (
+            echo [*] Exe-установщик готов: !STD_EXE!
+            copy /y "!STD_EXE!" "!STD_OUTDIR!\OpenAntigravity_windows_v%VERSION%_setup.exe" >nul
+            for /f %%H in ('certutil -hashfile "!STD_EXE!" SHA256 ^| findstr /v ":"') do (
+                echo %%H> "!STD_EXE!.sha256"
+                echo [*] SHA256 (Setup.exe^): %%H
+            )
+        )
+    ) else (
+        echo [!] Внимание: Inno Setup не найден. Для генерации .exe установщика установите Inno Setup 6.
+    )
+
+    if %DO_PACKAGE%==1 (
+        set "STD_ZIP=!RELDIR!\OpenAntigravity_windows_v%VERSION%_setup.zip"
+        if exist "!STD_ZIP!" del "!STD_ZIP!"
+        echo [*] Упаковка стандартного zip-архива: !STD_ZIP!
+        powershell -NoProfile -Command "Compress-Archive -Path '!STD_OUTDIR!' -DestinationPath '!STD_ZIP!' -Force"
+        if errorlevel 1 goto :err
+
+        for /f %%H in ('certutil -hashfile "!STD_ZIP!" SHA256 ^| findstr /v ":"') do (
+            echo %%H> "!STD_ZIP!.sha256"
+            echo [*] SHA256 (Setup.zip^): %%H
+        )
+    )
+)
+
+rem ================================================================
+rem  2. Сборка портативной версии (OAG_PORTABLE=1)
+rem ================================================================
+if %DO_PORTABLE%==1 (
+    echo ================================================================
+    echo   Сборка Open Antigravity v%VERSION% (Windows Portable)
+    echo ================================================================
+    set "OAG_PORTABLE=1"
+    cargo build --release
+    if errorlevel 1 goto :err
+
+    set "PORT_OUTDIR=%~dp0dist_portable\OpenAntigravity_windows_v%VERSION%_portable"
+    if not exist "!PORT_OUTDIR!" mkdir "!PORT_OUTDIR!"
+
+    copy /y "target\release\open_antigravity.exe" "!PORT_OUTDIR!\OpenAntigravity.exe" >nul
+    type nul > "!PORT_OUTDIR!\portable.flag"
+
+    > "!PORT_OUTDIR!\README.txt" (
+        echo Open Antigravity v%VERSION% (Портативная версия^)
+        echo ================================================
+        echo.
+        echo Запуск:
+        echo   OpenAntigravity.exe
+        echo.
+        echo - Программа полностью портативна: настройки и кэш сохраняются в папке "data" рядом с программой.
+        echo - Удаление папки "data" = полный сброс. В систему ничего лишнего не устанавливается.
+        echo - Встроенный прокси уже активен по умолчанию.
+        echo - Управление и диагностика доступны прямо в интерфейсе программы.
+    )
+
+    echo [*] Портативная сборка готова: !PORT_OUTDIR!
+
+    if %DO_PACKAGE%==1 (
+        set "PORT_ZIP=!RELDIR!\OpenAntigravity_windows_v%VERSION%_portable.zip"
+        if exist "!PORT_ZIP!" del "!PORT_ZIP!"
+        echo [*] Упаковка портативной версии: !PORT_ZIP!
+        powershell -NoProfile -Command "Compress-Archive -Path '!PORT_OUTDIR!' -DestinationPath '!PORT_ZIP!' -Force"
+        if errorlevel 1 goto :err
+
+        for /f %%H in ('certutil -hashfile "!PORT_ZIP!" SHA256 ^| findstr /v ":"') do (
+            echo %%H> "!PORT_ZIP!.sha256"
+            echo [*] SHA256 (Portable^): %%H
+        )
+
+        rem Дубликат для обратной совместимости старых ссылок обновления
+        copy /y "!PORT_ZIP!" "!RELDIR!\OpenAntigravity_windows_v%VERSION%.zip" >nul
+        copy /y "!PORT_ZIP!.sha256" "!RELDIR!\OpenAntigravity_windows_v%VERSION%.zip.sha256" >nul
+    )
 )
 
 echo.
-echo [✓] Готово!
+echo [✓] Готово! Все дистрибутивы собраны.
 exit /b 0
 
 :err

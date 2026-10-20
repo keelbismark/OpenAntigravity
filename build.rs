@@ -317,6 +317,12 @@ fn main() {
     // XOR-обфускация вшитого прокси в OUT_DIR/builtin_proxy_gen.rs. Файл пишется
     // всегда (пустая сборка — пустой массив), чтобы include! в upstream.rs был
     // валиден без переменной тоже.
+    println!("cargo:rerun-if-env-changed=OAG_PORTABLE");
+    println!("cargo:rerun-if-env-changed=OAG_BUILTIN_PROXY");
+    println!("cargo:rerun-if-env-changed=OAG_FULL_VERSION");
+    println!("cargo:rerun-if-env-changed=OAG_UPDATE_URL");
+    println!("cargo:rerun-if-env-changed=OAG_NO_RES");
+
     let proxy_raw = env::var("OAG_BUILTIN_PROXY")
         .unwrap_or_default()
         .trim()

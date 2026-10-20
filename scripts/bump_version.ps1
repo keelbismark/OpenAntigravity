@@ -28,7 +28,9 @@ if (Test-Path $versionJsonPath) {
         "version" = $version
         "notes" = "Open Antigravity v$version"
         "page" = "https://github.com/keelbismark/OpenAntigravity/releases/tag/v$version"
-        "url_windows" = "https://github.com/keelbismark/OpenAntigravity/releases/download/v$version/OpenAntigravity_windows_v$version.zip"
+        "url_windows" = "https://github.com/keelbismark/OpenAntigravity/releases/download/v$version/OpenAntigravity_windows_v$version`_setup.exe"
+        "url_windows_setup" = "https://github.com/keelbismark/OpenAntigravity/releases/download/v$version/OpenAntigravity_windows_v$version`_setup.exe"
+        "url_windows_portable" = "https://github.com/keelbismark/OpenAntigravity/releases/download/v$version/OpenAntigravity_windows_v$version`_portable.zip"
         "url_linux" = "https://github.com/keelbismark/OpenAntigravity/releases/download/v$version/OpenAntigravity_linux_v$version.tar.gz"
         "url_appimage" = "https://github.com/keelbismark/OpenAntigravity/releases/download/v$version/OpenAntigravity-x86_64.AppImage"
     }
