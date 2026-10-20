@@ -38,6 +38,8 @@ SolidCompression=yes
 CloseApplications=yes
 CloseApplicationsFilter={#MyAppExeName},OpenAntigravityRelay.exe
 WizardStyle=modern
+WizardImageFile=..\assets\installer_banner.bmp
+WizardSmallImageFile=..\assets\installer_small.bmp
 ArchitecturesInstallIn64BitMode=x64compatible
 
 [Languages]
