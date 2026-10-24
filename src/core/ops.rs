@@ -778,6 +778,13 @@ fn startup_housekeeping(ctx: &mut Ctx) {
              ваш туннель. Выключите VPN и включите «Обход через DNS» заново.",
         );
     }
+    // Если обход через DNS включён в настройках или правила уже стояли,
+    // гарантируем, что служба релея реально запущена (в портативном режиме после перезагрузки).
+    if ctx.settings.dns || before {
+        if let Err(e) = background::ensure_running() {
+            ctx.log(Level::Warn, format!("Автозапуск службы DNS: {}", e));
+        }
+    }
 }
 
 fn all_providers_disabled(s: &Settings) -> bool {

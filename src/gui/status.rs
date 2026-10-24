@@ -472,7 +472,7 @@ pub fn headline(f: &Facts) -> Headline {
 
     // The bypass needs an administrator to install and to repair. Asked for
     // only when there is something it would install or repair.
-    let service_broken = f.bypass_on && (!f.relay_running || f.relay_outdated || !f.rules);
+    let service_broken = f.bypass_on && (!f.relay_running || f.relay_outdated || !f.rules || !f.relay_reporting);
     if !f.admin && (!f.bypass_on || service_broken) {
         return Headline {
             tone: Tone::Action,
@@ -506,7 +506,7 @@ pub fn headline(f: &Facts) -> Headline {
     if service_broken {
         return Headline {
             tone: Tone::Action,
-            title: if !f.relay_running {
+            title: if !f.relay_running || !f.relay_reporting {
                 "Фоновый шлюз остановлен".into()
             } else if f.relay_outdated {
                 "Служба требует обновления".into()
@@ -616,6 +616,15 @@ pub fn headline(f: &Facts) -> Headline {
         };
     }
 
+    if !f.relay_reporting {
+        return Headline {
+            tone: Tone::Wait,
+            title: "Инициализация служб".into(),
+            detail: "Выполняется запуск локального шлюза и проверка портов...".into(),
+            action: None,
+        };
+    }
+
     if let Some(ago) = f.answer {
         let route = f
             .route
@@ -627,15 +636,6 @@ pub fn headline(f: &Facts) -> Headline {
             tone: Tone::Ok,
             title: "Шлюз активен".into(),
             detail: format!("Модель успешно ответила {}{route}.", ago_text(ago)),
-            action: None,
-        };
-    }
-
-    if !f.relay_reporting {
-        return Headline {
-            tone: Tone::Wait,
-            title: "Инициализация служб".into(),
-            detail: "Выполняется запуск локального шлюза и проверка портов...".into(),
             action: None,
         };
     }
@@ -770,6 +770,27 @@ mod tests {
             ..working()
         };
         assert_eq!(headline(&f).tone, Tone::Ok);
+    }
+
+    #[test]
+    fn without_relay_reporting_or_without_admin_broken_relay_asks_for_elevation() {
+        // Relay is not reporting (e.g. stale or dead after reboot): even with a fresh answer,
+        // it cannot claim Tone::Ok.
+        let f = Facts {
+            admin: false,
+            relay_reporting: false,
+            answer: Some(secs(30)),
+            ..working()
+        };
+        assert_eq!(headline(&f).action, Some(Action::Elevate));
+
+        let f_admin = Facts {
+            admin: true,
+            relay_reporting: false,
+            answer: Some(secs(30)),
+            ..working()
+        };
+        assert_ne!(headline(&f_admin).tone, Tone::Ok);
     }
 
     #[test]

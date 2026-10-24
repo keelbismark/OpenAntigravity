@@ -144,12 +144,33 @@ mod windows_impl {
     }
 
     fn is_running_portable() -> bool {
+        let name = relay_image_name();
         match read_relay_pid() {
             // Свой пид в файле — ошибка записи, не признак жизни.
-            Some(pid) => pid != std::process::id() && pid_alive(pid),
-            None => {
+            Some(pid) if pid != std::process::id() => {
                 #[cfg(target_os = "windows")]
-                if !crate::platform::fast_win::has_other_instance(&relay_image_name(), std::process::id()) {
+                {
+                    if crate::platform::fast_win::pid_alive_with_name(pid, &name) {
+                        true
+                    } else {
+                        // Файл пида устарел (после перезагрузки или краха) — удаляем
+                        let _ = fs::remove_file(relay_pid_path());
+                        false
+                    }
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    if pid_alive(pid) {
+                        true
+                    } else {
+                        let _ = fs::remove_file(relay_pid_path());
+                        false
+                    }
+                }
+            }
+            _ => {
+                #[cfg(target_os = "windows")]
+                if !crate::platform::fast_win::has_other_instance(&name, std::process::id()) {
                     return false;
                 }
                 !relay_pids_by_cmdline().is_empty()

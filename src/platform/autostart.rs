@@ -1,6 +1,6 @@
 //! Кроссплатформенное управление автозапуском (Windows + Linux).
 //!
-//! Windows: ключ в `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
+//! Windows: задача планировщика с повышенными правами (Highest) или ключ в HKCU\Run.
 //! Linux: desktop-файл в `~/.config/autostart/open-antigravity.desktop`.
 
 #[cfg(not(target_os = "windows"))]
@@ -87,7 +87,18 @@ fn set_linux_enabled(enabled: bool) -> Result<(), String> {
 }
 
 #[cfg(target_os = "windows")]
-fn is_windows_enabled() -> bool {
+const AUTOSTART_TASK_NAME: &str = "Open Antigravity Autostart";
+
+#[cfg(target_os = "windows")]
+fn is_task_enabled() -> bool {
+    let mut cmd = std::process::Command::new("schtasks");
+    cmd.args(["/Query", "/TN", AUTOSTART_TASK_NAME]);
+    crate::utils::bounded_output(crate::utils::no_window(&mut cmd), std::time::Duration::from_secs(5))
+        .is_some_and(|o| o.status.success())
+}
+
+#[cfg(target_os = "windows")]
+fn is_registry_run_enabled() -> bool {
     let script = "Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -Name 'Open Antigravity' -ErrorAction SilentlyContinue";
     if let Some(out) = crate::utils::powershell_within(script, std::time::Duration::from_secs(5)) {
         out.status.success() && !out.stdout.is_empty()
@@ -97,23 +108,64 @@ fn is_windows_enabled() -> bool {
 }
 
 #[cfg(target_os = "windows")]
+fn is_windows_enabled() -> bool {
+    is_task_enabled() || is_registry_run_enabled()
+}
+
+#[cfg(target_os = "windows")]
 fn set_windows_enabled(enabled: bool) -> Result<(), String> {
     if enabled {
         let exe = std::env::current_exe().map_err(|e| format!("Не удалось определить путь к exe: {e}"))?;
-        let script = format!(
-            "Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -Name 'Open Antigravity' -Value '\"{}\" --minimized'",
-            exe.display()
-        );
-        if let Some(out) = crate::utils::powershell_within(&script, std::time::Duration::from_secs(10)) {
-            if out.status.success() {
-                Ok(())
-            } else {
-                Err(format!("PowerShell ошибка: {}", String::from_utf8_lossy(&out.stderr).trim()))
+        let exe_str = exe.display().to_string();
+
+        // Если у процесса есть права администратора — регистрируем задачу в планировщике с RunLevel Highest.
+        // Это позволяет приложению запускаться при входе в систему СРАЗУ с правами администратора
+        // БЕЗ окна UAC, чего невозможно добиться через обычный HKCU\...\Run.
+        let mut task_created = false;
+        if crate::utils::is_admin() {
+            let task_script = format!(
+                "$a = New-ScheduledTaskAction -Execute '{exe}' -Argument '--minimized'; \
+                 $t = New-ScheduledTaskTrigger -AtLogOn; \
+                 $s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries \
+                      -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero); \
+                 $p = New-ScheduledTaskPrincipal -UserId \"$env:USERDOMAIN\\$env:USERNAME\" \
+                      -LogonType Interactive -RunLevel Highest; \
+                 Register-ScheduledTask -TaskName '{task}' -Action $a -Trigger $t -Settings $s \
+                      -Principal $p -Description 'Open Antigravity: автозапуск с повышенными правами' -Force -ErrorAction Stop",
+                exe = exe_str.replace('\'', "''"),
+                task = AUTOSTART_TASK_NAME,
+            );
+            if let Some(out) = crate::utils::powershell_within(&task_script, std::time::Duration::from_secs(10)) {
+                if out.status.success() {
+                    task_created = true;
+                    // Удаляем запись из HKCU\...\Run, чтобы исключить двойной запуск
+                    let clean_reg = "Remove-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -Name 'Open Antigravity' -ErrorAction SilentlyContinue";
+                    let _ = crate::utils::powershell_within(clean_reg, std::time::Duration::from_secs(5));
+                }
             }
-        } else {
-            Err("Не удалось запустить PowerShell для настройки автозапуска".to_string())
         }
+
+        if !task_created {
+            // Фолбэк для работы без прав администратора — запись в реестр HKCU
+            let reg_script = format!(
+                "Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -Name 'Open Antigravity' -Value '\"{}\" --minimized'",
+                exe_str
+            );
+            if let Some(out) = crate::utils::powershell_within(&reg_script, std::time::Duration::from_secs(10)) {
+                if !out.status.success() {
+                    return Err(format!("PowerShell ошибка: {}", String::from_utf8_lossy(&out.stderr).trim()));
+                }
+            } else {
+                return Err("Не удалось настроить автозапуск через реестр".to_string());
+            }
+        }
+        Ok(())
     } else {
+        // Выключение автозапуска: удаляем задачу из планировщика и ключ из реестра
+        let mut cmd = std::process::Command::new("schtasks");
+        cmd.args(["/Delete", "/TN", AUTOSTART_TASK_NAME, "/F"]);
+        crate::utils::bounded_output(crate::utils::no_window(&mut cmd), std::time::Duration::from_secs(5));
+
         let script = "Remove-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -Name 'Open Antigravity' -ErrorAction SilentlyContinue";
         let _ = crate::utils::powershell_within(script, std::time::Duration::from_secs(10));
         Ok(())

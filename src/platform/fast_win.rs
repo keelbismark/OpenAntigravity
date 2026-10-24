@@ -237,6 +237,14 @@ pub fn pid_alive(pid: u32) -> bool {
     }
 }
 
+/// Checks whether a process with PID is currently alive AND its image name matches `exe_name` (case-insensitive).
+pub fn pid_alive_with_name(pid: u32, exe_name: &str) -> bool {
+    if !pid_alive(pid) {
+        return false;
+    }
+    find_pids_by_name(exe_name).contains(&pid)
+}
+
 /// Finds all running process IDs matching `exe_name` (case-insensitive) using Toolhelp32.
 pub fn find_pids_by_name(exe_name: &str) -> Vec<u32> {
     let mut pids = Vec::new();
