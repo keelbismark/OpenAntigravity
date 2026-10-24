@@ -133,6 +133,8 @@ pub struct App {
     pub last_activity_poll: Option<std::time::Instant>,
     /// Last time logs were copied to clipboard (for button feedback).
     pub logs_copied_at: Option<std::time::Instant>,
+    /// Whether the "What's new" changelog modal is open.
+    pub show_changelog_modal: bool,
     frames: u8,
 }
 
@@ -230,6 +232,7 @@ impl App {
             activity_summary: None,
             last_activity_poll: None,
             logs_copied_at: None,
+            show_changelog_modal: false,
             frames: 0,
         }
     }
@@ -383,6 +386,24 @@ impl App {
                     });
                     ui.add_space(8.0);
                 }
+                crate::update::UpdateProgress::Verifying => {
+                    let frame = egui::Frame::NONE
+                        .fill(theme::CARD)
+                        .stroke(egui::Stroke::new(1.0, theme::CARD_BORDER))
+                        .corner_radius(egui::CornerRadius::same(theme::RADIUS_SMALL))
+                        .inner_margin(egui::Margin::symmetric(12, 8));
+                    frame.show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            widgets::show_icon(ui, widgets::Icon::Refresh { spin: true }, theme::ACCENT, 14.0);
+                            ui.label(
+                                egui::RichText::new("Проверка контрольной суммы (SHA-256)...")
+                                    .color(theme::TEXT)
+                                    .size(12.5),
+                            );
+                        });
+                    });
+                    ui.add_space(8.0);
+                }
                 crate::update::UpdateProgress::Extracting => {
                     let frame = egui::Frame::NONE
                         .fill(theme::CARD)
@@ -472,6 +493,17 @@ impl App {
                         .min_size(egui::vec2(120.0, 26.0)),
                     ).clicked() {
                         self.start_auto_update(&rel, &ctx);
+                    }
+
+                    if ui.add(
+                        egui::Button::new(
+                            egui::RichText::new("Что нового?")
+                                .color(theme::MUTED)
+                                .size(11.5),
+                        )
+                        .fill(egui::Color32::TRANSPARENT),
+                    ).clicked() {
+                        self.show_changelog_modal = true;
                     }
 
                     if ui.add(
@@ -759,7 +791,11 @@ impl eframe::App for App {
         if ctx.input(|i| i.viewport().close_requested()) {
             let updating = matches!(
                 self.auto_update_progress,
-                Some(crate::update::UpdateProgress::Downloading { .. } | crate::update::UpdateProgress::Extracting)
+                Some(
+                    crate::update::UpdateProgress::Downloading { .. }
+                        | crate::update::UpdateProgress::Verifying
+                        | crate::update::UpdateProgress::Extracting
+                )
             );
             if updating {
                 // Cancel the close request and notify that update is in progress
@@ -856,6 +892,7 @@ impl eframe::App for App {
 
         let ctx = ui.ctx().clone();
         main_view::path_dialog(self, &ctx);
+        main_view::changelog_dialog(self, &ctx);
     }
 }
 

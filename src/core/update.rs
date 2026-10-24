@@ -81,6 +81,9 @@ pub struct UpdateInfo {
     /// One line on what changed; shown where the UI has room for it.
     #[serde(default)]
     pub notes: Option<String>,
+    /// Release date or publication timestamp.
+    #[serde(default)]
+    pub date: Option<String>,
     /// Fallback link — the project page — opened when no archive matches the
     /// running platform.
     #[serde(default)]
@@ -100,6 +103,18 @@ pub struct UpdateInfo {
     /// AppImage for Linux/SteamOS builds.
     #[serde(default)]
     pub url_appimage: Option<String>,
+    /// Expected SHA-256 hash for Windows download.
+    #[serde(default)]
+    pub sha256_windows: Option<String>,
+    /// Expected SHA-256 hash for Linux download.
+    #[serde(default)]
+    pub sha256_linux: Option<String>,
+    /// Expected SHA-256 hash for Linux AppImage.
+    #[serde(default)]
+    pub sha256_appimage: Option<String>,
+    /// Fallback SHA-256 hash for any platform.
+    #[serde(default)]
+    pub sha256: Option<String>,
 }
 
 impl UpdateInfo {
@@ -113,6 +128,25 @@ impl UpdateInfo {
     /// Returns true if this feed entry is strictly newer than the running binary.
     pub fn is_newer_than_current(&self) -> bool {
         is_newer_version(&self.version, current_version())
+    }
+
+    /// Returns the expected SHA-256 checksum for the current platform if published.
+    pub fn expected_sha256(&self) -> Option<&str> {
+        #[cfg(target_os = "windows")]
+        {
+            self.sha256_windows.as_deref().or(self.sha256.as_deref())
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            if std::env::var("APPIMAGE").is_ok() && self.sha256_appimage.is_some() {
+                self.sha256_appimage.as_deref()
+            } else {
+                self.sha256_linux
+                    .as_deref()
+                    .or(self.sha256_appimage.as_deref())
+                    .or(self.sha256.as_deref())
+            }
+        }
     }
 
     /// The direct download archive or binary for the current platform.
@@ -648,6 +682,7 @@ pub fn spawn_watch(tx: std::sync::mpsc::Sender<UpdateInfo>, wake: Box<dyn Fn() +
 #[derive(Debug, Clone)]
 pub enum UpdateProgress {
     Downloading { percent: u8, text: String },
+    Verifying,
     Extracting,
     Restarting,
     Failed(String),
@@ -669,6 +704,7 @@ fn stream_download_or_redirect<S: Read + Write>(
          Host: {}\r\n\
          User-Agent: open_antigravity/{}\r\n\
          Accept: */*\r\n\
+         Accept-Encoding: identity\r\n\
          Connection: close\r\n\r\n",
         url.path,
         url.host,
@@ -861,6 +897,42 @@ fn find_binary_in_dir(dir: &std::path::Path) -> Option<PathBuf> {
     }
 }
 
+/// Computes the hex SHA-256 checksum of a file.
+pub fn compute_file_sha256(path: &std::path::Path) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    let mut file = fs::File::open(path)
+        .map_err(|e| format!("не удалось открыть файл для проверки хеша: {e}"))?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 65536];
+    loop {
+        match file.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => hasher.update(&buf[..n]),
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(format!("ошибка чтения файла при вычислении хеша: {e}")),
+        }
+    }
+    let result = hasher.finalize();
+    Ok(format!("{:x}", result))
+}
+
+/// Verifies that `path` has the expected SHA-256 checksum.
+pub fn verify_file_sha256(path: &std::path::Path, expected_hex: &str) -> Result<(), String> {
+    let clean_expected = expected_hex.trim().to_ascii_lowercase();
+    if clean_expected.is_empty() {
+        return Ok(());
+    }
+    let actual = compute_file_sha256(path)?;
+    if actual == clean_expected {
+        Ok(())
+    } else {
+        Err(format!(
+            "контрольная сумма не совпадает (ожидалось: {}, получено: {})",
+            clean_expected, actual
+        ))
+    }
+}
+
 /// Extracts update archive and returns path to the extracted binary.
 pub fn extract_and_apply_update(archive_path: &std::path::Path) -> Result<PathBuf, String> {
     let temp = std::env::temp_dir();
@@ -888,6 +960,7 @@ pub fn extract_and_apply_update(archive_path: &std::path::Path) -> Result<PathBu
     {
         let mut tar_cmd = std::process::Command::new("tar");
         tar_cmd.arg("-xf").arg(archive_path).arg("-C").arg(&extract_dir);
+        crate::utils::no_window(&mut tar_cmd);
         let tar_ok = tar_cmd.status().map(|s| s.success()).unwrap_or(false);
 
         if !tar_ok {
@@ -896,8 +969,10 @@ pub fn extract_and_apply_update(archive_path: &std::path::Path) -> Result<PathBu
                 archive_path.display(),
                 extract_dir.display()
             );
-            let ps_status = std::process::Command::new("powershell")
-                .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_script])
+            let mut ps_cmd = std::process::Command::new("powershell");
+            ps_cmd.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_script]);
+            crate::utils::no_window(&mut ps_cmd);
+            let ps_status = ps_cmd
                 .status()
                 .map_err(|e| format!("ошибка распаковки PowerShell: {e}"))?;
             if !ps_status.success() {
@@ -1267,6 +1342,18 @@ pub fn perform_auto_update(
         return;
     }
 
+    // Verify SHA-256 checksum if provided by the update feed
+    if let Some(expected_hash) = info.expected_sha256() {
+        let _ = progress_tx.send(UpdateProgress::Verifying);
+        wake();
+        if let Err(e) = verify_file_sha256(&archive_path, expected_hash) {
+            let _ = fs::remove_file(&archive_path);
+            let _ = progress_tx.send(UpdateProgress::Failed(format!("Ошибка проверки целостности: {e}")));
+            wake();
+            return;
+        }
+    }
+
     let new_binary = if url.ends_with(".AppImage") {
         archive_path
     } else {
@@ -1416,12 +1503,17 @@ mod tests {
         let info = UpdateInfo {
             version: "1.0.0".into(),
             notes: None,
+            date: None,
             page: Some("https://example.com/page".into()),
             url_windows: Some("https://example.com/win.zip".into()),
             url_windows_setup: None,
             url_windows_portable: None,
             url_linux: Some("https://example.com/linux.tar.gz".into()),
             url_appimage: Some("https://example.com/appimage".into()),
+            sha256_windows: None,
+            sha256_linux: None,
+            sha256_appimage: None,
+            sha256: None,
         };
         let landing = info.landing_url().expect("some landing").to_string();
         if cfg!(target_os = "windows") {
@@ -1512,5 +1604,49 @@ mod tests {
         assert_eq!(fs::read(&old).unwrap(), b"version1");
         assert!(fs::remove_file(&old).is_ok());
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_compute_and_verify_sha256() {
+        let temp_file = std::env::temp_dir().join(format!("oag_test_sha_{}.bin", std::process::id()));
+        fs::write(&temp_file, b"Open Antigravity Update Test Payload").unwrap();
+
+        // sha256 of "Open Antigravity Update Test Payload" is:
+        // echo -n "Open Antigravity Update Test Payload" | sha256sum
+        // let's compute it with our function:
+        let hash = compute_file_sha256(&temp_file).expect("compute sha256");
+        assert_eq!(hash.len(), 64);
+        assert!(verify_file_sha256(&temp_file, &hash).is_ok());
+        assert!(verify_file_sha256(&temp_file, &hash.to_uppercase()).is_ok());
+        assert!(verify_file_sha256(&temp_file, "0000000000000000000000000000000000000000000000000000000000000000").is_err());
+
+        let _ = fs::remove_file(&temp_file);
+    }
+
+    #[test]
+    fn test_expected_sha256_resolution() {
+        let mut info = UpdateInfo {
+            version: "2.0.0".into(),
+            notes: None,
+            date: None,
+            page: None,
+            url_windows: None,
+            url_windows_setup: None,
+            url_windows_portable: None,
+            sha256_windows: Some("abc_win".into()),
+            url_linux: None,
+            sha256_linux: Some("abc_linux".into()),
+            url_appimage: None,
+            sha256_appimage: Some("abc_appimage".into()),
+            sha256: Some("abc_generic".into()),
+        };
+
+        if cfg!(target_os = "windows") {
+            assert_eq!(info.expected_sha256(), Some("abc_win"));
+            info.sha256_windows = None;
+            assert_eq!(info.expected_sha256(), Some("abc_generic"));
+        } else {
+            assert!(info.expected_sha256().is_some());
+        }
     }
 }

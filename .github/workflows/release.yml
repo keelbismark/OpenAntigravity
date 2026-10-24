@@ -204,7 +204,18 @@ jobs:
           RELEASE_URL="https://github.com/${REPO}/releases/tag/${TAG}"
           DL_URL="https://github.com/${REPO}/releases/download/${TAG}"
 
-          cat > dist_release/version.json <<ENDJSON
+          cd dist_release
+          sha256sum OpenAntigravity_windows_v${VERSION}_setup.exe \
+                    OpenAntigravity_windows_v${VERSION}_portable.zip \
+                    OpenAntigravity-x86_64.AppImage \
+                    OpenAntigravity_linux_v${VERSION}.tar.gz > SHA256SUMS.txt 2>/dev/null || true
+
+          SHA_WIN_PORT=$(sha256sum OpenAntigravity_windows_v${VERSION}_portable.zip 2>/dev/null | awk '{print $1}' || echo "")
+          SHA_WIN_SETUP=$(sha256sum OpenAntigravity_windows_v${VERSION}_setup.exe 2>/dev/null | awk '{print $1}' || echo "")
+          SHA_LINUX=$(sha256sum OpenAntigravity_linux_v${VERSION}.tar.gz 2>/dev/null | awk '{print $1}' || echo "")
+          SHA_APPIMAGE=$(sha256sum OpenAntigravity-x86_64.AppImage 2>/dev/null | awk '{print $1}' || echo "")
+
+          cat > version.json <<ENDJSON
           {
             "version": "${VERSION}",
             "notes": "Open Antigravity v${VERSION}",
@@ -213,15 +224,12 @@ jobs:
             "url_windows_setup": "${DL_URL}/OpenAntigravity_windows_v${VERSION}_setup.exe",
             "url_windows_portable": "${DL_URL}/OpenAntigravity_windows_v${VERSION}_portable.zip",
             "url_linux": "${DL_URL}/OpenAntigravity_linux_v${VERSION}.tar.gz",
-            "url_appimage": "${DL_URL}/OpenAntigravity-x86_64.AppImage"
+            "url_appimage": "${DL_URL}/OpenAntigravity-x86_64.AppImage",
+            "sha256_windows": "${SHA_WIN_PORT}",
+            "sha256_linux": "${SHA_LINUX}",
+            "sha256_appimage": "${SHA_APPIMAGE}"
           }
           ENDJSON
-
-          cd dist_release
-          sha256sum OpenAntigravity_windows_v${VERSION}_setup.exe \
-                    OpenAntigravity_windows_v${VERSION}_portable.zip \
-                    OpenAntigravity-x86_64.AppImage \
-                    OpenAntigravity_linux_v${VERSION}.tar.gz > SHA256SUMS.txt 2>/dev/null || true
 
           # Сбор списка изменений из Conventional Commits
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")

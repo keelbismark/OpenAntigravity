@@ -132,6 +132,9 @@ struct App {
     manual_tx: std::sync::mpsc::Sender<Result<Option<UpdateInfo>, String>>,
     manual_rx: Receiver<Result<Option<UpdateInfo>, String>>,
     manual_running: bool,
+    auto_update_tx: std::sync::mpsc::Sender<crate::update::UpdateProgress>,
+    auto_update_rx: Receiver<crate::update::UpdateProgress>,
+    auto_update_running: bool,
 
     diag_tx: std::sync::mpsc::Sender<crate::diag::DiagReport>,
     diag_rx: Receiver<crate::diag::DiagReport>,
@@ -165,6 +168,7 @@ impl App {
         update::spawn_watch(up_tx, Box::new(|| {}));
         let (manual_tx, manual_rx) = channel();
         let (diag_tx, diag_rx) = channel();
+        let (auto_update_tx, auto_update_rx) = channel();
         // The loop below polls every 200 ms, so nothing needs waking.
         let (ev_tx, events) = channel();
         let worker = ops::spawn(ev_tx, Box::new(|| {}));
@@ -199,6 +203,9 @@ impl App {
             manual_tx,
             manual_rx,
             manual_running: false,
+            auto_update_tx,
+            auto_update_rx,
+            auto_update_running: false,
             diag_tx,
             diag_rx,
             diag_running: false,
@@ -249,6 +256,26 @@ impl App {
 
     /// The manual update check, on its own thread like everywhere else: the
     /// UI loop must not stall on a feed that answers slowly or not at all.
+    fn start_auto_update_now(&mut self) {
+        if self.auto_update_running {
+            self.toast("Обновление уже выполняется…");
+            return;
+        }
+        let Some(rel) = self.update.clone() else {
+            self.toast("Сначала проверьте наличие обновлений (клавиша 'u')");
+            return;
+        };
+        self.auto_update_running = true;
+        self.toast(format!("Запуск автообновления до v{}…", rel.display_version()));
+        let tx = self.auto_update_tx.clone();
+        std::thread::Builder::new()
+            .name("tui-auto-update".to_string())
+            .spawn(move || {
+                crate::update::perform_auto_update(&rel, tx, std::sync::Arc::new(|| {}));
+            })
+            .ok();
+    }
+
     fn check_updates_now(&mut self) {
         if self.manual_running {
             self.toast("Проверка уже идёт…");
@@ -340,6 +367,27 @@ impl App {
     /// arrived.
     fn drain(&mut self) -> bool {
         let mut any = false;
+        while let Ok(prog) = self.auto_update_rx.try_recv() {
+            any = true;
+            match prog {
+                crate::update::UpdateProgress::Downloading { percent, text } => {
+                    self.toast(format!("Загрузка обновления: {percent}% ({text})"));
+                }
+                crate::update::UpdateProgress::Verifying => {
+                    self.toast("Проверка контрольной суммы (SHA-256)…");
+                }
+                crate::update::UpdateProgress::Extracting => {
+                    self.toast("Распаковка и установка файлов…");
+                }
+                crate::update::UpdateProgress::Restarting => {
+                    self.toast("Обновление установлено! Перезапуск…");
+                }
+                crate::update::UpdateProgress::Failed(err) => {
+                    self.auto_update_running = false;
+                    self.toast(format!("Ошибка обновления: {err}"));
+                }
+            }
+        }
         while let Ok(rel) = self.update_rx.try_recv() {
             self.update = Some(rel);
             any = true;
@@ -534,7 +582,13 @@ impl App {
             return;
         }
         match k.code {
-            KeyCode::Char('q') => self.quit = true,
+            KeyCode::Char('q') => {
+                if self.auto_update_running {
+                    self.toast("Идёт установка обновления, пожалуйста, подождите…");
+                } else {
+                    self.quit = true;
+                }
+            }
             KeyCode::Up | KeyCode::Char('k') => self.go(&rows, at.saturating_sub(1)),
             KeyCode::Down | KeyCode::Char('j') => self.go(&rows, (at + 1).min(last)),
             KeyCode::PageUp => self.go(&rows, at.saturating_sub(8)),
@@ -558,6 +612,7 @@ impl App {
             KeyCode::Char('t') => self.toggle_autostart_now(),
             KeyCode::Char('o') => self.save_report(),
             KeyCode::Char('u') => self.check_updates_now(),
+            KeyCode::Char('U') => self.start_auto_update_now(),
             KeyCode::Char('x') | KeyCode::Delete => {
                 if let Some(Row::Install(i)) = row {
                     self.forget_install(i);
@@ -944,15 +999,16 @@ impl App {
             Span::styled("· портативный режим", Style::new().fg(Color::DarkGray)),
         ];
         if let Some(rel) = &self.update {
-            let link = rel
-                .landing_url()
-                .unwrap_or("смотрите страницу раздачи")
-                .to_string();
+            let hint = if self.auto_update_running {
+                "установка...".to_string()
+            } else {
+                "нажмите U для обновления".to_string()
+            };
             spans.push(Span::styled(
                 format!(
                     "  ⬆ новая версия {}: {} ",
                     rel.display_version(),
-                    link
+                    hint
                 ),
                 Style::new().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD),
             ));
@@ -1105,8 +1161,13 @@ impl App {
             Some(Action::Verify) => " · v — пройти верификацию",
             _ => "",
         };
+        let update_key = if self.update.is_some() {
+            " · U — обновить"
+        } else {
+            " · u — обновления"
+        };
         let keys = format!(
-            "↑↓ выбор · Пробел/Enter — вкл/выкл{offered} · d — тест сети · s — ярлыки · t — автозапуск · o — отчёт · u — обновления · q — выход"
+            "↑↓ выбор · Пробел/Enter — вкл/выкл{offered} · d — тест сети · s — ярлыки · t — автозапуск · o — отчёт{update_key} · q — выход"
         );
         f.render_widget(
             Paragraph::new(keys).style(Style::new().fg(Color::DarkGray)),
