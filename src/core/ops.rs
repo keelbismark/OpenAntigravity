@@ -612,7 +612,7 @@ fn run_worker(
                 ctx.busy(Some("Отключение компонентов"));
                 disable_all(&mut ctx);
                 ctx.settings.save();
-                push_status(&mut ctx, Scan::System);
+                push_status(&mut ctx, Scan::Deep);
                 ctx.busy(None);
             }
             Cmd::Repair => {
@@ -1417,7 +1417,7 @@ fn enable_all(ctx: &mut Ctx) {
     // Only when it is not already on everywhere: patching closes Antigravity,
     // and closing it for a no-op is exactly the kind of surprise this button
     // must not have.
-    if !patch_is_on(ctx) {
+    if !patch_is_on(ctx) || ctx.proxy_var_carried != Some(true) {
         apply(ctx, Cap::ClientPatch, true);
     }
     // Nothing but a line in settings.json, so it needs nobody's permission.
@@ -1468,6 +1468,7 @@ fn disable_all(ctx: &mut Ctx) {
     if patch_is_on(ctx) {
         apply(ctx, Cap::ClientPatch, false);
     }
+    ctx.patched_seen.clear();
     ctx.log(Level::Ok, "Все компоненты обхода и патча отключены.");
 }
 
@@ -1993,16 +1994,21 @@ fn enable_local_proxy(ctx: &mut Ctx) {
     // 3. The variable has a private name that only a patched binary reads. If
     //    the rename did not land, writing it is writing into nothing.
     if ctx.proxy_var_carried == Some(false) {
-        ctx.log(
-            Level::Err,
-            if ctx.proxy_var_retryable {
-                "Файл был занят — закройте Antigravity полностью и включите переключатель заново."
-            } else {
-                "В этой сборке Antigravity нет места для переменной прокси — \
-                 вероятно, вышла новая версия и нужен более новый анлокер."
-            },
-        );
-        return;
+        if patch_is_on(ctx) {
+            enable_client_patch(ctx);
+        }
+        if ctx.proxy_var_carried == Some(false) {
+            ctx.log(
+                Level::Err,
+                if ctx.proxy_var_retryable {
+                    "Файл был занят — закройте Antigravity полностью и включите переключатель заново."
+                } else {
+                    "В этой сборке Antigravity нет места для переменной прокси — \
+                     вероятно, вышла новая версия и нужен более новый анлокер."
+                },
+            );
+            return;
+        }
     }
 
     // 4. I53/G31: never name a listener that is not there. A variable pointing

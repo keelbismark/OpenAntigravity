@@ -93,7 +93,7 @@ mod windows_impl {
         crate::dns_forwarder::log_dir().join("relay.pid")
     }
 
-    fn read_relay_pid() -> Option<u32> {
+    pub fn read_relay_pid() -> Option<u32> {
         fs::read_to_string(relay_pid_path())
             .ok()
             .and_then(|s| s.trim().parse().ok())
@@ -169,6 +169,14 @@ mod windows_impl {
         let check_cmdline = true;
         if check_cmdline {
             pids.extend(relay_pids_by_cmdline());
+        }
+        // Also check if any other instance of ours is holding port 53 (127.0.0.53:53).
+        if let Ok(dns_addr) = "127.0.0.53:53".parse() {
+            for pid in crate::platform::portcheck::listener_pids(dns_addr, crate::platform::portcheck::Proto::Udp) {
+                if pid != me {
+                    pids.push(pid);
+                }
+            }
         }
         pids.sort_unstable();
         pids.dedup();
@@ -762,6 +770,9 @@ pub fn disable() -> Result<(), String> {
 // unprivileged half that already lifts the region gate through a permitted exit.
 #[cfg(not(target_os = "windows"))]
 mod unix_impl {
+    pub fn read_relay_pid() -> Option<u32> {
+        None
+    }
     use std::fs;
     use std::path::PathBuf;
     use std::process::Command;

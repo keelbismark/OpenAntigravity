@@ -343,7 +343,7 @@ fn udp_rows(addr: SocketAddr) -> Vec<(Ipv4Addr, u32)> {
 
 /// The pids holding `addr`, in the order `listener_holder` wants them.
 #[cfg(windows)]
-fn listener_pids(addr: SocketAddr, proto: Proto) -> Vec<u32> {
+pub fn listener_pids(addr: SocketAddr, proto: Proto) -> Vec<u32> {
     let want = match addr {
         SocketAddr::V4(a) => *a.ip(),
         SocketAddr::V6(_) => return Vec::new(),
@@ -416,12 +416,16 @@ fn process_name(pid: u32) -> Option<String> {
 /// Whether an image name could be this tool's relay at all: the installed
 /// `OpenAntigravityRelay.exe`, or this very exe (the portable relay is the window's own
 /// image).
-fn is_our_relay_image(name: &str) -> bool {
+pub fn is_our_relay_image(name: &str) -> bool {
     let name = name.trim().to_ascii_lowercase();
     if name.is_empty() {
         return false;
     }
-    if name == crate::platform::service::RELAY_IMAGE {
+    if name == crate::platform::service::RELAY_IMAGE.to_ascii_lowercase()
+        || name == "openantigravityrelay.exe"
+        || name == "openantigravity.exe"
+        || name == "open_antigravity.exe"
+    {
         return true;
     }
     std::env::current_exe()
@@ -445,9 +449,17 @@ fn is_our_relay(pid: u32, name: Option<&str>) -> bool {
     if !is_our_relay_image(name) {
         return false;
     }
+    // Our own process cannot be a stale relay to kill.
+    if pid == std::process::id() {
+        return false;
+    }
     // The installed image is the relay by construction - no other program of
     // ours is ever called that, and the window never is.
     if name.eq_ignore_ascii_case(crate::platform::service::RELAY_IMAGE) {
+        return true;
+    }
+    // If the PID is recorded as our relay PID, it is definitely our relay.
+    if crate::platform::service::read_relay_pid() == Some(pid) {
         return true;
     }
     let mut cmd = std::process::Command::new("powershell");
@@ -460,11 +472,21 @@ fn is_our_relay(pid: u32, name: Option<&str>) -> bool {
              SilentlyContinue).CommandLine"
         ),
     ]);
-    crate::utils::bounded_output(
+    let cmdline_matched = crate::utils::bounded_output(
         crate::utils::no_window(&mut cmd),
-        std::time::Duration::from_secs(5),
+        std::time::Duration::from_secs(3),
     )
-    .is_some_and(|o| String::from_utf8_lossy(&o.stdout).contains(crate::platform::service::FORWARDER_FLAG))
+    .is_some_and(|o| String::from_utf8_lossy(&o.stdout).contains(crate::platform::service::FORWARDER_FLAG));
+
+    if cmdline_matched {
+        return true;
+    }
+
+    // On modern Windows (e.g. Windows 11), CommandLine is often protected/blank
+    // for non-admin callers. If the process is our image and holding this port,
+    // it is our relay or a stale instance of our tool. Treating it as ours lets
+    // the user kill it cleanly via the UI button.
+    true
 }
 
 /// Nothing on this platform has ever answered as our relay: the port layer
@@ -510,7 +532,7 @@ fn parse_excluded_ranges(text: &str) -> Vec<(u16, u16)> {
 // ---------------------------------------------------------------------------
 
 #[cfg(not(windows))]
-fn listener_pids(_addr: SocketAddr, _proto: Proto) -> Vec<u32> {
+pub fn listener_pids(_addr: SocketAddr, _proto: Proto) -> Vec<u32> {
     Vec::new()
 }
 
