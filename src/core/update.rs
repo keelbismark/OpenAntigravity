@@ -88,6 +88,12 @@ pub struct UpdateInfo {
     /// Archive for Windows builds.
     #[serde(default)]
     pub url_windows: Option<String>,
+    /// Standalone installer for Windows builds (.exe).
+    #[serde(default)]
+    pub url_windows_setup: Option<String>,
+    /// Portable zip archive for Windows builds (.zip).
+    #[serde(default)]
+    pub url_windows_portable: Option<String>,
     /// Archive for Linux/SteamOS builds.
     #[serde(default)]
     pub url_linux: Option<String>,
@@ -113,7 +119,16 @@ impl UpdateInfo {
     pub fn platform_download_url(&self) -> Option<&str> {
         #[cfg(target_os = "windows")]
         {
-            self.url_windows.as_deref()
+            // For in-app binary replacement, prefer portable zip archive over standalone installer .exe.
+            if let Some(ref p) = self.url_windows_portable {
+                return Some(p.as_str());
+            }
+            if let Some(ref w) = self.url_windows {
+                if !w.to_ascii_lowercase().ends_with("_setup.exe") {
+                    return Some(w.as_str());
+                }
+            }
+            self.url_windows.as_deref().or(self.url_windows_portable.as_deref())
         }
         #[cfg(not(target_os = "windows"))]
         {
@@ -132,8 +147,10 @@ impl UpdateInfo {
     pub fn landing_url(&self) -> Option<&str> {
         #[cfg(target_os = "windows")]
         {
-            self.url_windows
+            self.url_windows_setup
                 .as_deref()
+                .or(self.url_windows.as_deref())
+                .or(self.url_windows_portable.as_deref())
                 .or(self.url_linux.as_deref())
                 .or(self.page.as_deref())
         }
@@ -1206,6 +1223,14 @@ pub fn perform_auto_update(
         return;
     };
 
+    if url.to_ascii_lowercase().ends_with("_setup.exe") {
+        let _ = progress_tx.send(UpdateProgress::Failed(
+            "Для обновления требуется zip-архив приложения, а не exe-установщик.".to_string(),
+        ));
+        wake();
+        return;
+    }
+
     let temp_dir = std::env::temp_dir();
     let file_name = if url.ends_with(".AppImage") {
         "open_antigravity_update.AppImage"
@@ -1308,6 +1333,33 @@ mod tests {
     }
 
     #[test]
+    fn test_update_info_platform_download_url_prefers_portable_zip() {
+        let sample = r#"{
+            "version": "1.4.1",
+            "notes": "Open Antigravity v1.4.1",
+            "page": "https://github.com/keelbismark/OpenAntigravity/releases/tag/v1.4.1",
+            "url_windows": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.4.1/OpenAntigravity_windows_v1.4.1_setup.exe",
+            "url_windows_setup": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.4.1/OpenAntigravity_windows_v1.4.1_setup.exe",
+            "url_windows_portable": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.4.1/OpenAntigravity_windows_v1.4.1_portable.zip",
+            "url_linux": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.4.1/OpenAntigravity_linux_v1.4.1.tar.gz",
+            "url_appimage": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.4.1/OpenAntigravity-x86_64.AppImage"
+        }"#;
+
+        let info: UpdateInfo = serde_json::from_str(sample).expect("valid json");
+        #[cfg(target_os = "windows")]
+        {
+            assert_eq!(
+                info.platform_download_url(),
+                Some("https://github.com/keelbismark/OpenAntigravity/releases/download/v1.4.1/OpenAntigravity_windows_v1.4.1_portable.zip")
+            );
+            assert_eq!(
+                info.landing_url(),
+                Some("https://github.com/keelbismark/OpenAntigravity/releases/download/v1.4.1/OpenAntigravity_windows_v1.4.1_setup.exe")
+            );
+        }
+    }
+
+    #[test]
     fn test_update_info_optional_fields_default() {
         // Only `version` is required; a hand-edited feed without the rest
         // must still parse.
@@ -1366,6 +1418,8 @@ mod tests {
             notes: None,
             page: Some("https://example.com/page".into()),
             url_windows: Some("https://example.com/win.zip".into()),
+            url_windows_setup: None,
+            url_windows_portable: None,
             url_linux: Some("https://example.com/linux.tar.gz".into()),
             url_appimage: Some("https://example.com/appimage".into()),
         };

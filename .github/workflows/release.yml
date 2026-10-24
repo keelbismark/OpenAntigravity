@@ -211,7 +211,7 @@ jobs:
             "version": "${VERSION}",
             "notes": "Open Antigravity v${VERSION}",
             "page": "${RELEASE_URL}",
-            "url_windows": "${DL_URL}/OpenAntigravity_windows_v${VERSION}_setup.exe",
+            "url_windows": "${DL_URL}/OpenAntigravity_windows_v${VERSION}_portable.zip",
             "url_windows_setup": "${DL_URL}/OpenAntigravity_windows_v${VERSION}_setup.exe",
             "url_windows_portable": "${DL_URL}/OpenAntigravity_windows_v${VERSION}_portable.zip",
             "url_linux": "${DL_URL}/OpenAntigravity_linux_v${VERSION}.tar.gz",

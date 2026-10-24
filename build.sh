@@ -55,7 +55,9 @@ if [ "$DO_RELEASE" -eq 1 ]; then
   "version": "$NEW_REL_VER",
   "notes": "Open Antigravity v$NEW_REL_VER",
   "page": "https://github.com/keelbismark/OpenAntigravity/releases/tag/v$NEW_REL_VER",
-  "url_windows": "https://github.com/keelbismark/OpenAntigravity/releases/download/v$NEW_REL_VER/OpenAntigravity_windows_v$NEW_REL_VER.zip",
+  "url_windows": "https://github.com/keelbismark/OpenAntigravity/releases/download/v$NEW_REL_VER/OpenAntigravity_windows_v${NEW_REL_VER}_portable.zip",
+  "url_windows_setup": "https://github.com/keelbismark/OpenAntigravity/releases/download/v$NEW_REL_VER/OpenAntigravity_windows_v${NEW_REL_VER}_setup.exe",
+  "url_windows_portable": "https://github.com/keelbismark/OpenAntigravity/releases/download/v$NEW_REL_VER/OpenAntigravity_windows_v${NEW_REL_VER}_portable.zip",
   "url_linux": "https://github.com/keelbismark/OpenAntigravity/releases/download/v$NEW_REL_VER/OpenAntigravity_linux_v$NEW_REL_VER.tar.gz",
   "url_appimage": "https://github.com/keelbismark/OpenAntigravity/releases/download/v$NEW_REL_VER/OpenAntigravity-x86_64.AppImage"
 }
