@@ -1,10 +1,13 @@
 {
-    "version":  "1.4.2",
-    "notes":  "Open Antigravity v1.4.2",
-    "page":  "https://github.com/keelbismark/OpenAntigravity/releases/tag/v1.4.2",
-    "url_windows":  "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.4.2/OpenAntigravity_windows_v1.4.2_portable.zip",
-    "url_windows_setup":  "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.4.2/OpenAntigravity_windows_v1.4.2_setup.exe",
-    "url_windows_portable":  "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.4.2/OpenAntigravity_windows_v1.4.2_portable.zip",
-    "url_linux":  "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.4.2/OpenAntigravity_linux_v1.4.2.tar.gz",
-    "url_appimage":  "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.4.2/OpenAntigravity-x86_64.AppImage"
+  "version": "1.4.2",
+  "notes": "Open Antigravity v1.4.2",
+  "page": "https://github.com/keelbismark/OpenAntigravity/releases/tag/v1.4.2",
+  "url_windows": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.4.2/OpenAntigravity_windows_v1.4.2_portable.zip",
+  "url_windows_setup": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.4.2/OpenAntigravity_windows_v1.4.2_setup.exe",
+  "url_windows_portable": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.4.2/OpenAntigravity_windows_v1.4.2_portable.zip",
+  "url_linux": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.4.2/OpenAntigravity_linux_v1.4.2.tar.gz",
+  "url_appimage": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.4.2/OpenAntigravity-x86_64.AppImage",
+  "sha256_windows": "25f111a91d7364de92826578aa7ea67d63f190cea61a5fbede9a26af2e4a23d6",
+  "sha256_linux": "457fba575d6c0d6b7f14d43dbebb1a6b36190eca2fb886b106362768005226b2",
+  "sha256_appimage": "c99a5b79237bcda92979431bf13caf3e9759710b766fca0c51bc4f0ba263f5a0"
 }
