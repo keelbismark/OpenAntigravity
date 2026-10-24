@@ -181,12 +181,21 @@ impl UpdateInfo {
     pub fn landing_url(&self) -> Option<&str> {
         #[cfg(target_os = "windows")]
         {
-            self.url_windows_setup
-                .as_deref()
-                .or(self.url_windows.as_deref())
-                .or(self.url_windows_portable.as_deref())
-                .or(self.url_linux.as_deref())
-                .or(self.page.as_deref())
+            if crate::portable::enabled() {
+                self.url_windows_portable
+                    .as_deref()
+                    .or(self.url_windows.as_deref())
+                    .or(self.url_windows_setup.as_deref())
+                    .or(self.url_linux.as_deref())
+                    .or(self.page.as_deref())
+            } else {
+                self.url_windows_setup
+                    .as_deref()
+                    .or(self.url_windows.as_deref())
+                    .or(self.url_windows_portable.as_deref())
+                    .or(self.url_linux.as_deref())
+                    .or(self.page.as_deref())
+            }
         }
         #[cfg(not(target_os = "windows"))]
         {
@@ -765,6 +774,9 @@ fn stream_download_or_redirect<S: Read + Write>(
     }
 
     if status != 200 {
+        if status == 404 {
+            return Err("сервер вернул HTTP статус 404 (файлы релиза ещё загружаются на GitHub, подождите 2-3 минуты)".to_string());
+        }
         return Err(format!("сервер вернул HTTP статус {status}"));
     }
 

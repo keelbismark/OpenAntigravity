@@ -996,7 +996,14 @@ impl App {
                 format!("Open Antigravity v{} ", update::current_version()),
                 Style::new().fg(Color::White).add_modifier(Modifier::BOLD),
             ),
-            Span::styled("· портативный режим", Style::new().fg(Color::DarkGray)),
+            Span::styled(
+                if crate::portable::enabled() {
+                    "· портативный режим"
+                } else {
+                    "· установленная версия"
+                },
+                Style::new().fg(Color::DarkGray),
+            ),
         ];
         if let Some(rel) = &self.update {
             let hint = if self.auto_update_running {

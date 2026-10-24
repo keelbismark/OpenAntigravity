@@ -39,17 +39,45 @@ pub fn enabled() -> bool {
 }
 
 fn detect() -> bool {
-    // 1. Вшито при сборке: само наличие переменной включает режим, значение
-    //    не читается — так правило «есть значит да» не приходится объяснять.
-    if option_env!("OAG_PORTABLE").is_some() {
-        return true;
-    }
-    // 2. Флаг запуска.
+    // 1. Флаг запуска.
     if std::env::args().any(|a| a == "--portable") {
         return true;
     }
-    // 3. Маркер рядом с exe.
-    marker_present(exe_dir().as_deref())
+    // 2. Маркер portable.flag или каталог data/ рядом с exe.
+    if let Some(dir) = exe_dir() {
+        if marker_present(Some(&dir)) || dir.join(DATA_SUBDIR).is_dir() {
+            return true;
+        }
+    }
+    // 3. Если exe лежит в стандартной системной папке установки Windows (%LOCALAPPDATA%\Programs\OpenAntigravity или Program Files)
+    //    и при этом нет маркера portable.flag — это гарантированно установленная (не портативная) версия.
+    #[cfg(target_os = "windows")]
+    {
+        if let (Some(exe_path), Ok(local_app_data)) = (std::env::current_exe().ok(), std::env::var("LOCALAPPDATA")) {
+            let install_dir = PathBuf::from(local_app_data).join("Programs").join("OpenAntigravity");
+            let exe_lower = exe_path.to_string_lossy().to_ascii_lowercase();
+            let install_lower = install_dir.to_string_lossy().to_ascii_lowercase();
+            if exe_lower.starts_with(&install_lower) {
+                return false;
+            }
+        }
+        if let (Some(exe_path), Ok(prog_files)) = (std::env::current_exe().ok(), std::env::var("ProgramFiles")) {
+            let exe_lower = exe_path.to_string_lossy().to_ascii_lowercase();
+            let pf_lower = prog_files.to_ascii_lowercase();
+            if exe_lower.starts_with(&pf_lower) {
+                return false;
+            }
+        }
+        if let (Some(exe_path), Ok(prog_files_x86)) = (std::env::current_exe().ok(), std::env::var("ProgramFiles(x86)")) {
+            let exe_lower = exe_path.to_string_lossy().to_ascii_lowercase();
+            let pfx86_lower = prog_files_x86.to_ascii_lowercase();
+            if exe_lower.starts_with(&pfx86_lower) {
+                return false;
+            }
+        }
+    }
+    // 4. Вшито при сборке: само наличие переменной включает режим.
+    option_env!("OAG_PORTABLE").is_some()
 }
 
 /// Каталог, в котором лежит запущенный exe. На Windows это то же, что

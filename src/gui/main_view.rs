@@ -60,7 +60,7 @@ fn header(app: &mut App, ui: &mut egui::Ui) {
         // Version pill badge
         let ver_text = format!("v{}", crate::update::current_version());
         let font_id = egui::FontId::proportional(11.0);
-        let galley = ui.painter().layout_no_wrap(ver_text, font_id, theme::MUTED);
+        let galley = ui.painter().layout_no_wrap(ver_text, font_id.clone(), theme::MUTED);
         let (rect, _) = ui.allocate_exact_size(egui::vec2(galley.size().x + 10.0, 18.0), Sense::hover());
         if ui.is_rect_visible(rect) {
             let painter = ui.painter();
@@ -73,6 +73,28 @@ fn header(app: &mut App, ui: &mut egui::Ui) {
             );
             let text_pos = egui::pos2(rect.center().x - galley.size().x / 2.0, rect.center().y - galley.size().y / 2.0);
             painter.galley(text_pos, galley, theme::MUTED);
+        }
+
+        // Mode pill badge (Portable vs Installed)
+        let (mode_text, mode_tooltip) = if crate::portable::enabled() {
+            ("Портативная", "Портативный режим: настройки и данные хранятся в папке data/ рядом с программой")
+        } else {
+            ("Установленная", "Установленная версия: настройки и данные хранятся в системном каталоге (%LOCALAPPDATA%\\OpenAntigravity)")
+        };
+        let mode_galley = ui.painter().layout_no_wrap(mode_text.to_string(), font_id, theme::SUBTLE);
+        let (mode_rect, mode_resp) = ui.allocate_exact_size(egui::vec2(mode_galley.size().x + 10.0, 18.0), Sense::hover());
+        mode_resp.on_hover_text(mode_tooltip);
+        if ui.is_rect_visible(mode_rect) {
+            let painter = ui.painter();
+            painter.rect(
+                mode_rect,
+                CornerRadius::same(theme::RADIUS_SMALL),
+                theme::SUNKEN,
+                Stroke::new(1.0, theme::LINE),
+                egui::StrokeKind::Inside,
+            );
+            let text_pos = egui::pos2(mode_rect.center().x - mode_galley.size().x / 2.0, mode_rect.center().y - mode_galley.size().y / 2.0);
+            painter.galley(text_pos, mode_galley, theme::SUBTLE);
         }
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1468,8 +1490,25 @@ pub(super) fn changelog_dialog(app: &mut App, ctx: &egui::Context) {
 
             ui.add_space(6.0);
 
-            // SHA-256 badge
+            // Mode & SHA-256 badges
             ui.horizontal(|ui| {
+                let mode_label = if crate::portable::enabled() {
+                    "Сборка: Портативная"
+                } else {
+                    "Сборка: Установленная"
+                };
+                let mode_badge = egui::Frame::NONE
+                    .fill(theme::SUNKEN)
+                    .stroke(egui::Stroke::new(1.0, theme::CARD_BORDER))
+                    .corner_radius(egui::CornerRadius::same(theme::RADIUS_SMALL))
+                    .inner_margin(egui::Margin::symmetric(8, 4));
+                mode_badge.show(ui, |ui| {
+                    ui.label(
+                        egui::RichText::new(mode_label)
+                            .size(11.0)
+                            .color(theme::MUTED),
+                    );
+                });
                 if let Some(hash) = rel.expected_sha256() {
                     let short_hash = if hash.len() > 16 {
                         format!("{}...{}", &hash[..8], &hash[hash.len() - 8..])
@@ -1567,6 +1606,11 @@ pub(super) fn changelog_dialog(app: &mut App, ctx: &egui::Context) {
                 if widgets::primary(ui, "Обновить сейчас", true).clicked() {
                     trigger_update = true;
                     keep_open = false;
+                }
+                if let Some(setup_url) = &rel.url_windows_setup {
+                    if !crate::portable::enabled() && widgets::ghost(ui, "Скачать установщик (.exe)").clicked() {
+                        crate::utils::open_url(setup_url);
+                    }
                 }
                 if widgets::ghost(ui, "Открыть на GitHub").clicked() {
                     open_browser = true;
