@@ -45,7 +45,13 @@
     } elseif (-not (Test-Path $exe) -or (Get-Content $stamp -ErrorAction SilentlyContinue) -ne $ver) {
         Write-Host "Downloading Open Antigravity $ver ..."
         New-Item -ItemType Directory -Force $dir | Out-Null
-        Invoke-WebRequest -UseBasicParsing "https://github.com/$repo/releases/download/$tag/OpenAntigravity_windows_v$ver.zip" -OutFile "$exe.zip"
+                $dlUrl = "https://github.com/$repo/releases/download/$tag/OpenAntigravity_windows_v$ver`_portable.zip"
+        try {
+            Invoke-WebRequest -UseBasicParsing $dlUrl -OutFile "$exe.zip"
+        } catch {
+            $dlUrl = "https://github.com/$repo/releases/download/$tag/OpenAntigravity_windows_v$ver.zip"
+            Invoke-WebRequest -UseBasicParsing $dlUrl -OutFile "$exe.zip"
+        }
         try {
             Expand-Archive -Force -Path "$exe.zip" -DestinationPath "$dir\extract"
             $unpacked = Get-ChildItem -Path "$dir\extract" -Filter "*.exe" -Recurse | Select-Object -First 1

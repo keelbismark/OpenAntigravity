@@ -190,7 +190,6 @@ if %DO_STANDARD%==1 (
             echo [*] Exe-установщик готов: !STD_EXE!
             copy /y "!STD_EXE!" "!STD_OUTDIR!\OpenAntigravity_windows_v%VERSION%_setup.exe" >nul
             for /f %%H in ('certutil -hashfile "!STD_EXE!" SHA256 ^| findstr /v ":"') do (
-                echo %%H> "!STD_EXE!.sha256"
                 echo [*] SHA256 (Setup.exe^): %%H
             )
         )
@@ -198,18 +197,7 @@ if %DO_STANDARD%==1 (
         echo [!] Внимание: Inno Setup не найден. Для генерации .exe установщика установите Inno Setup 6.
     )
 
-    if %DO_PACKAGE%==1 (
-        set "STD_ZIP=!RELDIR!\OpenAntigravity_windows_v%VERSION%_setup.zip"
-        if exist "!STD_ZIP!" del "!STD_ZIP!"
-        echo [*] Упаковка стандартного zip-архива: !STD_ZIP!
-        powershell -NoProfile -Command "Compress-Archive -Path '!STD_OUTDIR!' -DestinationPath '!STD_ZIP!' -Force"
-        if errorlevel 1 goto :err
 
-        for /f %%H in ('certutil -hashfile "!STD_ZIP!" SHA256 ^| findstr /v ":"') do (
-            echo %%H> "!STD_ZIP!.sha256"
-            echo [*] SHA256 (Setup.zip^): %%H
-        )
-    )
 )
 
 rem ================================================================
@@ -252,13 +240,8 @@ if %DO_PORTABLE%==1 (
         if errorlevel 1 goto :err
 
         for /f %%H in ('certutil -hashfile "!PORT_ZIP!" SHA256 ^| findstr /v ":"') do (
-            echo %%H> "!PORT_ZIP!.sha256"
             echo [*] SHA256 (Portable^): %%H
         )
-
-        rem Дубликат для обратной совместимости старых ссылок обновления
-        copy /y "!PORT_ZIP!" "!RELDIR!\OpenAntigravity_windows_v%VERSION%.zip" >nul
-        copy /y "!PORT_ZIP!.sha256" "!RELDIR!\OpenAntigravity_windows_v%VERSION%.zip.sha256" >nul
     )
 )
 

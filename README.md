@@ -47,9 +47,11 @@
 
 Готовые сборки: **[GitHub Releases](https://github.com/keelbismark/OpenAntigravity/releases/latest)**
 
-* **Windows:** [OpenAntigravity-windows-portable.zip](https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity-windows-portable.zip) — распаковать и запустить `OpenAntigravity.exe`
+* **Windows (установщик):** [Скачать .exe](https://github.com/keelbismark/OpenAntigravity/releases/latest)
+* **Windows (портативная версия):** [Скачать .zip](https://github.com/keelbismark/OpenAntigravity/releases/latest)
 * **Linux / Steam Deck:** [OpenAntigravity-x86_64.AppImage](https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity-x86_64.AppImage) (`chmod +x *.AppImage && ./*.AppImage`)
-* **Linux Portable:** [OpenAntigravity-linux-portable.tar.gz](https://github.com/keelbismark/OpenAntigravity/releases/latest/download/OpenAntigravity-linux-portable.tar.gz) — запуск через `./launch.sh`
+* **Linux (портативный архив):** [Скачать .tar.gz](https://github.com/keelbismark/OpenAntigravity/releases/latest)
+* **Официальный сайт:** [keelbismark.github.io/OpenAntigravity](https://keelbismark.github.io/OpenAntigravity/)
 
 ### TUI в 1 команду
 

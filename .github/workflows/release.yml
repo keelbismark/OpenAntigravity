@@ -94,8 +94,8 @@ jobs:
         with:
           name: linux-dist
           path: |
-            release/OpenAntigravity_linux_v*.tar.gz*
-            release/OpenAntigravity*.AppImage*
+            release/OpenAntigravity_linux_v*.tar.gz
+            release/OpenAntigravity*.AppImage
 
   build-windows:
     name: Build Windows Portable
@@ -157,10 +157,8 @@ jobs:
         with:
           name: windows-dist
           path: |
-            release/OpenAntigravity_windows_v*.exe
-            release/OpenAntigravity_windows_v*.exe.sha256
-            release/OpenAntigravity_windows_v*.zip
-            release/OpenAntigravity_windows_v*.zip.sha256
+            release/OpenAntigravity_windows_v*_setup.exe
+            release/OpenAntigravity_windows_v*_portable.zip
 
   publish-release:
     name: Publish GitHub Release
@@ -200,7 +198,7 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           mkdir -p dist_release
-          find artifacts -type f \( -name "*.tar.gz*" -o -name "*.zip*" -o -name "*.AppImage*" -o -name "*.exe*" \) -exec cp {} dist_release/ \;
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*_portable.zip" -o -name "*.AppImage" -o -name "*_setup.exe" \) -exec cp {} dist_release/ \;
 
           TAG="v${VERSION}"
           RELEASE_URL="https://github.com/${REPO}/releases/tag/${TAG}"
@@ -220,14 +218,10 @@ jobs:
           ENDJSON
 
           cd dist_release
-          # Создаем стабильные ссылки без номера версии в имени файла для постоянных ссылок
-          [ -f "OpenAntigravity_windows_v${VERSION}_setup.exe" ] && cp "OpenAntigravity_windows_v${VERSION}_setup.exe" "OpenAntigravity-windows-setup.exe"
-          [ -f "OpenAntigravity_windows_v${VERSION}_setup.zip" ] && cp "OpenAntigravity_windows_v${VERSION}_setup.zip" "OpenAntigravity-windows-setup.zip"
-          [ -f "OpenAntigravity_windows_v${VERSION}_portable.zip" ] && cp "OpenAntigravity_windows_v${VERSION}_portable.zip" "OpenAntigravity-windows-portable.zip"
-          [ -f "OpenAntigravity_windows_v${VERSION}.zip" ] && cp "OpenAntigravity_windows_v${VERSION}.zip" "OpenAntigravity-windows.zip"
-          [ -f "OpenAntigravity_linux_v${VERSION}.tar.gz" ] && cp "OpenAntigravity_linux_v${VERSION}.tar.gz" "OpenAntigravity-linux-portable.tar.gz"
-
-          sha256sum OpenAntigravity*.exe OpenAntigravity*.zip OpenAntigravity*.tar.gz OpenAntigravity*.AppImage > SHA256SUMS.txt 2>/dev/null || true
+          sha256sum OpenAntigravity_windows_v${VERSION}_setup.exe \
+                    OpenAntigravity_windows_v${VERSION}_portable.zip \
+                    OpenAntigravity-x86_64.AppImage \
+                    OpenAntigravity_linux_v${VERSION}.tar.gz > SHA256SUMS.txt 2>/dev/null || true
 
           # Сбор списка изменений из Conventional Commits
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
@@ -287,13 +281,10 @@ jobs:
           name: Open Antigravity v${{ steps.ver.outputs.VERSION }}
           body_path: dist_release/RELEASE_NOTES.md
           files: |
-            dist_release/OpenAntigravity*.exe
-            dist_release/OpenAntigravity*.exe.sha256
-            dist_release/OpenAntigravity*.zip
-            dist_release/OpenAntigravity*.zip.sha256
-            dist_release/OpenAntigravity_linux_v*.tar.gz
-            dist_release/OpenAntigravity_linux_v*.tar.gz.sha256
-            dist_release/OpenAntigravity*.AppImage*
+            dist_release/OpenAntigravity_windows_v${{ steps.ver.outputs.VERSION }}_setup.exe
+            dist_release/OpenAntigravity_windows_v${{ steps.ver.outputs.VERSION }}_portable.zip
+            dist_release/OpenAntigravity-x86_64.AppImage
+            dist_release/OpenAntigravity_linux_v${{ steps.ver.outputs.VERSION }}.tar.gz
             dist_release/version.json
             dist_release/SHA256SUMS.txt
 
