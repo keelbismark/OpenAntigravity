@@ -1075,15 +1075,23 @@ pub fn run() -> Result<(), String> {
     // listening socket and nothing else.
     let egress = isp_interface();
     thread::spawn(move || {
-        if let Err(e) = proxy::run(egress) {
-            log_proxy(&format!("not started: {}", e));
+        loop {
+            if let Err(e) = proxy::run(egress) {
+                log_proxy(&format!("служба прокси завершилась с ошибкой: {} — перезапуск", e));
+            } else {
+                log_proxy("служба прокси завершилась — перезапуск через 1 сек");
+            }
+            thread::sleep(std::time::Duration::from_secs(1));
         }
     });
     // The gate hosts' own door (`loopback`). If it cannot be bound the relay
     // keeps answering with substituted addresses, exactly as before.
     thread::spawn(|| {
-        if let Err(e) = loopback::run() {
-            log_proxy(&format!("Р»РѕРєР°Р»СЊРЅС‹Рµ Р°РґСЂРµСЃР° РіРµР№С‚-С…РѕСЃС‚РѕРІ РЅРµ Р·Р°РЅСЏС‚С‹: {}", e));
+        loop {
+            if let Err(e) = loopback::run() {
+                log_proxy(&format!("локальные адреса гейт-хостов не заняты: {} — повтор", e));
+            }
+            thread::sleep(std::time::Duration::from_secs(5));
         }
     });
     thread::spawn(watch_client_logs);

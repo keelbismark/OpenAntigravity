@@ -1314,7 +1314,7 @@ pub const REBIND_EVERY: Duration = Duration::from_secs(60);
 /// while it cannot be had, says why (`gate::set_blocker`) and keeps trying.
 pub fn run(if_index: u32) -> Result<(), String> {
     let mut said: Option<crate::gate::Blocker> = None;
-    let listener = loop {
+    let mut listener = loop {
         match bind_listener() {
             Ok(listener) => {
                 if said.is_some() {
@@ -1358,11 +1358,25 @@ pub fn run(if_index: u32) -> Result<(), String> {
     // put in a trust store, and a client that never points at this port never
     // notices it is here.
 
-    for stream in listener.incoming() {
-        let Ok(stream) = stream else { continue };
-        thread::spawn(move || serve(stream, if_index));
+    loop {
+        for stream in listener.incoming() {
+            let Ok(stream) = stream else { continue };
+            thread::spawn(move || serve(stream, if_index));
+        }
+        crate::dns_forwarder::log_proxy("слушатель локального прокси завершился — пересоздание сокета");
+        PROXY_BOUND.store(false, std::sync::atomic::Ordering::Relaxed);
+        thread::sleep(Duration::from_millis(500));
+        match bind_listener() {
+            Ok(new_listener) => {
+                listener = new_listener;
+                PROXY_BOUND.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+            Err(e) => {
+                crate::dns_forwarder::log_proxy(&format!("ошибка повторного связывания прокси: {}", e.error));
+                thread::sleep(REBIND_EVERY);
+            }
+        }
     }
-    Ok(())
 }
 
 

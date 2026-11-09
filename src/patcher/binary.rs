@@ -471,9 +471,7 @@ pub fn kill_affected_processes() {
 #[cfg(target_os = "windows")]
 fn kill_platform_processes() {
     let processes = [
-        "Antigravity.exe",
         "Antigravity CLI.exe",
-        "Antigravity IDE.exe",
         "agy.exe",
         "language_server.exe",
         "language_server_windows_x64.exe",
