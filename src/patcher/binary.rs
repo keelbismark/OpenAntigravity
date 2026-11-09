@@ -24,30 +24,31 @@ use std::time::Duration;
 
 fn replace_all(data: &mut [u8], from: &[u8], to: &[u8]) -> usize {
     debug_assert_eq!(from.len(), to.len());
-    if data.len() < from.len() {
+    if data.len() < from.len() || from.is_empty() {
         return 0;
     }
     let mut count = 0;
     let mut i = 0;
-    while i + from.len() <= data.len() {
-        if &data[i..i + from.len()] == from {
-            data[i..i + to.len()].copy_from_slice(to);
-            count += 1;
-            i += from.len();
-        } else {
-            i += 1;
+    let finder = memchr::memmem::Finder::new(from);
+    while i < data.len() {
+        match finder.find(&data[i..]) {
+            Some(pos) => {
+                let match_idx = i + pos;
+                data[match_idx..match_idx + to.len()].copy_from_slice(to);
+                count += 1;
+                i = match_idx + from.len();
+            }
+            None => break,
         }
     }
     count
 }
 
 fn count_occurrences(data: &[u8], needle: &[u8]) -> usize {
-    if data.len() < needle.len() {
+    if needle.is_empty() || data.len() < needle.len() {
         return 0;
     }
-    (0..=data.len() - needle.len())
-        .filter(|&i| &data[i..i + needle.len()] == needle)
-        .count()
+    memchr::memmem::Finder::new(needle).find_iter(data).count()
 }
 
 /// Writes the binary back atomically: a sibling temp on the same directory, then

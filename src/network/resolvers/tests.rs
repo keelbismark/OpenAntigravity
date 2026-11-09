@@ -821,3 +821,36 @@ use super::verdict::*;
             Some("warm-unseen.example")
         );
     }
+
+    #[test]
+    fn test_bounded_choice_cache_capacity() {
+        let _cache = clear_answers();
+        for i in 0..(MAX_CHOICE_ENTRIES + 50) {
+            remember_choice((format!("host{}.example", i), 1), i, Verdict::Substituted);
+        }
+        let guard = CHOICE.lock().unwrap();
+        let map = guard.as_ref().unwrap();
+        assert!(
+            map.len() <= MAX_CHOICE_ENTRIES,
+            "CHOICE cache must be bounded by MAX_CHOICE_ENTRIES, got {}",
+            map.len()
+        );
+    }
+
+    #[test]
+    fn test_bounded_answers_cache_capacity() {
+        let _cache = clear_answers();
+        for i in 0..550 {
+            let name = format!("ans{}.example", i);
+            let query = query_for(&name, 1, false);
+            let reply = reply_for(&name, 1, [10, 0, 0, (i % 250) as u8]);
+            remember_answer(&query, &reply, "test", Verdict::Substituted, false);
+        }
+        let guard = ANSWERS.lock().unwrap();
+        let map = guard.as_ref().unwrap();
+        assert!(
+            map.len() <= 512,
+            "ANSWERS cache must be bounded by 512 entries, got {}",
+            map.len()
+        );
+    }

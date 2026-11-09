@@ -33,11 +33,19 @@ pub(super) fn cached_choice(key: &(String, u16)) -> Option<(usize, Verdict)> {
     (at.elapsed() < CHOICE_TTL).then_some((*idx, *verdict))
 }
 
+pub(super) const MAX_CHOICE_ENTRIES: usize = 256;
+
 pub(super) fn remember_choice(key: (String, u16), idx: usize, verdict: Verdict) {
     if let Ok(mut guard) = CHOICE.lock() {
-        guard
-            .get_or_insert_with(HashMap::new)
-            .insert(key, (idx, verdict, Instant::now()));
+        let map = guard.get_or_insert_with(HashMap::new);
+        // Prune expired entries to prevent unbounded memory growth (Q.E.D. Invariant 6)
+        map.retain(|_, (_, _, at)| at.elapsed() < CHOICE_TTL);
+        if map.len() >= MAX_CHOICE_ENTRIES {
+            if let Some(oldest_key) = map.iter().min_by_key(|(_, (_, _, at))| *at).map(|(k, _)| k.clone()) {
+                map.remove(&oldest_key);
+            }
+        }
+        map.insert(key, (idx, verdict, Instant::now()));
     }
 }
 
@@ -110,6 +118,13 @@ pub(super) fn remember_answer(
         Some(prev) if !from_client => prev.wanted,
         _ => now,
     };
+    // Bound maximum cache capacity (Q.E.D. Invariant 6)
+    const MAX_ANSWER_ENTRIES: usize = 512;
+    if map.len() >= MAX_ANSWER_ENTRIES {
+        if let Some(oldest_key) = map.iter().min_by_key(|(_, a)| a.wanted).map(|(k, _)| k.clone()) {
+            map.remove(&oldest_key);
+        }
+    }
     map.insert(
         key,
         Answer {

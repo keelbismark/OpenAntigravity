@@ -811,7 +811,28 @@ fn probe_request(mut sock: TcpStream) -> Result<(), String> {
 /// Returns the target. Anything that is not a CONNECT is refused rather than
 /// guessed at: this proxy exists for one client and one method.
 fn read_connect(sock: &mut TcpStream) -> Request {
-    let mut head = Vec::new();
+    let mut head = Vec::with_capacity(512);
+    let mut peek_buf = [0u8; 4096];
+
+    // Fast path: peek into kernel buffer without consuming bytes to avoid single-byte syscall loop
+    if let Ok(n) = sock.peek(&mut peek_buf) {
+        if n > 0 {
+            if let Some(pos) = memchr::memmem::find(&peek_buf[..n], b"\r\n\r\n") {
+                let end = pos + 4;
+                head.resize(end, 0);
+                if sock.read_exact(&mut head).is_ok() {
+                    return match parse_connect(&String::from_utf8_lossy(&head)) {
+                        Some((host, port)) => Request::Connect(host, port),
+                        None => Request::Malformed,
+                    };
+                } else {
+                    return Request::Gone;
+                }
+            }
+        }
+    }
+
+    // Fallback path: chunked or slow-arriving request headers
     let mut byte = [0u8; 1];
     while !head.ends_with(b"\r\n\r\n") {
         if head.len() > 8 * 1024 {
@@ -940,6 +961,7 @@ pub(crate) fn splice(mut client: TcpStream, mut upstream: TcpStream) {
     for s in [&client, &upstream] {
         s.set_read_timeout(None).ok();
         s.set_write_timeout(None).ok();
+        s.set_nodelay(true).ok();
     }
     let Ok(mut client_w) = client.try_clone() else {
         return;
@@ -999,7 +1021,9 @@ pub(crate) fn splice(mut client: TcpStream, mut upstream: TcpStream) {
     // with RST - which a pooling client reports as "An existing connection was
     // forcibly closed by the remote host" instead of quietly reconnecting.
     client_w.shutdown(std::net::Shutdown::Write).ok();
-    thread::sleep(PUMP_MAX_SLEEP);
+    if !up.is_finished() {
+        thread::sleep(PUMP_MAX_SLEEP);
+    }
     client_w.shutdown(std::net::Shutdown::Both).ok();
     up.join().ok();
 }
