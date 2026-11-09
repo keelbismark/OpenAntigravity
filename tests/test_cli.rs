@@ -108,6 +108,10 @@ fn test_cli_check_json_flag() {
 
     assert!(parsed.get("overall_status").is_some());
     assert!(parsed.get("items").is_some());
+    assert!(parsed.get("proxy_metrics").is_some());
+    let pm = parsed.get("proxy_metrics").unwrap();
+    assert!(pm.get("active_tunnels").is_some());
+    assert!(pm.get("total_requests").is_some());
 }
 
 #[test]

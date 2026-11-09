@@ -21,6 +21,8 @@ use crate::gui::icon;
 pub(super) struct TrayItems {
     pub open: MenuItem,
     pub status: MenuItem,
+    pub terminal: MenuItem,
+    pub restart_ls: MenuItem,
     pub diag: MenuItem,
     pub quit: MenuItem,
 }
@@ -35,6 +37,10 @@ pub(super) enum TrayAction {
     Quit,
     /// The user asked to run diagnostics.
     RunDiag,
+    /// Launch interactive terminal pre-configured with proxy env vars.
+    LaunchTerminal,
+    /// Soft restart language server background process.
+    RestartLanguageServer,
 }
 
 /// Build the tray icon with its context menu.  Returns `None` when the icon
@@ -44,15 +50,17 @@ pub(super) fn build() -> Option<(TrayIcon, TrayItems)> {
     let items = TrayItems {
         open: MenuItem::new("Открыть", true, None),
         status: MenuItem::new("Статус: ожидание…", false, None),
+        terminal: MenuItem::new("Терминал с прокси", true, None),
+        restart_ls: MenuItem::new("Перезапустить Language Server", true, None),
         diag: MenuItem::new("Тест сети", true, None),
         quit: MenuItem::new("Выход", true, None),
     };
 
     let menu = Menu::new();
-    // build can technically fail (OOM), but with four items this is not worth
-    // a dedicated code path — just bail out of tray entirely.
     menu.append(&items.open).ok()?;
     menu.append(&items.status).ok()?;
+    menu.append(&items.terminal).ok()?;
+    menu.append(&items.restart_ls).ok()?;
     menu.append(&items.diag).ok()?;
     menu.append(&items.quit).ok()?;
 
@@ -105,6 +113,12 @@ pub(super) fn drain(items: &TrayItems) -> TrayAction {
         if ev.id == items.open.id() {
             return TrayAction::Show;
         }
+        if ev.id == items.terminal.id() {
+            return TrayAction::LaunchTerminal;
+        }
+        if ev.id == items.restart_ls.id() {
+            return TrayAction::RestartLanguageServer;
+        }
         if ev.id == items.diag.id() {
             return TrayAction::RunDiag;
         }
@@ -133,6 +147,8 @@ mod tests {
     fn menu_items_are_constructible() {
         use tray_icon::menu::MenuItem;
         let _open = MenuItem::new("Открыть", true, None);
+        let _term = MenuItem::new("Терминал с прокси", true, None);
+        let _ls = MenuItem::new("Перезапустить Language Server", true, None);
         let _quit = MenuItem::new("Выход", true, None);
     }
 

@@ -761,6 +761,13 @@ impl App {
             tray::TrayAction::RunDiag => {
                 self.start_diagnostics(ctx);
             }
+            tray::TrayAction::LaunchTerminal => {
+                let _ = crate::utils::launch_terminal_with_proxy(crate::proxy::port());
+            }
+            tray::TrayAction::RestartLanguageServer => {
+                crate::patch_binary::kill_platform_processes();
+                crate::platform::notify::send("Open Antigravity", "Language Server перезапущен");
+            }
         }
     }
 }

@@ -243,6 +243,12 @@
     }
 
     #[test]
+    fn test_live_metrics_tracks_initial_state() {
+        let m = live_metrics();
+        assert_eq!(m.active_tunnels, 0);
+    }
+
+    #[test]
     fn the_proxy_url_is_loopback() {
         assert!(proxy_url().starts_with("http://127.0.0.1:"));
     }

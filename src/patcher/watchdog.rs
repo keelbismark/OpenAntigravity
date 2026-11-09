@@ -400,9 +400,7 @@ fn log(line: &str) {
     let dir = dns_forwarder::log_dir();
     let path = dir.join("watchdog.log");
     fs::create_dir_all(&dir).ok();
-    if fs::metadata(&path).is_ok_and(|m| m.len() > LOG_LIMIT_BYTES) {
-        fs::remove_file(&path).ok();
-    }
+    let _ = crate::utils::rotate_log_file(&path, LOG_LIMIT_BYTES);
     if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&path) {
         let stamp = crate::utils::local_clock().map_or_else(String::new, |c| c.hms());
         writeln!(f, "{} {}", stamp, line).ok();

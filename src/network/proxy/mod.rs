@@ -638,6 +638,31 @@ fn try_vpn(mut client: TcpStream, host: &str, port: u16) -> Result<(), TcpStream
 /// the gate.
 static VPN_EXIT: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 
+static ACTIVE_TUNNELS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+static TOTAL_REQUESTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static TOTAL_BYTES_UP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static TOTAL_BYTES_DOWN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static LAST_STREAM_DURATION_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+pub struct LiveMetrics {
+    pub active_tunnels: u32,
+    pub total_requests: u64,
+    pub bytes_up: u64,
+    pub bytes_down: u64,
+    pub last_stream_duration_ms: u64,
+}
+
+pub fn live_metrics() -> LiveMetrics {
+    LiveMetrics {
+        active_tunnels: ACTIVE_TUNNELS.load(std::sync::atomic::Ordering::Relaxed),
+        total_requests: TOTAL_REQUESTS.load(std::sync::atomic::Ordering::Relaxed),
+        bytes_up: TOTAL_BYTES_UP.load(std::sync::atomic::Ordering::Relaxed),
+        bytes_down: TOTAL_BYTES_DOWN.load(std::sync::atomic::Ordering::Relaxed),
+        last_stream_duration_ms: LAST_STREAM_DURATION_MS.load(std::sync::atomic::Ordering::Relaxed),
+    }
+}
+
 pub fn set_vpn_exit(permitted: Option<bool>) {
     let v = match permitted {
         None => 0,
@@ -922,6 +947,11 @@ impl<W: Write> Write for Marked<'_, W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let n = self.inner.write(buf)?;
         if n > 0 {
+            if self.to_client {
+                TOTAL_BYTES_DOWN.fetch_add(n as u64, std::sync::atomic::Ordering::Relaxed);
+            } else {
+                TOTAL_BYTES_UP.fetch_add(n as u64, std::sync::atomic::Ordering::Relaxed);
+            }
             if let Some(a) = self.activity {
                 if self.to_client {
                     a.to_client(n as u64);
@@ -958,6 +988,10 @@ pub(crate) fn splice(mut client: TcpStream, mut upstream: TcpStream) {
     // None, rather than a reaper: expiring an idle tunnel is a real policy with a
     // real risk of cutting a live stream (P4), and it belongs with the payload
     // clock in the relay's pump, not smuggled in as a socket option.
+    ACTIVE_TUNNELS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    TOTAL_REQUESTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let start_tunnel = std::time::Instant::now();
+
     for s in [&client, &upstream] {
         s.set_read_timeout(None).ok();
         s.set_write_timeout(None).ok();
@@ -1026,6 +1060,12 @@ pub(crate) fn splice(mut client: TcpStream, mut upstream: TcpStream) {
     }
     client_w.shutdown(std::net::Shutdown::Both).ok();
     up.join().ok();
+
+    ACTIVE_TUNNELS.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+    LAST_STREAM_DURATION_MS.store(
+        start_tunnel.elapsed().as_millis() as u64,
+        std::sync::atomic::Ordering::Relaxed,
+    );
 }
 
 /// Longest one candidate address may take - connect *and* TLS together - before

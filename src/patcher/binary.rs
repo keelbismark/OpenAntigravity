@@ -469,7 +469,7 @@ pub fn kill_affected_processes() {
 /// Stops the language server / CLI so their files can be replaced. Never the
 /// editor shell itself - that would lose the user's unsaved work (D9).
 #[cfg(target_os = "windows")]
-fn kill_platform_processes() {
+pub fn kill_platform_processes() {
     let processes = [
         "Antigravity CLI.exe",
         "agy.exe",
@@ -491,7 +491,7 @@ fn kill_platform_processes() {
 /// and the two language-server basenames are killed; the editor shell is left
 /// running, same rule as Windows.
 #[cfg(not(target_os = "windows"))]
-fn kill_platform_processes() {
+pub fn kill_platform_processes() {
     // -f matches against the whole command line, so a full install path still
     // matches; the patterns are the binary basenames the patcher targets.
     let patterns = ["language_server", "/agy"];

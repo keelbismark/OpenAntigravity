@@ -119,11 +119,19 @@ impl DiagReport {
             })
             .collect();
 
+        let metrics = crate::proxy::live_metrics();
         let obj = json!({
             "version": crate::update::current_version(),
             "timestamp": self.timestamp,
             "overall_status": self.overall_status().as_str(),
             "latency_ms": self.latency_ms,
+            "proxy_metrics": {
+                "active_tunnels": metrics.active_tunnels,
+                "total_requests": metrics.total_requests,
+                "bytes_up": metrics.bytes_up,
+                "bytes_down": metrics.bytes_down,
+                "last_stream_duration_ms": metrics.last_stream_duration_ms,
+            },
             "items": items_json,
         });
 

@@ -303,9 +303,7 @@ fn log(line: &str) {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).ok();
     }
-    if fs::metadata(&path).is_ok_and(|m| m.len() > LOG_LIMIT_BYTES) {
-        fs::remove_file(&path).ok();
-    }
+    let _ = crate::utils::rotate_log_file(&path, LOG_LIMIT_BYTES);
     if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&path) {
         // One write per line. `writeln!` with arguments issues a write per
         // piece, and an append is atomic only per write, so two threads (or two

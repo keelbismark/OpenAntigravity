@@ -281,6 +281,27 @@ pub fn parse(input: &str) -> Result<Upstream, String> {
     if rest.contains("://") {
         return Err("поддерживается только HTTP-прокси (http://…)".to_string());
     }
+    // Fast-path: standard proxy-provider format host:port:user:pass (without @)
+    if !rest.contains('@') {
+        let colons: Vec<&str> = rest.split(':').collect();
+        if colons.len() == 4 {
+            if let Ok(port) = colons[1].parse::<u16>() {
+                if port == 0 {
+                    return Err("порт не может быть 0".to_string());
+                }
+                let host = colons[0].trim_start_matches('[').trim_end_matches(']');
+                if host.is_empty() {
+                    return Err("не указан адрес".to_string());
+                }
+                return Ok(Upstream {
+                    host: host.to_string(),
+                    port,
+                    auth: Some(format!("{}:{}", colons[2], colons[3])),
+                });
+            }
+        }
+    }
+
     // Split on the LAST '@': a password may contain one, a hostname may not.
     let (auth, hostport) = match rest.rsplit_once('@') {
         Some((a, hp)) => {
@@ -512,21 +533,30 @@ pub fn get_ranked_upstreams() -> Vec<Upstream> {
 /// Races all configured upstreams, measuring latency to Google Cloud Code and updating scores.
 pub fn race_all_upstreams(budget: Duration) -> Vec<(Upstream, Result<(u64, Option<String>), String>)> {
     let all = configured_all();
-    let mut results = Vec::with_capacity(all.len());
-    for up in all {
-        let start = Instant::now();
-        let res = match open(&up, PROBE_HOST, 443, budget) {
-            Ok(_sock) => {
-                let rtt = start.elapsed().as_millis() as u64;
-                let loc = exit_info(&up).map(|(ip, country)| format!("{ip} ({country})"));
-                Ok((rtt, loc))
-            }
-            Err(e) => Err(e),
-        };
-        record_upstream_result(&up, res.clone());
-        results.push((up, res));
+    if all.is_empty() {
+        return Vec::new();
     }
-    results
+    // Parallel racing: test all candidates concurrently without head-of-line blocking
+    let handles: Vec<_> = all
+        .into_iter()
+        .map(|up| {
+            std::thread::spawn(move || {
+                let start = Instant::now();
+                let res = match open(&up, PROBE_HOST, 443, budget) {
+                    Ok(_sock) => {
+                        let rtt = start.elapsed().as_millis() as u64;
+                        let loc = exit_info(&up).map(|(ip, country)| format!("{ip} ({country})"));
+                        Ok((rtt, loc))
+                    }
+                    Err(e) => Err(e),
+                };
+                record_upstream_result(&up, res.clone());
+                (up, res)
+            })
+        })
+        .collect();
+
+    handles.into_iter().filter_map(|h| h.join().ok()).collect()
 }
 
 /// Whether the route should be tried for this connection.
@@ -957,6 +987,22 @@ mod tests {
             let up = parse(raw).unwrap();
             assert_eq!(parse(&up.as_line()).unwrap(), up, "{}", raw);
         }
+    }
+
+    #[test]
+    fn parses_four_part_colon_separated_proxy() {
+        let input = "192.168.1.100:8080:myuser:mypass";
+        let up = parse(input).expect("parse four-part proxy");
+        assert_eq!(up.host, "192.168.1.100");
+        assert_eq!(up.port, 8080);
+        assert_eq!(up.auth.as_deref(), Some("myuser:mypass"));
+
+        // Also works with http:// prefix
+        let with_scheme = "http://10.0.0.1:3128:usr:pwd";
+        let up2 = parse(with_scheme).expect("parse with http scheme");
+        assert_eq!(up2.host, "10.0.0.1");
+        assert_eq!(up2.port, 3128);
+        assert_eq!(up2.auth.as_deref(), Some("usr:pwd"));
     }
 
     #[test]

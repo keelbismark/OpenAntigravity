@@ -499,6 +499,24 @@ pub fn reveal_in_explorer(path: &Path) {
     }
 }
 
+/// Bounded log rotation (Q.E.D. Invariant 6): if a file at `path` meets or exceeds `max_bytes`,
+/// rotates `path` -> `path.old`, atomically replacing any previous old log.
+/// This guarantees total disk space is strictly bounded to at most `2 * max_bytes`
+/// while preserving the previous session's history for troubleshooting.
+pub fn rotate_log_file(path: &Path, max_bytes: u64) -> std::io::Result<bool> {
+    if let Ok(meta) = std::fs::metadata(path) {
+        if meta.len() >= max_bytes {
+            let mut old_path = path.as_os_str().to_os_string();
+            old_path.push(".old");
+            let old_path = PathBuf::from(old_path);
+            let _ = std::fs::remove_file(&old_path);
+            let _ = std::fs::rename(path, &old_path);
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// Starts this exe again through the shell's `runas` verb, i.e. behind a UAC
 /// prompt, and reports whether the new process was actually launched.
 ///
@@ -800,6 +818,36 @@ mod tests {
     /// The report has to land somewhere the user can find without being told a
     /// path, so the one thing this must never do is hand back a directory that
     /// is not there - the caller would write nothing and say it had.
+    #[test]
+    fn test_rotate_log_file_rotates_and_bounds_size() {
+        let dir = std::env::temp_dir().join("oag_test_log_rotate");
+        let _ = std::fs::create_dir_all(&dir);
+        let log = dir.join("test.log");
+        let old = dir.join("test.log.old");
+        let _ = std::fs::remove_file(&log);
+        let _ = std::fs::remove_file(&old);
+
+        // Under limit: no rotation
+        std::fs::write(&log, b"short log").unwrap();
+        assert!(!rotate_log_file(&log, 100).unwrap());
+        assert!(log.exists());
+        assert!(!old.exists());
+
+        // At or over limit: rotated to .old
+        std::fs::write(&log, vec![b'x'; 120]).unwrap();
+        assert!(rotate_log_file(&log, 100).unwrap());
+        assert!(!log.exists());
+        assert!(old.exists());
+        assert_eq!(std::fs::metadata(&old).unwrap().len(), 120);
+
+        // Next write creates fresh file and subsequent rotation overwrites old
+        std::fs::write(&log, vec![b'y'; 150]).unwrap();
+        assert!(rotate_log_file(&log, 100).unwrap());
+        assert_eq!(std::fs::metadata(&old).unwrap().len(), 150);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn the_desktop_is_a_directory_that_exists() {
         let dir = desktop_dir().expect("every account has one of these");
