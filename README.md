@@ -76,6 +76,27 @@ irm https://raw.githubusercontent.com/keelbismark/OpenAntigravity/main/tui.ps1 |
 3. На вкладке **«Прокси»** укажите свой сервер (`логин:пароль@хост:порт`). Инструкция по настройке: [**`PROXY_SETUP.md`**](PROXY_SETUP.md).
 4. Откройте Antigravity и войдите в Google-аккаунт.
 
+### Headless CLI и автоматизация (скрипты, CI/CD, headless)
+
+Утилита поддерживает полноценное управление через терминал без открытия GUI:
+
+```bash
+# Проверка готовности системы и статуса разблокировки (JSON для скриптов)
+open_antigravity --status --json
+
+# Пакетная разблокировка всех обнаруженных копий Antigravity (IDE, CLI, Desktop)
+open_antigravity --patch
+
+# Откат изменений и возврат к оригинальным бинарникам из бэкапов
+open_antigravity --unpatch
+
+# Диагностика и автоисправление выявленных сетевых неполадок
+open_antigravity --fix
+
+# Комплексный селф-тест в формате JSON
+open_antigravity --check --json
+```
+
 ---
 
 ## Сборка из исходников

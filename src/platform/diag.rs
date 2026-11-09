@@ -1,4 +1,4 @@
-//! Встроенная диагностика системы и сети (Self-test).
+﻿//! Встроенная диагностика системы и сети (Self-test).
 //!
 //! Кроссплатформенная проверка (Linux + Windows):
 //! 1. Окружение и права (ОС, архитектура, портативный режим, права администратора).
@@ -11,6 +11,7 @@
 use std::fmt::Write as _;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::{Duration, Instant};
+use serde_json::json;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiagStatus {
@@ -41,6 +42,15 @@ impl DiagStatus {
 
     pub fn is_ok(&self) -> bool {
         matches!(self, DiagStatus::Ok | DiagStatus::Info)
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DiagStatus::Ok => "ok",
+            DiagStatus::Warn => "warn",
+            DiagStatus::Fail => "fail",
+            DiagStatus::Info => "info",
+        }
     }
 }
 
@@ -90,6 +100,34 @@ impl DiagReport {
         } else {
             DiagStatus::Ok
         }
+    }
+
+    pub fn to_json(&self) -> String {
+        let items_json: Vec<serde_json::Value> = self
+            .items
+            .iter()
+            .map(|i| {
+                json!({
+                    "category": i.category,
+                    "name": i.name,
+                    "status": i.status.as_str(),
+                    "summary": i.summary,
+                    "details": i.details,
+                    "fixable": i.fix.is_some(),
+                    "fix_action": i.fix.map(|f| f.label()),
+                })
+            })
+            .collect();
+
+        let obj = json!({
+            "version": crate::update::current_version(),
+            "timestamp": self.timestamp,
+            "overall_status": self.overall_status().as_str(),
+            "latency_ms": self.latency_ms,
+            "items": items_json,
+        });
+
+        serde_json::to_string_pretty(&obj).unwrap_or_else(|_| "{}".to_string())
     }
 
     pub fn to_string_formatted(&self, use_ansi: bool) -> String {

@@ -26,7 +26,7 @@ pub mod platform;
 pub mod tui;
 
 // Domain-level re-exports for crate root resolution
-pub use self::core::{ls_log, ops, portable, settings, update, utils};
+pub use self::core::{cli, ls_log, ops, portable, settings, update, utils};
 pub use self::network::{
     dns, dns_client, dns_forwarder, doh, egress, endpoint, gate, hosts as hosts_pin,
     loopback, net, proxy, resolvers, routes, upstream,
@@ -663,24 +663,47 @@ pub fn install_label(install: &Path) -> &'static str {
     }
 }
 
-fn print_help() {
+pub fn print_help() {
     println!(
-        "Open Antigravity v{} (портативная сборка)\n\
-         Разблокировка и сетевая маршрутизация для Antigravity 2.0 (Google IDE).\n\
-         https://github.com/keelbismark/OpenAntigravity\n\
-         \n\
-         Использование:\n\
-           open_antigravity [ОПЦИИ]\n\
-         \n\
-         Опции:\n\
-           -h, --help                 Показать эту справку и выйти\n\
-           -v, --version              Показать версию сборки и происхождение\n\
-           --tui, --cli               Запустить интерактивный текстовый интерфейс (TUI)\n\
-           --check, --diagnose        Комплексная сетевая и системная диагностика (self-test)\n\
-           --shortcut                 Создать ярлыки на Рабочем столе и в главном меню\n\
-           --about, --license         Показать лицензионное соглашение и правовую информацию\n\
-          \n\
-          По умолчанию открывается графический интерфейс (GUI), либо TUI, если дисплей недоступен.",
+        "Open Antigravity v{} (портативная сборка)
+\
+         Разблокировка и сетевая маршрутизация для Antigravity 2.0 (Google IDE).
+\
+         https://github.com/keelbismark/OpenAntigravity
+
+\
+         Использование:
+\
+           open_antigravity [КОМАНДА / ОПЦИИ]
+
+\
+         Автоматизация и управление (Headless CLI):
+\
+           --status [--json]          Проверка готовности системы и статуса разблокировки
+\
+           --patch                    Пакетная разблокировка всех обнаруженных копий Antigravity
+\
+           --unpatch, --revert        Восстановление оригинальных бинарников из бэкапов
+\
+           --fix, --repair            Автоматическое исправление выявленных неполадок
+\
+           --check [--json]           Комплексная сетевая и системная диагностика (self-test)
+\
+           --shortcut                 Создать ярлыки на Рабочем столе и в главном меню
+
+\
+         Справка и информация:
+\
+           -h, --help                 Показать эту справку и выйти
+\
+           -v, --version              Показать версию сборки и происхождение
+\
+           --about, --license         Показать лицензионное соглашение и правовую информацию
+\
+           --tui                      Запустить интерактивный текстовый интерфейс (TUI)
+
+\
+         По умолчанию открывается графический интерфейс (GUI), либо TUI, если дисплей недоступен.",
         crate::update::current_version()
     );
 }
@@ -726,60 +749,13 @@ fn main() {
         );
     }
 
-    if env::args().skip(1).any(|a| {
-        matches!(
-            a.trim_start_matches('-').to_ascii_lowercase().as_str(),
-            "help"
-                | "h"
-                | "?"
-                | "about"
-                | "license"
-                | "licence"
-                | "version"
-                | "v"
-                | "cli"
-                | "check"
-                | "diagnose"
-                | "diag"
-                | "shortcut"
-                | "create-shortcut"
-        )
-    }) {
+    let raw_args: Vec<String> = env::args().collect();
+    if raw_args.iter().skip(1).any(|a| cli::is_cli_flag(a)) {
         utils::attach_parent_console();
     }
 
-    if env::args().skip(1).any(|a| {
-        matches!(
-            a.trim_start_matches('-').to_ascii_lowercase().as_str(),
-            "help" | "h" | "?"
-        )
-    }) {
-        print_help();
-        return;
-    }
-
-    if env::args().skip(1).any(|a| {
-        matches!(
-            a.trim_start_matches('-').to_ascii_lowercase().as_str(),
-            "check" | "diagnose" | "diag"
-        )
-    }) {
-        let report = diag::run_diagnostics();
-        println!("{}", report.to_string_formatted(true));
-        return;
-    }
-
-    if env::args().skip(1).any(|a| {
-        matches!(
-            a.trim_start_matches('-').to_ascii_lowercase().as_str(),
-            "shortcut" | "create-shortcut"
-        )
-    }) {
-        match shortcut::create_shortcuts() {
-            Ok(msg) => println!("{}", msg),
-            Err(err) => eprintln!("Ошибка: {}", err),
-        }
-        return;
+    if let Some(code) = cli::dispatch(&raw_args) {
+        std::process::exit(code);
     }
 
     if env::args().any(|a| a == background::FORWARDER_FLAG) {

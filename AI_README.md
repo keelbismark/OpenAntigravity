@@ -31,15 +31,24 @@ Open Antigravity is a high-performance, zero-external-dependency portable utilit
 
 ## 2. CLI Flags & Operational Contracts
 
+### Headless Automation Commands (Scripts & CI/CD)
+- `--status [--json]`: Fast system readiness check reporting install patch state, DNS routing, local proxy, and background service. Exits 0 if fully ready, 1 otherwise.
+- `--patch`: Batch discovery and patch application across all Antigravity IDE/CLI/Desktop copies with automatic backup creation and NRPT setup.
+- `--unpatch, --revert`: Safe restoration of original pristine binaries and ASAR from backups, removing DNS rules and proxy hooks.
+- `--fix, --repair`: Executes self-test diagnostics and automatically applies deterministic remediations for detected problems.
+- `--check, --diagnose [--json]`: Comprehensive network, DNS, and TLS self-test. `--json` outputs machine-parseable diagnostics for observability.
+- `--shortcut`: Creates application shortcuts on Desktop and Start Menu.
+
+### Informational & Interactive Flags
 - `-h, --help`: Displays CLI usage options.
-- `-v, --version`: Prints current semantic version (`VERSION` file) and canary build token.
-- `--tui, --cli`: Launches the terminal user interface without spawning a GUI window.
-- `--check, --diagnose`: Performs comprehensive local self-test and emits structured diagnostics.
+- `-v, --version`: Prints current semantic version and canary build token.
+- `--tui`: Launches the interactive terminal user interface (`ratatui`).
 - `--about, --license`: Prints licensing and origin metadata.
-- Internal worker flags:
-  - `--forwarder`: Spawns headless DNS forwarder process.
-  - `--watchdog`: Spawns background IDE watchdog process.
-  - `--proxy`: Spawns background local loopback proxy.
+
+### Internal Worker Flags
+- `--background-forwarder`: Spawns headless DNS forwarder process.
+- `--background-watchdog`: Spawns background IDE watchdog process.
+- `--background-proxy`: Spawns background local loopback proxy.
 
 ---
 

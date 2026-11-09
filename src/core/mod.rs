@@ -1,3 +1,4 @@
+pub mod cli;
 pub mod ls_log;
 pub mod ops;
 pub mod portable;
