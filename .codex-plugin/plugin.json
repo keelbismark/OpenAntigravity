@@ -1,0 +1,41 @@
+{
+  "name": "qed",
+  "version": "1.0.0",
+  "description": "An engineering discipline framework for OpenAI Codex agents: Blast Radius analysis, Search Before You Create, and Ironclad TDD.",
+  "author": {
+    "name": "Q.E.D. Engineering Team",
+    "url": "https://github.com/keelbismark/qed"
+  },
+  "homepage": "https://github.com/keelbismark/qed",
+  "repository": "https://github.com/keelbismark/qed",
+  "license": "MIT",
+  "keywords": [
+    "qed",
+    "codex",
+    "tdd",
+    "blast-radius",
+    "anti-duplication",
+    "verification-gate",
+    "quality-over-speed"
+  ],
+  "skills": "./skills/",
+  "hooks": {},
+  "interface": {
+    "displayName": "Q.E.D. Engineering Standard",
+    "shortDescription": "Evidence Before Assertions: Blast Radius, Anti-Duplication & TDD",
+    "longDescription": "Forces OpenAI Codex agents to adhere to rigorous software engineering discipline: Red-Green-Refactor TDD, the 3 AM test, 4 mandatory UI/API states, and mandatory terminal verification evidence.",
+    "developerName": "Q.E.D.",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Check the blast radius before implementing this change.",
+      "Implement this task following Q.E.D. TDD discipline."
+    ],
+    "websiteURL": "https://github.com/keelbismark/qed",
+    "brandColor": "#10B981"
+  }
+}

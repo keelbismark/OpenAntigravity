@@ -1,0 +1,32 @@
+{
+  "$schema": "https://raw.githubusercontent.com/keelbismark/qed/main/schema/qedrc.schema.json",
+  "tier": "tier3-platform",
+  "stack": {
+    "languages": [
+      "Rust"
+    ],
+    "packageManager": null,
+    "frameworks": []
+  },
+  "ignorePatterns": [
+    "dist/**",
+    "build/**",
+    "coverage/**",
+    "vendor/**",
+    "target/**"
+  ],
+  "rules": {
+    "QED001": "error",
+    "QED002": "error",
+    "QED003": "error",
+    "QED004": "error",
+    "QED005": "error",
+    "QED006": "error",
+    "QED007": "error",
+    "QED008": "error",
+    "QED009": "error",
+    "QED010": "error",
+    "QED011": "error",
+    "QED012": "error"
+  }
+}

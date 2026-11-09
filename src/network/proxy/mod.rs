@@ -448,9 +448,9 @@ fn try_own_proxy(mut client: TcpStream, host: &str, port: u16) -> Result<(), Tcp
                 }
                 routes::note_used(routes::Kind::Own);
                 let proxy_label = if is_primary {
-                    "свой прокси"
+                    "СЃРІРѕР№ РїСЂРѕРєСЃРё"
                 } else {
-                    "резервный прокси (автовыбор)"
+                    "СЂРµР·РµСЂРІРЅС‹Р№ РїСЂРѕРєСЃРё (Р°РІС‚РѕРІС‹Р±РѕСЂ)"
                 };
                 crate::dns_forwarder::log_proxy(&format!("{} -> {}", proxy_label, host));
                 splice(client, upstream_sock);
@@ -459,14 +459,14 @@ fn try_own_proxy(mut client: TcpStream, host: &str, port: u16) -> Result<(), Tcp
             Err(why) => {
                 upstream::record_upstream_result(up, Err(why.clone()));
                 let proxy_label = if is_primary {
-                    "основной прокси"
+                    "РѕСЃРЅРѕРІРЅРѕР№ РїСЂРѕРєСЃРё"
                 } else {
-                    "резервный прокси"
+                    "СЂРµР·РµСЂРІРЅС‹Р№ РїСЂРѕРєСЃРё"
                 };
                 let next_hint = if is_last {
                     ""
                 } else {
-                    " (авто-переключение на следующий узел)"
+                    " (Р°РІС‚Рѕ-РїРµСЂРµРєР»СЋС‡РµРЅРёРµ РЅР° СЃР»РµРґСѓСЋС‰РёР№ СѓР·РµР»)"
                 };
                 crate::dns_forwarder::log_proxy(&format!(
                     "{}: {}{}",
@@ -507,7 +507,7 @@ fn try_direct(mut client: TcpStream, host: &str, port: u16) -> Result<(), TcpStr
     let upstream = match connect_gate_direct(host, port, DIRECT_OPEN_BUDGET) {
         Ok(sock) => sock,
         Err(why) => {
-            crate::dns_forwarder::log_proxy(&format!("напрямую {}: {}", host, why));
+            crate::dns_forwarder::log_proxy(&format!("РЅР°РїСЂСЏРјСѓСЋ {}: {}", host, why));
             return Err(client);
         }
     };
@@ -525,18 +525,18 @@ fn try_direct(mut client: TcpStream, host: &str, port: u16) -> Result<(), TcpStr
 /// Linux too, although it has no DNS layer: the pool is this process's own
 /// code, not the relay's. It used to take the system resolver there, which on
 /// most machines answers with Google itself - the region gate, from a Russian
-/// address - so once the exits and the relay were benched, "напрямую" was a
-/// route to 400s that the log called «the DNS route».
+/// address - so once the exits and the relay were benched, "РЅР°РїСЂСЏРјСѓСЋ" was a
+/// route to 400s that the log called В«the DNS routeВ».
 fn gate_direct_addrs(host: &str, port: u16) -> Result<(Vec<std::net::SocketAddr>, u32), String> {
     let if_index = crate::net::pin_interface();
     let (addrs, _, verdict) = crate::resolvers::resolve_a_best(host, if_index)
-        .ok_or_else(|| "имя не разрешилось".to_string())?;
+        .ok_or_else(|| "РёРјСЏ РЅРµ СЂР°Р·СЂРµС€РёР»РѕСЃСЊ".to_string())?;
     // With no relay to stand down for a tunnel (D13) and no VPN route of ours,
     // Google's own address is the gate and nothing else: the next route in the
     // table takes the connection instead.
     if !cfg!(target_os = "windows") && verdict != crate::resolvers::Verdict::Substituted {
         return Err(
-            "сервисы разблокировки не подменили адрес — напрямую будет ошибка 400".to_string(),
+            "СЃРµСЂРІРёСЃС‹ СЂР°Р·Р±Р»РѕРєРёСЂРѕРІРєРё РЅРµ РїРѕРґРјРµРЅРёР»Рё Р°РґСЂРµСЃ вЂ” РЅР°РїСЂСЏРјСѓСЋ Р±СѓРґРµС‚ РѕС€РёР±РєР° 400".to_string(),
         );
     }
     // While the relay stands down for a tunnel the answer is genuine Google,
@@ -565,7 +565,7 @@ fn connect_gate_direct(host: &str, port: u16, budget: Duration) -> Result<TcpStr
 fn connect_bounded(host: &str, port: u16, budget: Duration) -> Result<TcpStream, String> {
     let addrs: Vec<_> = (host, port)
         .to_socket_addrs()
-        .map_err(|e| format!("имя не разрешается: {}", e))?
+        .map_err(|e| format!("РёРјСЏ РЅРµ СЂР°Р·СЂРµС€Р°РµС‚СЃСЏ: {}", e))?
         .collect();
     connect_addrs(addrs, budget, 0)
 }
@@ -579,7 +579,7 @@ fn connect_addrs(
 ) -> Result<TcpStream, String> {
     let deadline = Instant::now() + budget;
     if addrs.is_empty() {
-        return Err("имя не разрешается".to_string());
+        return Err("РёРјСЏ РЅРµ СЂР°Р·СЂРµС€Р°РµС‚СЃСЏ".to_string());
     }
     // IPv4 first. Every substituted address is IPv4 - the providers' proxies
     // are - while an AAAA answer for the same name is genuine Google, and on a
@@ -589,7 +589,7 @@ fn connect_addrs(
     // A slice per address, at least a second each, so three addresses get a
     // real attempt inside a four-second budget.
     let slice = (budget / addrs.len().max(1) as u32).max(Duration::from_secs(1));
-    let mut last = "время вышло".to_string();
+    let mut last = "РІСЂРµРјСЏ РІС‹С€Р»Рѕ".to_string();
     for addr in addrs {
         let left = deadline.saturating_duration_since(Instant::now());
         if left.is_zero() {
@@ -600,7 +600,7 @@ fn connect_addrs(
             Err(e) => last = e.to_string(),
         }
     }
-    Err(format!("не подключиться: {}", last))
+    Err(format!("РЅРµ РїРѕРґРєР»СЋС‡РёС‚СЊСЃСЏ: {}", last))
 }
 
 /// The user's own VPN as a route: genuine Google, through whatever the routing
@@ -619,7 +619,7 @@ fn try_vpn(mut client: TcpStream, host: &str, port: u16) -> Result<(), TcpStream
     let upstream = match connect_addrs(addrs, DIRECT_OPEN_BUDGET, 0) {
         Ok(sock) => sock,
         Err(why) => {
-            crate::dns_forwarder::log_proxy(&format!("через VPN {}: {}", host, why));
+            crate::dns_forwarder::log_proxy(&format!("С‡РµСЂРµР· VPN {}: {}", host, why));
             return Err(client);
         }
     };
@@ -746,7 +746,7 @@ pub fn probe_direct(if_index: u32) {
         Ok(()) => routes::record(routes::Kind::Direct, started.elapsed()),
         Err(why) => {
             routes::probe_failed(routes::Kind::Direct);
-            crate::dns_forwarder::log_proxy(&format!("напрямую не отвечает: {}", why));
+            crate::dns_forwarder::log_proxy(&format!("РЅР°РїСЂСЏРјСѓСЋ РЅРµ РѕС‚РІРµС‡Р°РµС‚: {}", why));
         }
     }
 }
@@ -774,7 +774,7 @@ pub fn probe_vpn() {
         Ok(()) => routes::record(routes::Kind::Vpn, started.elapsed()),
         Err(why) => {
             routes::probe_failed(routes::Kind::Vpn);
-            crate::dns_forwarder::log_proxy(&format!("через VPN не отвечает: {}", why));
+            crate::dns_forwarder::log_proxy(&format!("С‡РµСЂРµР· VPN РЅРµ РѕС‚РІРµС‡Р°РµС‚: {}", why));
         }
     }
 }
@@ -794,15 +794,15 @@ fn probe_request(mut sock: TcpStream) -> Result<(), String> {
     );
     stream
         .write_all(req.as_bytes())
-        .map_err(|e| format!("рукопожатие: {}", e))?;
+        .map_err(|e| format!("СЂСѓРєРѕРїРѕР¶Р°С‚РёРµ: {}", e))?;
     let mut buf = [0u8; 64];
     let n = stream
         .read(&mut buf)
-        .map_err(|e| format!("ответа нет: {}", e))?;
+        .map_err(|e| format!("РѕС‚РІРµС‚Р° РЅРµС‚: {}", e))?;
     if n > 0 && buf.starts_with(b"HTTP/") {
         Ok(())
     } else {
-        Err("ответ не похож на HTTP".to_string())
+        Err("РѕС‚РІРµС‚ РЅРµ РїРѕС…РѕР¶ РЅР° HTTP".to_string())
     }
 }
 
@@ -1027,7 +1027,7 @@ fn handshake(
 ) -> Result<(), String> {
     let left = deadline.saturating_duration_since(Instant::now());
     if left.is_zero() {
-        return Err("таймаут".to_string());
+        return Err("С‚Р°Р№РјР°СѓС‚".to_string());
     }
     sock.set_nonblocking(false).ok();
     // The socket timeouts come from the caller's deadline, not from a constant of
@@ -1039,14 +1039,14 @@ fn handshake(
     sock.set_write_timeout(Some(left)).ok();
     while conn.is_handshaking() {
         if Instant::now() >= deadline {
-            return Err("таймаут".to_string());
+            return Err("С‚Р°Р№РјР°СѓС‚".to_string());
         }
         if conn.wants_write() {
             conn.write_tls(sock).map_err(|e| e.to_string())?;
         }
         if conn.wants_read() {
             match conn.read_tls(sock) {
-                Ok(0) => return Err("апстрим закрыл соединение".to_string()),
+                Ok(0) => return Err("Р°РїСЃС‚СЂРёРј Р·Р°РєСЂС‹Р» СЃРѕРµРґРёРЅРµРЅРёРµ".to_string()),
                 Ok(_) => conn.process_new_packets().map_err(|e| e.to_string())?,
                 Err(e) => return Err(e.to_string()),
             };
@@ -1232,7 +1232,7 @@ fn bind_from(first: u16, fallbacks: &[u16]) -> Result<TcpListener, crate::gate::
             Ok(listener) => {
                 if attempt > 0 {
                     crate::dns_forwarder::log_proxy(&format!(
-                        "порт {} освободился с {}-й попытки",
+                        "РїРѕСЂС‚ {} РѕСЃРІРѕР±РѕРґРёР»СЃСЏ СЃ {}-Р№ РїРѕРїС‹С‚РєРё",
                         first,
                         attempt + 1
                     ));
@@ -1270,7 +1270,7 @@ fn bind_from(first: u16, fallbacks: &[u16]) -> Result<TcpListener, crate::gate::
         for other in fallbacks.iter().copied().filter(|p| *p != first) {
             if let Ok(listener) = TcpListener::bind(addr_at(other)) {
                 crate::dns_forwarder::log_proxy(&format!(
-                    "порт {} недоступен ({}) — локальный прокси перенесён на {}",
+                    "РїРѕСЂС‚ {} РЅРµРґРѕСЃС‚СѓРїРµРЅ ({}) вЂ” Р»РѕРєР°Р»СЊРЅС‹Р№ РїСЂРѕРєСЃРё РїРµСЂРµРЅРµСЃС‘РЅ РЅР° {}",
                     first, err, other
                 ));
                 adopt(other);
@@ -1295,7 +1295,7 @@ pub fn run(if_index: u32) -> Result<(), String> {
             Ok(listener) => {
                 if said.is_some() {
                     crate::dns_forwarder::log_proxy(&format!(
-                        "локальный прокси поднялся на порту {}",
+                        "Р»РѕРєР°Р»СЊРЅС‹Р№ РїСЂРѕРєСЃРё РїРѕРґРЅСЏР»СЃСЏ РЅР° РїРѕСЂС‚Сѓ {}",
                         port()
                     ));
                     crate::gate::set_blocker("proxy", None);
@@ -1306,16 +1306,16 @@ pub fn run(if_index: u32) -> Result<(), String> {
                 // Logged when the reason changes, not every minute.
                 if said.as_ref() != Some(&blocker) {
                     crate::dns_forwarder::log_proxy(&format!(
-                        "not started: не занять {} — {} ({})",
+                        "not started: РЅРµ Р·Р°РЅСЏС‚СЊ {} вЂ” {} ({})",
                         blocker.addr,
                         blocker.error,
                         match blocker.cause.as_str() {
                             "held" if !blocker.by.is_empty() =>
-                                format!("порт занят программой {}", blocker.by),
-                            "held" => "порт занят другой программой".to_string(),
-                            "reserved" => "порт зарезервирован Windows".to_string(),
-                            "denied" => "доступ запрещён — антивирус или файрвол".to_string(),
-                            _ => "причина не определена".to_string(),
+                                format!("РїРѕСЂС‚ Р·Р°РЅСЏС‚ РїСЂРѕРіСЂР°РјРјРѕР№ {}", blocker.by),
+                            "held" => "РїРѕСЂС‚ Р·Р°РЅСЏС‚ РґСЂСѓРіРѕР№ РїСЂРѕРіСЂР°РјРјРѕР№".to_string(),
+                            "reserved" => "РїРѕСЂС‚ Р·Р°СЂРµР·РµСЂРІРёСЂРѕРІР°РЅ Windows".to_string(),
+                            "denied" => "РґРѕСЃС‚СѓРї Р·Р°РїСЂРµС‰С‘РЅ вЂ” Р°РЅС‚РёРІРёСЂСѓСЃ РёР»Рё С„Р°Р№СЂРІРѕР»".to_string(),
+                            _ => "РїСЂРёС‡РёРЅР° РЅРµ РѕРїСЂРµРґРµР»РµРЅР°".to_string(),
                         }
                     ));
                     said = Some(blocker.clone());
@@ -1341,287 +1341,6 @@ pub fn run(if_index: u32) -> Result<(), String> {
     Ok(())
 }
 
+
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Live: what the direct route would dial for each gate host - on Linux the
-    /// provider pool's substituted address, never the system resolver's Google.
-    ///
-    ///     cargo test the_direct_route_dials_a_substituted_address -- --ignored --nocapture
-    #[test]
-    #[ignore = "needs a live network from a gated region; run with --ignored"]
-    fn the_direct_route_dials_a_substituted_address() {
-        for host in [
-            "cloudcode-pa.googleapis.com",
-            "daily-cloudcode-pa.googleapis.com",
-        ] {
-            match gate_direct_addrs(host, 443) {
-                Ok((addrs, pin)) => println!("{host:<36} -> {addrs:?} (pin {pin})"),
-                Err(why) => println!("{host:<36} -> refused: {why}"),
-            }
-        }
-    }
-
-    /// The listener check must answer about the socket, and a refused connection
-    /// must read as "no listener".
-    ///
-    /// This is the gate in front of `HTTPS_PROXY` (G31, I53). The helper it
-    /// replaces returned `true` when it could not parse its own URL, i.e. it
-    /// reported a dead proxy as a live one - the exact direction of error that
-    /// leaves a user-wide variable pointing at nothing.
-    #[test]
-    fn a_socket_nobody_holds_reads_as_no_listener() {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("ephemeral port");
-        let addr = listener.local_addr().expect("addr");
-
-        assert!(answers_at(addr), "a bound port must answer");
-        assert!(
-            wait_at(addr, Duration::from_secs(1)),
-            "waiting on a bound port must return at once"
-        );
-
-        drop(listener);
-        assert!(!answers_at(addr), "a closed port must not answer");
-    }
-
-    /// And it must keep looking for the whole budget rather than deciding on one
-    /// probe: the port can be held for a few seconds by somebody's ephemeral
-    /// socket while `bind_listener` retries it.
-    #[test]
-    fn waiting_for_a_listener_that_never_comes_costs_the_budget_and_says_no() {
-        // Port 1, not an ephemeral one just released: the OS hands those out
-        // again, and any other test in this process that binds a listener while
-        // this one is waiting made it fail for a reason that has nothing to do
-        // with what it tests. Nothing listens on tcpmux on Windows.
-        let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 1));
-
-        let budget = Duration::from_millis(600);
-        let started = Instant::now();
-        assert!(!wait_at(addr, budget));
-        assert!(
-            started.elapsed() >= budget,
-            "gave up after {:?}, before the budget was spent",
-            started.elapsed()
-        );
-    }
-
-    /// A status line that lost its carriage returns is still valid Rust and
-    /// still compiles - it just produces a response no HTTP client accepts.
-    /// Written as raw byte values so no tool can normalise the test itself.
-    #[test]
-    fn status_lines_are_crlf_terminated() {
-        for line in [RESP_ESTABLISHED, RESP_BAD_GATEWAY, RESP_NOT_ALLOWED] {
-            assert_eq!(&line[line.len() - 4..], &[13u8, 10, 13, 10], "{:?}", line);
-            assert!(!line[..line.len() - 4].contains(&10u8), "{:?}", line);
-        }
-    }
-
-    /// A tunnel must not be closed by a budget that was only ever meant to bound
-    /// the CONNECT handshake.
-    ///
-    /// The regression this pins: `upstream::open` left its ten-second reply budget
-    /// on the socket it returned, `splice` handed that socket to `io::copy`, and a
-    /// timeout reads as end-of-stream - so every tunnel through the user's own
-    /// proxy or a built-in exit died at 10.3 s of silence. A pooling client
-    /// reconnects on the failed reuse, which showed up as a long hang on
-    /// "Authenticating" and 35 tunnels in 25 seconds in the log.
-    ///
-    /// Sixteen seconds of silence, comfortably past the old ten, then the tunnel
-    /// is used - a live client would fail here, not at the handshake.
-    ///
-    ///     cargo test an_idle_tunnel_outlives_the_connect_budget -- --ignored --nocapture
-    #[test]
-    #[ignore = "holds a tunnel open for 16 s against a real route; needs a live network"]
-    fn an_idle_tunnel_outlives_the_connect_budget() {
-        use rustls::pki_types::ServerName;
-        use rustls::ClientConnection;
-        use std::net::TcpListener;
-
-        const HOST: &str = "daily-cloudcode-pa.googleapis.com";
-        const IDLE: Duration = Duration::from_secs(16);
-
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bound");
-        let addr = listener.local_addr().expect("addr");
-        thread::spawn(move || {
-            let (sock, _) = listener.accept().expect("accepted");
-            serve(sock, 0);
-        });
-
-        let mut client = TcpStream::connect(addr).expect("connected");
-        client
-            .write_all(
-                format!("CONNECT {HOST}:443 HTTP/1.1\r\nHost: {HOST}:443\r\n\r\n").as_bytes(),
-            )
-            .expect("sent CONNECT");
-        let mut head = Vec::new();
-        let mut byte = [0u8; 1];
-        while !head.ends_with(b"\r\n\r\n") {
-            assert_eq!(client.read(&mut byte).expect("reply"), 1, "proxy hung up");
-            head.push(byte[0]);
-        }
-        assert!(String::from_utf8_lossy(&head).contains(" 200"));
-
-        let name = ServerName::try_from(HOST).expect("name");
-        let mut tls = ClientConnection::new(probe_config(), name).expect("tls");
-        let mut stream = rustls::Stream::new(&mut tls, &mut client);
-        // Complete the handshake before going quiet, so the silence is measured on
-        // an established tunnel - which is the state a pooled connection sits in.
-        stream.flush().ok();
-
-        thread::sleep(IDLE);
-
-        stream
-            .write_all(
-                format!(
-                    "GET /v1internal:probe HTTP/1.1\r\nHost: {HOST}\r\nConnection: close\r\n\r\n"
-                )
-                .as_bytes(),
-            )
-            .expect("the tunnel was closed under an idle client");
-        let mut buf = [0u8; 64];
-        let n = stream.read(&mut buf).expect("no answer after idling");
-        assert!(
-            buf[..n].starts_with(b"HTTP/"),
-            "not an HTTP answer: {:?}",
-            String::from_utf8_lossy(&buf[..n])
-        );
-        println!(
-            "tunnel survived {} s idle and still carried a request",
-            IDLE.as_secs()
-        );
-    }
-
-    #[test]
-    fn reads_the_connect_target() {
-        assert_eq!(
-            parse_connect(
-                "CONNECT jetski-webchannel.googleapis.com:443 HTTP/1.1\r\nHost: x\r\n\r\n"
-            ),
-            Some(("jetski-webchannel.googleapis.com".to_string(), 443))
-        );
-        assert_eq!(
-            parse_connect("connect example.com:8443 HTTP/1.1\r\n\r\n"),
-            Some(("example.com".to_string(), 8443))
-        );
-        assert_eq!(
-            parse_connect("CONNECT [::1]:443 HTTP/1.1\r\n\r\n"),
-            Some(("::1".to_string(), 443))
-        );
-    }
-
-    /// The bug the IDE actually hit. A client that opens a proxy socket and has
-    /// not spoken yet must be closed in silence: answering it puts a status line
-    /// where its CONNECT response belongs, and the client reports only "Proxy
-    /// connection ended before receiving CONNECT response".
-    #[test]
-    fn a_socket_that_says_nothing_is_closed_without_an_answer() {
-        use std::net::TcpListener;
-
-        fn ask(send: Option<&'static [u8]>) -> Request {
-            let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-            let addr = listener.local_addr().unwrap();
-            let writer = thread::spawn(move || {
-                let mut c = TcpStream::connect(addr).unwrap();
-                match send {
-                    Some(bytes) => {
-                        c.write_all(bytes).unwrap();
-                        // Held open so the read cannot end on the socket closing
-                        // instead of on the request being complete.
-                        thread::sleep(Duration::from_millis(200));
-                    }
-                    None => drop(c),
-                }
-            });
-            let (mut sock, _) = listener.accept().unwrap();
-            sock.set_read_timeout(Some(Duration::from_secs(5))).ok();
-            let got = read_connect(&mut sock);
-            writer.join().ok();
-            got
-        }
-
-        assert_eq!(ask(None), Request::Gone);
-        assert_eq!(
-            ask(Some(b"GET / HTTP/1.1\r\nHost: x\r\n\r\n")),
-            Request::Malformed
-        );
-        assert_eq!(
-            ask(Some(
-                b"CONNECT a.googleapis.com:443 HTTP/1.1\r\nHost: a\r\n\r\n"
-            )),
-            Request::Connect("a.googleapis.com".to_string(), 443)
-        );
-    }
-
-    /// Anything that is not a CONNECT is refused rather than guessed at.
-    #[test]
-    fn a_non_connect_request_is_refused() {
-        assert_eq!(parse_connect("GET / HTTP/1.1\r\n\r\n"), None);
-        assert_eq!(parse_connect("CONNECT nohost HTTP/1.1\r\n\r\n"), None);
-        assert_eq!(parse_connect("CONNECT :443 HTTP/1.1\r\n\r\n"), None);
-        assert_eq!(parse_connect(""), None);
-    }
-
-    #[test]
-    fn a_proxy_on_this_machine_or_the_lan_is_local_and_a_public_one_is_not() {
-        for h in [
-            "127.0.0.1",
-            "localhost",
-            "192.168.1.10",
-            "10.0.0.2",
-            "[::1]",
-            "mybox",
-        ] {
-            assert!(is_local_host(h), "{h}");
-        }
-        for h in ["proxy.example.com", "203.0.113.5", "8.8.8.8"] {
-            assert!(!is_local_host(h), "{h}");
-        }
-        // Not a gate host, or no loopback door: the name, always.
-        assert_eq!(connect_target("127.0.0.1", "example.com"), "example.com");
-        if !crate::loopback::active() {
-            assert_eq!(
-                connect_target("127.0.0.1", "daily-cloudcode-pa.googleapis.com"),
-                "daily-cloudcode-pa.googleapis.com"
-            );
-        }
-    }
-
-    #[test]
-    fn the_proxy_url_is_loopback() {
-        assert!(proxy_url().starts_with("http://127.0.0.1:"));
-    }
-
-    /// P26: a port another program listens on is left at once - no fifteen
-    /// seconds of retries for a holder that will not leave - and the proxy
-    /// takes the next one, which becomes the port everything names.
-    #[test]
-    fn a_held_port_moves_the_proxy_to_the_next_one_at_once() {
-        let holder = TcpListener::bind("127.0.0.1:0").unwrap();
-        let held = holder.local_addr().unwrap().port();
-        let free = TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
-        let started = Instant::now();
-        let got = bind_from(held, &[free]).expect("moved to the free port");
-        assert_eq!(got.local_addr().unwrap().port(), free);
-        assert_eq!(port(), free);
-        assert!(proxy_url().ends_with(&format!(":{free}")));
-        assert!(started.elapsed() < BIND_RETRY_WAIT, "retried a held port");
-    }
-
-    /// With nowhere to go the failure is reported, naming who holds the port.
-    #[test]
-    fn a_held_port_with_nowhere_to_go_says_who_holds_it() {
-        let holder = TcpListener::bind("127.0.0.1:0").unwrap();
-        let held = holder.local_addr().unwrap().port();
-        let b = bind_from(held, &[]).err().expect("nothing to move to");
-        assert_eq!(b.what, "proxy");
-        if cfg!(windows) {
-            assert_eq!(b.cause, "held");
-        }
-        assert!(b.addr.ends_with(&format!(":{held}")));
-    }
-}
+mod tests;

@@ -209,10 +209,10 @@ const LOG_LIMIT_BYTES: u64 = 64 * 1024;
 /// Interface index, when it was learned, and how long that answer is good for.
 static EGRESS_CACHE: Mutex<Option<(u32, Instant, Duration)>> = Mutex::new(None);
 
-/// Журнал и всё состояние. В портативном режиме — `data\` рядом с exe (флешка);
-/// в обычном — под профилем пользователя, а не рядом с exe: релей работает
-/// без повышения прав, и каталог, куда администратор ставил программу, ему
-/// недоступен на запись.
+/// Р–СѓСЂРЅР°Р» Рё РІСЃС‘ СЃРѕСЃС‚РѕСЏРЅРёРµ. Р’ РїРѕСЂС‚Р°С‚РёРІРЅРѕРј СЂРµР¶РёРјРµ вЂ” `data\` СЂСЏРґРѕРј СЃ exe (С„Р»РµС€РєР°);
+/// РІ РѕР±С‹С‡РЅРѕРј вЂ” РїРѕРґ РїСЂРѕС„РёР»РµРј РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ, Р° РЅРµ СЂСЏРґРѕРј СЃ exe: СЂРµР»РµР№ СЂР°Р±РѕС‚Р°РµС‚
+/// Р±РµР· РїРѕРІС‹С€РµРЅРёСЏ РїСЂР°РІ, Рё РєР°С‚Р°Р»РѕРі, РєСѓРґР° Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ СЃС‚Р°РІРёР» РїСЂРѕРіСЂР°РјРјСѓ, РµРјСѓ
+/// РЅРµРґРѕСЃС‚СѓРїРµРЅ РЅР° Р·Р°РїРёСЃСЊ.
 #[cfg(target_os = "windows")]
 pub fn log_dir() -> PathBuf {
     if let Some(dir) = crate::portable::data_dir() {
@@ -221,8 +221,8 @@ pub fn log_dir() -> PathBuf {
     PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default()).join("OpenAntigravity")
 }
 
-/// Портативный режим приоритетен и на Linux: всё состояние — рядом с exe,
-/// обычный путь — XDG (`~/.local/share/openantigravity`).
+/// РџРѕСЂС‚Р°С‚РёРІРЅС‹Р№ СЂРµР¶РёРј РїСЂРёРѕСЂРёС‚РµС‚РµРЅ Рё РЅР° Linux: РІСЃС‘ СЃРѕСЃС‚РѕСЏРЅРёРµ вЂ” СЂСЏРґРѕРј СЃ exe,
+/// РѕР±С‹С‡РЅС‹Р№ РїСѓС‚СЊ вЂ” XDG (`~/.local/share/openantigravity`).
 #[cfg(not(target_os = "windows"))]
 pub fn log_dir() -> PathBuf {
     if let Some(dir) = crate::portable::data_dir() {
@@ -289,9 +289,9 @@ fn stamp() -> String {
 /// is precisely the question a bug report asks.
 fn log(line: &str) {
     // Never from a test. The file is the *installed* relay's log, and a unit test
-    // exercising `health` or `routes` used to append lines like «тест отложен на
-    // 5 мин» to it on the developer's machine - which the window's «Сохранить
-    // отчёт» now puts in a support file (G18's other half).
+    // exercising `health` or `routes` used to append lines like В«С‚РµСЃС‚ РѕС‚Р»РѕР¶РµРЅ РЅР°
+    // 5 РјРёРЅВ» to it on the developer's machine - which the window's В«РЎРѕС…СЂР°РЅРёС‚СЊ
+    // РѕС‚С‡С‘С‚В» now puts in a support file (G18's other half).
     if cfg!(test) {
         return;
     }
@@ -310,7 +310,7 @@ fn log(line: &str) {
         // One write per line. `writeln!` with arguments issues a write per
         // piece, and an append is atomic only per write, so two threads (or two
         // processes) logging at once interleaved into lines like
-        // «16:48:2616:48:26 PASSTHROUGH … PASSTHROUGH …» - seen in reports from
+        // В«16:48:2616:48:26 PASSTHROUGH вЂ¦ PASSTHROUGH вЂ¦В» - seen in reports from
         // both platforms.
         let at = stamp();
         let mut entry = String::new();
@@ -326,7 +326,7 @@ fn log(line: &str) {
 
 /// How long a line has to repeat within to be counted rather than written.
 const REPEAT_WINDOW: Duration = Duration::from_secs(30);
-/// …and how many repeats are counted before the tally is written anyway, so a
+/// вЂ¦and how many repeats are counted before the tally is written anyway, so a
 /// problem repeating forever is never silent.
 const REPEAT_RUN: u32 = 50;
 
@@ -335,7 +335,7 @@ const REPEAT_RUN: u32 = 50;
 /// The log holds 64 KB and the report shows its last 60 lines, so a burst of
 /// one message costs exactly the minutes a report is about: a field report
 /// (2026-09-21) spent fifteen of its sixty visible lines on the same
-/// «напрямую …: имя не разрешается» inside a single second, and the route
+/// В«РЅР°РїСЂСЏРјСѓСЋ вЂ¦: РёРјСЏ РЅРµ СЂР°Р·СЂРµС€Р°РµС‚СЃСЏВ» inside a single second, and the route
 /// switch that followed was off the top of it.
 ///
 /// Returns the tally line to write first, if any, and whether `line` itself is
@@ -343,7 +343,7 @@ const REPEAT_RUN: u32 = 50;
 /// happened, and a delayed first line is a log that lies about when.
 fn collapse_repeat(line: &str) -> (Option<String>, bool) {
     static RUN: Mutex<Option<(String, u32, Instant)>> = Mutex::new(None);
-    let tally = |n: u32| format!("↑ то же самое ещё {} раз", n);
+    let tally = |n: u32| format!("в†‘ С‚Рѕ Р¶Рµ СЃР°РјРѕРµ РµС‰С‘ {} СЂР°Р·", n);
     let Ok(mut g) = RUN.lock() else {
         return (None, true);
     };
@@ -499,14 +499,14 @@ fn measure_vpn_exit() {
                 }
                 log(&match permitted {
                     Some(true) => format!(
-                        "VPN выходит в {} — его можно использовать как маршрут",
+                        "VPN РІС‹С…РѕРґРёС‚ РІ {} вЂ” РµРіРѕ РјРѕР¶РЅРѕ РёСЃРїРѕР»СЊР·РѕРІР°С‚СЊ РєР°Рє РјР°СЂС€СЂСѓС‚",
                         country
                     ),
                     Some(false) => format!(
-                        "VPN выходит в {} — там ошибка 400, этот маршрут не используется",
+                        "VPN РІС‹С…РѕРґРёС‚ РІ {} вЂ” С‚Р°Рј РѕС€РёР±РєР° 400, СЌС‚РѕС‚ РјР°СЂС€СЂСѓС‚ РЅРµ РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ",
                         country
                     ),
-                    None => "страну выхода VPN узнать не удалось".to_string(),
+                    None => "СЃС‚СЂР°РЅСѓ РІС‹С…РѕРґР° VPN СѓР·РЅР°С‚СЊ РЅРµ СѓРґР°Р»РѕСЃСЊ".to_string(),
                 });
             }
             MEASURING_EXIT.store(false, Ordering::SeqCst);
@@ -602,17 +602,17 @@ fn warm_forever() {
             };
             if stand_down != resolvers::tunnel_carries_client() {
                 log(if stand_down {
-                    "Antigravity ходит через VPN мимо обхода — адреса отдаются как у VPN"
+                    "Antigravity С…РѕРґРёС‚ С‡РµСЂРµР· VPN РјРёРјРѕ РѕР±С…РѕРґР° вЂ” Р°РґСЂРµСЃР° РѕС‚РґР°СЋС‚СЃСЏ РєР°Рє Сѓ VPN"
                 } else {
-                    "подмена адресов снова включена"
+                    "РїРѕРґРјРµРЅР° Р°РґСЂРµСЃРѕРІ СЃРЅРѕРІР° РІРєР»СЋС‡РµРЅР°"
                 });
             }
             resolvers::set_vpn_active(stand_down);
             if tunnel != was {
                 log(if tunnel {
-                    "VPN поднят — соединения службы с сервисами разблокировки идут мимо него, через провайдера"
+                    "VPN РїРѕРґРЅСЏС‚ вЂ” СЃРѕРµРґРёРЅРµРЅРёСЏ СЃР»СѓР¶Р±С‹ СЃ СЃРµСЂРІРёСЃР°РјРё СЂР°Р·Р±Р»РѕРєРёСЂРѕРІРєРё РёРґСѓС‚ РјРёРјРѕ РЅРµРіРѕ, С‡РµСЂРµР· РїСЂРѕРІР°Р№РґРµСЂР°"
                 } else {
-                    "VPN отключён"
+                    "VPN РѕС‚РєР»СЋС‡С‘РЅ"
                 });
             }
             if tunnel && (!was || proxy::vpn_exit().is_none()) {
@@ -637,7 +637,7 @@ fn warm_forever() {
         // network wiped every bench - and put back first the route the gate had
         // just refused - twice per hiccup.
         if egress != 0 && routes::set_context(network_fingerprint(egress, best, net::tunnel_up())) {
-            log_proxy("сеть изменилась — что работает, выясняется заново");
+            log_proxy("СЃРµС‚СЊ РёР·РјРµРЅРёР»Р°СЃСЊ вЂ” С‡С‚Рѕ СЂР°Р±РѕС‚Р°РµС‚, РІС‹СЏСЃРЅСЏРµС‚СЃСЏ Р·Р°РЅРѕРІРѕ");
         }
         // The client logs are watched on a thread of their own every two
         // seconds (`watch_client_logs`), not here: a refusal costs the user
@@ -742,7 +742,7 @@ fn answer_log(hits: &[(std::path::PathBuf, ls_log::Tally)]) {
             // not route at all is a different story from one on a gate host,
             // and the line said neither (three field reports, 2026-09-21).
             log_proxy(&format!(
-                "region-400 x{} в {}{} — Antigravity упёрся в гейт",
+                "region-400 x{} РІ {}{} вЂ” Antigravity СѓРїС‘СЂСЃСЏ РІ РіРµР№С‚",
                 t.refusals,
                 file,
                 t.refused_host
@@ -798,15 +798,15 @@ fn newest(a: Option<Duration>, b: Option<Duration>) -> Option<Duration> {
 /// One line about the connection a refusal came in on: the fact that decides
 /// whether changing the route could possibly help.
 ///
-/// Same connection as the one carrying an answer → the backend is turning
-/// single requests down and every road leads to the same place. A sibling →
+/// Same connection as the one carrying an answer в†’ the backend is turning
+/// single requests down and every road leads to the same place. A sibling в†’
 /// this is one pooled connection that went bad while another works, and closing
 /// it is what makes the client dial a fresh one (D26). The log could not tell
 /// the two apart, and three field reports (2026-09-21) turn on exactly that:
 /// a route answering and refusing in the same minute, over and over.
 fn connection_note(kind: routes::Kind, id: u64, shape: Option<routes::Shape>) -> String {
     let Some(s) = shape else {
-        return format!("region-400 по соединению #{} «{}»", id, kind.label());
+        return format!("region-400 РїРѕ СЃРѕРµРґРёРЅРµРЅРёСЋ #{} В«{}В»", id, kind.label());
     };
     let open = routes::open_counts();
     let others: Vec<String> = routes::ALL
@@ -817,18 +817,18 @@ fn connection_note(kind: routes::Kind, id: u64, shape: Option<routes::Shape>) ->
         .collect();
     let what = match s.answered_ago {
         Some(ago) => format!(
-            "то же соединение, по которому шёл ответ ({} с назад, {} КБ)",
+            "С‚Рѕ Р¶Рµ СЃРѕРµРґРёРЅРµРЅРёРµ, РїРѕ РєРѕС‚РѕСЂРѕРјСѓ С€С‘Р» РѕС‚РІРµС‚ ({} СЃ РЅР°Р·Р°Рґ, {} РљР‘)",
             ago.as_secs(),
             s.to_client / 1024
         ),
         None => format!(
-            "ответов не нёс, открыто {} с, {} КБ",
+            "РѕС‚РІРµС‚РѕРІ РЅРµ РЅС‘СЃ, РѕС‚РєСЂС‹С‚Рѕ {} СЃ, {} РљР‘",
             s.age.as_secs(),
             s.to_client / 1024
         ),
     };
     format!(
-        "region-400 по соединению #{} «{}»: {}; открыто: {}",
+        "region-400 РїРѕ СЃРѕРµРґРёРЅРµРЅРёСЋ #{} В«{}В»: {}; РѕС‚РєСЂС‹С‚Рѕ: {}",
         id,
         kind.label(),
         what,
@@ -846,12 +846,12 @@ fn on_refusals(count: usize, at: Instant, host: Option<&str>) {
             match routes::blame(kind) {
                 routes::Blamed::Benched(penalty) => {
                     log_proxy(&format!(
-                        "маршрут «{}» нёс region-400 — отложен на {}, его соединения закрыты",
+                        "РјР°СЂС€СЂСѓС‚ В«{}В» РЅС‘СЃ region-400 вЂ” РѕС‚Р»РѕР¶РµРЅ РЅР° {}, РµРіРѕ СЃРѕРµРґРёРЅРµРЅРёСЏ Р·Р°РєСЂС‹С‚С‹",
                         kind.label(),
                         human_minutes(penalty)
                     ));
                     acted.push(format!(
-                        "маршрут «{}» отложен на {}, следующее соединение пойдёт другим",
+                        "РјР°СЂС€СЂСѓС‚ В«{}В» РѕС‚Р»РѕР¶РµРЅ РЅР° {}, СЃР»РµРґСѓСЋС‰РµРµ СЃРѕРµРґРёРЅРµРЅРёРµ РїРѕР№РґС‘С‚ РґСЂСѓРіРёРј",
                         kind.label(),
                         human_minutes(penalty)
                     ));
@@ -863,19 +863,19 @@ fn on_refusals(count: usize, at: Instant, host: Option<&str>) {
                 // loses one halfway through.
                 routes::Blamed::Proven(ago) => {
                     log_proxy(&format!(
-                        "маршрут «{}» нёс region-400, но ответ модели был {} с назад — оставлен как есть",
+                        "РјР°СЂС€СЂСѓС‚ В«{}В» РЅС‘СЃ region-400, РЅРѕ РѕС‚РІРµС‚ РјРѕРґРµР»Рё Р±С‹Р» {} СЃ РЅР°Р·Р°Рґ вЂ” РѕСЃС‚Р°РІР»РµРЅ РєР°Рє РµСЃС‚СЊ",
                         kind.label(),
                         ago.as_secs()
                     ));
                     acted.push(format!(
-                        "по «{}» модель отвечала {} с назад — маршрут и его соединения не тронуты",
+                        "РїРѕ В«{}В» РјРѕРґРµР»СЊ РѕС‚РІРµС‡Р°Р»Р° {} СЃ РЅР°Р·Р°Рґ вЂ” РјР°СЂС€СЂСѓС‚ Рё РµРіРѕ СЃРѕРµРґРёРЅРµРЅРёСЏ РЅРµ С‚СЂРѕРЅСѓС‚С‹",
                         kind.label(),
                         ago.as_secs()
                     ));
                 }
                 routes::Blamed::AlreadyBenched => {
                     acted.push(format!(
-                        "соединения через «{}» закрыты — повтор пойдёт другим путём",
+                        "СЃРѕРµРґРёРЅРµРЅРёСЏ С‡РµСЂРµР· В«{}В» Р·Р°РєСЂС‹С‚С‹ вЂ” РїРѕРІС‚РѕСЂ РїРѕР№РґС‘С‚ РґСЂСѓРіРёРј РїСѓС‚С‘Рј",
                         kind.label()
                     ));
                 }
@@ -885,7 +885,7 @@ fn on_refusals(count: usize, at: Instant, host: Option<&str>) {
                 // client closes (D32).
                 routes::Blamed::Streaming { idle, to_client } => {
                     log_proxy(&format!(
-                        "маршрут «{}» нёс region-400, но по нему идёт ответ модели ({} КБ, байты {} с назад) — не тронут",
+                        "РјР°СЂС€СЂСѓС‚ В«{}В» РЅС‘СЃ region-400, РЅРѕ РїРѕ РЅРµРјСѓ РёРґС‘С‚ РѕС‚РІРµС‚ РјРѕРґРµР»Рё ({} РљР‘, Р±Р°Р№С‚С‹ {} СЃ РЅР°Р·Р°Рґ) вЂ” РЅРµ С‚СЂРѕРЅСѓС‚",
                         kind.label(),
                         to_client / 1024,
                         idle.as_secs()
@@ -900,24 +900,24 @@ fn on_refusals(count: usize, at: Instant, host: Option<&str>) {
                     let same = shape.is_some_and(|s| s.answered_ago.is_some());
                     if same && shape.is_some_and(|s| s.idle < Duration::from_millis(1500)) {
                         acted.push(format!(
-                            "по «{}» прямо сейчас идёт ответ модели — соединение #{} не тронуто",
+                            "РїРѕ В«{}В» РїСЂСЏРјРѕ СЃРµР№С‡Р°СЃ РёРґС‘С‚ РѕС‚РІРµС‚ РјРѕРґРµР»Рё вЂ” СЃРѕРµРґРёРЅРµРЅРёРµ #{} РЅРµ С‚СЂРѕРЅСѓС‚Рѕ",
                             kind.label(),
                             tunnel
                         ));
                     } else if routes::cut_refused_tunnel(tunnel) {
                         log_proxy(&format!(
-                            "соединение #{} «{}» закрыто из-за ошибки 400 — повтор пойдёт чистым маршрутом",
+                            "СЃРѕРµРґРёРЅРµРЅРёРµ #{} В«{}В» Р·Р°РєСЂС‹С‚Рѕ РёР·-Р·Р° РѕС€РёР±РєРё 400 вЂ” РїРѕРІС‚РѕСЂ РїРѕР№РґС‘С‚ С‡РёСЃС‚С‹Рј РјР°СЂС€СЂСѓС‚РѕРј",
                             tunnel,
                             kind.label()
                         ));
                         acted.push(format!(
-                            "отказавшее соединение #{} по «{}» закрыто, следующий запрос пойдёт чистым маршрутом",
+                            "РѕС‚РєР°Р·Р°РІС€РµРµ СЃРѕРµРґРёРЅРµРЅРёРµ #{} РїРѕ В«{}В» Р·Р°РєСЂС‹С‚Рѕ, СЃР»РµРґСѓСЋС‰РёР№ Р·Р°РїСЂРѕСЃ РїРѕР№РґС‘С‚ С‡РёСЃС‚С‹Рј РјР°СЂС€СЂСѓС‚РѕРј",
                             tunnel,
                             kind.label()
                         ));
                     } else {
                         acted.push(format!(
-                            "по «{}» сейчас идёт ответ модели — маршрут и его соединения не тронуты",
+                            "РїРѕ В«{}В» СЃРµР№С‡Р°СЃ РёРґС‘С‚ РѕС‚РІРµС‚ РјРѕРґРµР»Рё вЂ” РјР°СЂС€СЂСѓС‚ Рё РµРіРѕ СЃРѕРµРґРёРЅРµРЅРёСЏ РЅРµ С‚СЂРѕРЅСѓС‚С‹",
                             kind.label()
                         ));
                     }
@@ -930,9 +930,9 @@ fn on_refusals(count: usize, at: Instant, host: Option<&str>) {
         // alive where the loopback door is down).
         None if resolvers::vpn_is_active() => {
             resolvers::force_substitution(FORCE_SUBSTITUTE_FOR);
-            log("VPN-выход не снимает гейт — подмена включена принудительно на 30 мин");
+            log("VPN-РІС‹С…РѕРґ РЅРµ СЃРЅРёРјР°РµС‚ РіРµР№С‚ вЂ” РїРѕРґРјРµРЅР° РІРєР»СЋС‡РµРЅР° РїСЂРёРЅСѓРґРёС‚РµР»СЊРЅРѕ РЅР° 30 РјРёРЅ");
             acted.push(
-                "ваш VPN не снимает блокировку — подмена адресов включена поверх туннеля на 30 мин"
+                "РІР°С€ VPN РЅРµ СЃРЅРёРјР°РµС‚ Р±Р»РѕРєРёСЂРѕРІРєСѓ вЂ” РїРѕРґРјРµРЅР° Р°РґСЂРµСЃРѕРІ РІРєР»СЋС‡РµРЅР° РїРѕРІРµСЂС… С‚СѓРЅРЅРµР»СЏ РЅР° 30 РјРёРЅ"
                     .to_string(),
             );
         }
@@ -941,9 +941,9 @@ fn on_refusals(count: usize, at: Instant, host: Option<&str>) {
             // it is what the name resolves to, so that is re-raced now.
             resolvers::forget_names(dns::core_namespaces());
             resolvers::warm(dns::core_namespaces(), isp_interface());
-            log("Antigravity обратился к Google мимо обхода — адреса подбираются заново");
+            log("Antigravity РѕР±СЂР°С‚РёР»СЃСЏ Рє Google РјРёРјРѕ РѕР±С…РѕРґР° вЂ” Р°РґСЂРµСЃР° РїРѕРґР±РёСЂР°СЋС‚СЃСЏ Р·Р°РЅРѕРІРѕ");
             acted.push(
-                "Antigravity обратился к Google мимо обхода — адреса подбираются заново"
+                "Antigravity РѕР±СЂР°С‚РёР»СЃСЏ Рє Google РјРёРјРѕ РѕР±С…РѕРґР° вЂ” Р°РґСЂРµСЃР° РїРѕРґР±РёСЂР°СЋС‚СЃСЏ Р·Р°РЅРѕРІРѕ"
                     .to_string(),
             );
         }
@@ -986,7 +986,7 @@ fn on_answers(count: usize, at: Instant, host: Option<&str>) {
         held: 0,
         route: None,
     });
-    let label = carried.map_or("не наш", |(k, _)| k.label());
+    let label = carried.map_or("РЅРµ РЅР°С€", |(k, _)| k.label());
     let mut lines: Vec<(usize, &'static str)> = Vec::new();
     if let Ok(mut g) = LAST_LINE.lock() {
         // A change of route ends the old line first: what was held back came
@@ -1007,7 +1007,7 @@ fn on_answers(count: usize, at: Instant, host: Option<&str>) {
     }
     for (held, route) in lines {
         log_proxy(&format!(
-            "модель ответила (x{}) — маршрут «{}»",
+            "РјРѕРґРµР»СЊ РѕС‚РІРµС‚РёР»Р° (x{}) вЂ” РјР°СЂС€СЂСѓС‚ В«{}В»",
             held, route
         ));
     }
@@ -1018,13 +1018,13 @@ fn on_answers(count: usize, at: Instant, host: Option<&str>) {
 /// substitution forced on (D15, the fallback D25 leaves for a closed door).
 const FORCE_SUBSTITUTE_FOR: Duration = Duration::from_secs(30 * 60);
 
-/// «10 мин», «1 ч», «6 ч».
+/// В«10 РјРёРЅВ», В«1 С‡В», В«6 С‡В».
 fn human_minutes(d: Duration) -> String {
     let mins = d.as_secs() / 60;
     if mins >= 60 && mins.is_multiple_of(60) {
-        format!("{} ч", mins / 60)
+        format!("{} С‡", mins / 60)
     } else {
-        format!("{} мин", mins)
+        format!("{} РјРёРЅ", mins)
     }
 }
 
@@ -1083,7 +1083,7 @@ pub fn run() -> Result<(), String> {
     // keeps answering with substituted addresses, exactly as before.
     thread::spawn(|| {
         if let Err(e) = loopback::run() {
-            log_proxy(&format!("локальные адреса гейт-хостов не заняты: {}", e));
+            log_proxy(&format!("Р»РѕРєР°Р»СЊРЅС‹Рµ Р°РґСЂРµСЃР° РіРµР№С‚-С…РѕСЃС‚РѕРІ РЅРµ Р·Р°РЅСЏС‚С‹: {}", e));
         }
     });
     thread::spawn(watch_client_logs);
@@ -1097,7 +1097,7 @@ pub fn run() -> Result<(), String> {
 /// It maintains gate.json, the resolver pool, client log watching, and the
 /// proxy environment variable, then serves the local proxy on 127.0.0.1:53129.
 pub fn run_proxy_service() -> Result<(), String> {
-    log_proxy("служба обхода (локальный прокси) запущена");
+    log_proxy("СЃР»СѓР¶Р±Р° РѕР±С…РѕРґР° (Р»РѕРєР°Р»СЊРЅС‹Р№ РїСЂРѕРєСЃРё) Р·Р°РїСѓС‰РµРЅР°");
     record_version();
     gate::note_started();
     thread::spawn(warm_forever);
@@ -1116,9 +1116,9 @@ fn spawn_proxy_env_maintainer() {
         // value names a port that no longer answers and takes the whole machine's
         // proxy-aware traffic with it (G20, G31).
         match crate::endpoint::remove_legacy_proxy_env(&proxy::proxy_url()) {
-            Ok(true) => log_proxy("снята прежняя общесистемная HTTPS_PROXY"),
+            Ok(true) => log_proxy("СЃРЅСЏС‚Р° РїСЂРµР¶РЅСЏСЏ РѕР±С‰РµСЃРёСЃС‚РµРјРЅР°СЏ HTTPS_PROXY"),
             Ok(false) => {}
-            Err(e) => log_proxy(&format!("прежняя HTTPS_PROXY не снята: {}", e)),
+            Err(e) => log_proxy(&format!("РїСЂРµР¶РЅСЏСЏ HTTPS_PROXY РЅРµ СЃРЅСЏС‚Р°: {}", e)),
         }
         let mut waiting_said = false;
         loop {
@@ -1132,7 +1132,7 @@ fn spawn_proxy_env_maintainer() {
                 // Said once per outage, not once a minute: this log is 64 KB.
                 if !waiting_said {
                     log_proxy(&format!(
-                        "{} не выставлена: локальный прокси не поднялся",
+                        "{} РЅРµ РІС‹СЃС‚Р°РІР»РµРЅР°: Р»РѕРєР°Р»СЊРЅС‹Р№ РїСЂРѕРєСЃРё РЅРµ РїРѕРґРЅСЏР»СЃСЏ",
                         var
                     ));
                     waiting_said = true;
@@ -1146,10 +1146,10 @@ fn spawn_proxy_env_maintainer() {
                 // user set themselves still outranks ours (D19, I52, G33).
                 match crate::endpoint::ensure_proxy_env(&url) {
                     Ok(crate::endpoint::Outcome::Applied) => {
-                        log_proxy(&format!("{} снова указывает на локальный прокси", var))
+                        log_proxy(&format!("{} СЃРЅРѕРІР° СѓРєР°Р·С‹РІР°РµС‚ РЅР° Р»РѕРєР°Р»СЊРЅС‹Р№ РїСЂРѕРєСЃРё", var))
                     }
                     Ok(crate::endpoint::Outcome::AlreadySet) => {}
-                    Err(e) => log_proxy(&format!("{} не восстановлена: {}", var, e)),
+                    Err(e) => log_proxy(&format!("{} РЅРµ РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅР°: {}", var, e)),
                 }
             } else if crate::endpoint::proxy_env_is_ours() {
                 // Off in the settings and still set. `remove_proxy` judges each
@@ -1158,10 +1158,10 @@ fn spawn_proxy_env_maintainer() {
                 // the user's own is never taken off here.
                 match crate::endpoint::remove_proxy(&url, "") {
                     Ok(()) => log_proxy(&format!(
-                        "{} снята: локальный прокси выключен в настройках",
+                        "{} СЃРЅСЏС‚Р°: Р»РѕРєР°Р»СЊРЅС‹Р№ РїСЂРѕРєСЃРё РІС‹РєР»СЋС‡РµРЅ РІ РЅР°СЃС‚СЂРѕР№РєР°С…",
                         var
                     )),
-                    Err(e) => log_proxy(&format!("{} не снята: {}", var, e)),
+                    Err(e) => log_proxy(&format!("{} РЅРµ СЃРЅСЏС‚Р°: {}", var, e)),
                 }
             }
             thread::sleep(proxy::REBIND_EVERY);
@@ -1204,7 +1204,7 @@ fn serve_dns_forever() -> ! {
         let sock = match UdpSocket::bind(addr) {
             Ok(sock) => {
                 if said.take().is_some() {
-                    log("порт DNS-релея освободился");
+                    log("РїРѕСЂС‚ DNS-СЂРµР»РµСЏ РѕСЃРІРѕР±РѕРґРёР»СЃСЏ");
                     gate::set_blocker("dns", None);
                 }
                 sock
@@ -1215,7 +1215,7 @@ fn serve_dns_forever() -> ! {
                 // Once per distinct cause: the retry is a minute, the log is 64 KB.
                 if said.as_ref() != Some(&blocker) {
                     log(&format!(
-                        "не занять {} — {} ({}{})",
+                        "РЅРµ Р·Р°РЅСЏС‚СЊ {} вЂ” {} ({}{})",
                         blocker.addr,
                         blocker.error,
                         blocker.cause,
@@ -1238,12 +1238,12 @@ fn serve_dns_forever() -> ! {
         // rules, and nothing else tells it otherwise (G75). Here and not a line
         // earlier: the socket is bound, so a re-ask reaches us.
         if crate::dns::flush_client_cache() {
-            log("кэш DNS-клиента по гейт-именам сброшен — клиент спросит заново");
+            log("РєСЌС€ DNS-РєР»РёРµРЅС‚Р° РїРѕ РіРµР№С‚-РёРјРµРЅР°Рј СЃР±СЂРѕС€РµРЅ вЂ” РєР»РёРµРЅС‚ СЃРїСЂРѕСЃРёС‚ Р·Р°РЅРѕРІРѕ");
         }
         let up = Instant::now();
         serve_queries(&sock);
         drop(sock);
-        log("DNS-сокет перестал принимать запросы — занимаем заново");
+        log("DNS-СЃРѕРєРµС‚ РїРµСЂРµСЃС‚Р°Р» РїСЂРёРЅРёРјР°С‚СЊ Р·Р°РїСЂРѕСЃС‹ вЂ” Р·Р°РЅРёРјР°РµРј Р·Р°РЅРѕРІРѕ");
         // Never in a tight loop: a socket that did not last a minute is not one
         // an immediate retry will fix, so it waits out the same clock a failed
         // bind does.
@@ -1351,221 +1351,10 @@ fn note_loopback(name: &str) {
         })
         .unwrap_or(false);
     if due {
-        log(&format!("loopback     {} [наш маршрут]", name));
+        log(&format!("loopback     {} [РЅР°С€ РјР°СЂС€СЂСѓС‚]", name));
     }
 }
+
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::net::Ipv4Addr;
-
-    #[test]
-    fn a_gate_hosts_aaaa_and_https_questions_get_an_empty_answer() {
-        for qtype in [28u8, 64, 65] {
-            let mut q = dns_client::build_query("daily-cloudcode-pa.googleapis.com", 9);
-            let n = q.len();
-            q[n - 3] = qtype;
-            let r = own_answer(&q, "daily-cloudcode-pa.googleapis.com").expect("answered");
-            assert!(dns_client::answer_addrs(&r).is_empty(), "qtype {qtype}");
-            assert_eq!(dns_client::question_type(&r), Some(qtype as u16));
-        }
-        // Not a gate host: relayed as before.
-        let mut q = dns_client::build_query("storage.googleapis.com", 9);
-        let n = q.len();
-        q[n - 3] = 28;
-        assert!(own_answer(&q, "storage.googleapis.com").is_none());
-    }
-
-    #[test]
-    fn the_network_fingerprint_is_never_the_unset_value_and_tells_networks_apart() {
-        let a = network_fingerprint(27, Some(27), false);
-        let b = network_fingerprint(27, Some(55), true);
-        let c = network_fingerprint(27, Some(27), true);
-        assert_ne!(a, 0);
-        assert_ne!(network_fingerprint(0, None, false), 0);
-        assert_ne!(a, b);
-        assert_ne!(a, c);
-        assert_eq!(a, network_fingerprint(27, Some(27), false));
-    }
-
-    #[test]
-    fn a_penalty_reads_in_minutes_or_hours() {
-        assert_eq!(human_minutes(Duration::from_secs(600)), "10 мин");
-        assert_eq!(human_minutes(Duration::from_secs(3600)), "1 ч");
-        assert_eq!(human_minutes(Duration::from_secs(6 * 3600)), "6 ч");
-        assert_eq!(human_minutes(Duration::from_secs(90 * 60)), "90 мин");
-    }
-
-    /// Everything the version check does hangs off this: a relay that predates
-    /// versioning leaves no file, and it must read as older than this build
-    /// rather than as "no relay" or as a parse error nobody handles.
-    #[test]
-    fn an_unreadable_version_is_the_oldest_one() {
-        assert_eq!(parse_version(None), 0);
-        assert_eq!(parse_version(Some("")), 0);
-        assert_eq!(parse_version(Some("не число")), 0);
-        assert_eq!(parse_version(Some(" 7 \r\n")), 7);
-        assert!(parse_version(None) < RELAY_VERSION);
-    }
-
-    /// The warm loop only exists to beat the ~1 s Windows waits before asking
-    /// the next NRPT nameserver, so it has to refresh well inside the window the
-    /// answer cache serves from.
-    #[test]
-    fn warming_runs_more_often_than_an_answer_goes_stale() {
-        assert!(WARM_EVERY < resolvers::ANSWER_TTL);
-    }
-
-    /// A burst of one message must not eat the sixty lines a report shows.
-    /// The first of a run goes out at once; the rest are counted and the count
-    /// is written the moment anything else is logged.
-    #[test]
-    fn a_run_of_one_line_is_collapsed_into_a_count() {
-        let line = "напрямую X: имя не разрешается";
-        // The first is written, with nothing held back before it.
-        assert_eq!(collapse_repeat(line), (None, true));
-        for _ in 0..14 {
-            assert_eq!(collapse_repeat(line), (None, false), "a repeat was written");
-        }
-        // Something else ends the run and carries the tally.
-        let (note, write) = collapse_repeat("что-то другое");
-        assert!(write);
-        assert_eq!(note.as_deref(), Some("↑ то же самое ещё 14 раз"));
-        // …and the next line after that has nothing to report.
-        assert_eq!(collapse_repeat("третья"), (None, true));
-
-        // And a run that never ends is never silent: the tally is written every
-        // `REPEAT_RUN`, so a problem repeating for an hour is still visible.
-        // One test and not two: `collapse_repeat` keeps one run per process,
-        // and two tests would race for it.
-        let line = "бесконечное";
-        assert_eq!(collapse_repeat(line), (None, true));
-        for _ in 0..(REPEAT_RUN - 1) {
-            assert_eq!(collapse_repeat(line), (None, false));
-        }
-        let (note, write) = collapse_repeat(line);
-        assert!(!write, "the repeat itself is still not written");
-        assert_eq!(note.as_deref(), Some("↑ то же самое ещё 50 раз"));
-        // The counter restarted, so the next line ends a fresh run.
-        assert_eq!(collapse_repeat(line), (None, false));
-        assert_eq!(
-            collapse_repeat("иное").0.as_deref(),
-            Some("↑ то же самое ещё 1 раз")
-        );
-    }
-
-    #[test]
-    fn the_listener_address_is_loopback() {
-        let ip: Ipv4Addr = LISTEN_IP.parse().expect("valid address");
-        assert!(ip.is_loopback());
-        // Not .1: something else on the machine may already own it.
-        assert_ne!(ip, Ipv4Addr::LOCALHOST);
-    }
-
-    #[test]
-    fn a_detected_interface_is_cached_and_droppable() {
-        invalidate_interface();
-        assert!(EGRESS_CACHE.lock().unwrap().is_none());
-        if let Ok(mut c) = EGRESS_CACHE.lock() {
-            *c = Some((17, Instant::now(), EGRESS_TTL));
-        }
-        // Served from the cache: no detection runs, so no process is spawned.
-        assert_eq!(isp_interface(), 17);
-        invalidate_interface();
-        assert!(EGRESS_CACHE.lock().unwrap().is_none());
-    }
-
-    /// An expired entry must not be served - that is what makes the short retry
-    /// after a failed detection actually retry.
-    #[test]
-    fn an_expired_entry_is_not_served() {
-        invalidate_interface();
-        if let Ok(mut c) = EGRESS_CACHE.lock() {
-            // Learned long ago, and only ever good for a moment.
-            *c = Some((17, Instant::now() - Duration::from_secs(60), EGRESS_RETRY));
-        }
-        let stale = EGRESS_CACHE
-            .lock()
-            .unwrap()
-            .map(|(_, at, good_for)| at.elapsed() >= good_for);
-        assert_eq!(stale, Some(true));
-        invalidate_interface();
-    }
-
-    /// A failed detection has to be forgotten quickly: at logon it usually just
-    /// means the network is not up yet.
-    #[test]
-    fn a_failed_detection_is_remembered_only_briefly() {
-        assert!(EGRESS_RETRY < EGRESS_TTL);
-        assert!(EGRESS_RETRY <= Duration::from_secs(60));
-    }
-
-    /// Relays a real query end to end through the running upstream, and prints
-    /// the verdict for every routed name.
-    ///
-    /// Needs a live network and the VPN OFF: through a tunnel every provider
-    /// sees a foreign client and substitutes nothing, so every verdict comes
-    /// back `Passthrough` and the run says nothing about the providers.
-    ///
-    /// The verdict is the assertion that matters now. The old version only
-    /// checked that bytes came back - which stayed true through the whole
-    /// outage that motivated `resolvers`, because an unsubstituted answer is
-    /// still a perfectly well-formed answer.
-    #[test]
-    #[ignore = "needs a live network, VPN off; run with --ignored"]
-    fn relays_a_real_query() {
-        let id: u16 = 0x4242;
-        let mut substituted = Vec::new();
-
-        for name in [
-            "cloudcode-pa.googleapis.com",
-            "daily-cloudcode-pa.googleapis.com",
-            "generativelanguage.googleapis.com",
-            "antigravity-unleash.goog",
-        ] {
-            let mut query = vec![];
-            query.extend_from_slice(&id.to_be_bytes());
-            query.extend_from_slice(&[0x01, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]);
-            for label in name.split('.') {
-                query.push(label.len() as u8);
-                query.extend_from_slice(label.as_bytes());
-            }
-            query.extend_from_slice(&[0, 0x00, 0x01, 0x00, 0x01]);
-
-            let (reply, provider, verdict) = relay(&query).expect("a provider answered");
-            assert_eq!(&reply[0..2], &id.to_be_bytes(), "id must be echoed");
-            assert_eq!(
-                dns_client::question_name(&reply).as_deref(),
-                Some(name),
-                "the reply must answer the question we asked"
-            );
-            assert!(
-                u16::from_be_bytes([reply[6], reply[7]]) > 0,
-                "{} came back with no answer",
-                name
-            );
-            println!(
-                "{:<38} {:?} via {:<12} {:?}",
-                name,
-                verdict,
-                provider,
-                dns_client::answer_addrs(&reply)
-            );
-            if verdict == Verdict::Substituted {
-                substituted.push(name);
-            }
-        }
-
-        // Not an assertion on any single name: which names a provider proxies
-        // is theirs to change, and this test exists to report that, not to fail
-        // on it. But if nothing at all is substituted, either the VPN is up or
-        // every provider has dropped the whole list - both worth failing on.
-        assert!(
-            !substituted.is_empty(),
-            "no routed name is substituted by any provider - VPN up, or the \
-             providers dropped every name"
-        );
-        println!("substituted: {:?}", substituted);
-    }
-}
+mod tests;

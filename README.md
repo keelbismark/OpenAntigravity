@@ -4,6 +4,8 @@
 
 # Open Antigravity
 
+[![Q.E.D. Standard](https://img.shields.io/badge/Q.E.D.-Quality%20%3E%20Speed-000000?style=flat&logo=target)](https://github.com/keelbismark/qed)
+
 **Портативная среда для работы с Google Antigravity в любом регионе**
 
 [![Release](https://img.shields.io/github/v/release/keelbismark/OpenAntigravity?color=ffffff&labelColor=18181b&style=flat-square)](https://github.com/keelbismark/OpenAntigravity/releases)

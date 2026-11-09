@@ -1,0 +1,20 @@
+# Open Antigravity
+> Portable, selective routing proxy and environment manager for Google Antigravity in Rust.
+
+## Core Directives
+- Standard: Q.E.D. High-Assurance Engineering Standard (Mode A: Quality > Speed).
+- Evidence Before Assertions: Terminal verification required for all tasks.
+- Architecture: Zero-C-dependency Rust codebase (GUI via eframe/egui, TUI via ratatui, network proxy, patcher).
+- Primary Entrypoint: `src/main.rs`.
+
+## Key Files & Modules
+- [AI README](AI_README.md): Full machine instructions, CLI flags, invariants, and architecture topology.
+- [Human README](README.md): User guide, quickstart, and downloads.
+- [Proxy Setup Guide](PROXY_SETUP.md): Custom upstream proxy configurations.
+- [Portable Build Guide](BUILD_PORTABLE.md): Portable binary packaging specifications.
+- [Network Subsystem](src/network/mod.rs): DNS forwarder, DoH, selective proxy engine, resolvers.
+- [Core Logic](src/core/mod.rs): Settings, portable data paths, updater, background operations.
+- [Patcher Engine](src/patcher/mod.rs): ASAR unpacking, binary hex patching, file watchdog.
+- [Platform Bindings](src/platform/mod.rs): Windows NRPT, scheduled tasks, UAC elevation, Linux/SteamOS support.
+- [GUI Views](src/gui/mod.rs): Immediate mode desktop UI.
+- [TUI View](src/tui/mod.rs): Terminal UI for headless and SSH setups.

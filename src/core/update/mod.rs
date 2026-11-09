@@ -1,7 +1,7 @@
 //! New-version check against the build's own update feed.
 //!
 //! The feed is a small JSON document (`version.json`) served by whoever
-//! distributes this build — by default the same site the archive came from.
+//! distributes this build вЂ” by default the same site the archive came from.
 //! Its address is baked at compile time with `OAG_UPDATE_URL` and can be
 //! overridden at runtime with the same variable, so one binary can be pointed
 //! at a mirror without a rebuild:
@@ -9,8 +9,8 @@
 //! ```json
 //! {
 //!   "version": "1.1.2",
-//!   "notes": "что нового",
-//!   "page": "https://host/страница-проекта",
+//!   "notes": "С‡С‚Рѕ РЅРѕРІРѕРіРѕ",
+//!   "page": "https://host/СЃС‚СЂР°РЅРёС†Р°-РїСЂРѕРµРєС‚Р°",
 //!   "url_windows": "https://host/OpenAntigravity_windows_v1.1.2.zip",
 //!   "url_linux":   "https://host/OpenAntigravity_linux_v1.1.2.tar.gz"
 //! }
@@ -19,15 +19,15 @@
 //! Only `version` is required; every other field is optional and a missing
 //! download link just means the banner falls back to `page`. When
 //! `OAG_UPDATE_URL` is neither baked nor set at runtime the whole subsystem is
-//! inert: no thread, no requests, no banner — a build shipped to nobody in
+//! inert: no thread, no requests, no banner вЂ” a build shipped to nobody in
 //! particular must not phone a feed its distributor never chose.
 //!
 //! Synchronous on purpose, like the rest of the crate: one HTTP/1.1 GET, over
 //! rustls for `https://` and plain TCP for `http://` (a home VPS behind
 //! Dokploy often has no certificate yet), the same pattern `doh.rs` and
 //! `proxy.rs` already use. The GUI runs checks on their own thread and never
-//! on the paint loop. Redirects (301–308) are followed, up to a small limit —
-//! http→https upgrades and trailing-slash fixes are the norm, not the
+//! on the paint loop. Redirects (301вЂ“308) are followed, up to a small limit вЂ”
+//! httpв†’https upgrades and trailing-slash fixes are the norm, not the
 //! exception, on such setups.
 
 use std::fs;
@@ -58,7 +58,7 @@ pub fn current_version() -> &'static str {
 }
 
 /// The feed address: runtime `OAG_UPDATE_URL` wins over the value baked at
-/// build time. Empty means "unset" in both places — `OAG_UPDATE_URL=` at
+/// build time. Empty means "unset" in both places вЂ” `OAG_UPDATE_URL=` at
 /// runtime can therefore silence a baked-in feed, which is the only way a
 /// misbehaving mirror can be switched off without a rebuild.
 pub fn update_url() -> Option<String> {
@@ -84,7 +84,7 @@ pub struct UpdateInfo {
     /// Release date or publication timestamp.
     #[serde(default)]
     pub date: Option<String>,
-    /// Fallback link — the project page — opened when no archive matches the
+    /// Fallback link вЂ” the project page вЂ” opened when no archive matches the
     /// running platform.
     #[serde(default)]
     pub page: Option<String>,
@@ -292,7 +292,7 @@ fn parse_url(url: &str) -> Result<ParsedUrl, String> {
         (false, r)
     } else {
         return Err(format!(
-            "URL должен начинаться с http:// или https:// (сейчас: {url})"
+            "URL РґРѕР»Р¶РµРЅ РЅР°С‡РёРЅР°С‚СЊСЃСЏ СЃ http:// РёР»Рё https:// (СЃРµР№С‡Р°СЃ: {url})"
         ));
     };
 
@@ -301,7 +301,7 @@ fn parse_url(url: &str) -> Result<ParsedUrl, String> {
         None => (rest, "/"),
     };
     if hostport.is_empty() {
-        return Err("в URL нет хоста".to_string());
+        return Err("РІ URL РЅРµС‚ С…РѕСЃС‚Р°".to_string());
     }
     let path = if path.is_empty() { "/" } else { path };
 
@@ -310,18 +310,18 @@ fn parse_url(url: &str) -> Result<ParsedUrl, String> {
         match end.split_once(']') {
             Some((h, tail)) => {
                 let port = match tail.strip_prefix(':') {
-                    Some(p) => p.parse::<u16>().map_err(|_| "неверный порт в URL")?,
+                    Some(p) => p.parse::<u16>().map_err(|_| "РЅРµРІРµСЂРЅС‹Р№ РїРѕСЂС‚ РІ URL")?,
                     None => 0,
                 };
                 (h.to_string(), port)
             }
-            None => return Err("незакрытая скобка IPv6 в URL".to_string()),
+            None => return Err("РЅРµР·Р°РєСЂС‹С‚Р°СЏ СЃРєРѕР±РєР° IPv6 РІ URL".to_string()),
         }
     } else {
         match hostport.rsplit_once(':') {
             Some((h, p)) => (
                 h.to_string(),
-                p.parse::<u16>().map_err(|_| "неверный порт в URL")?,
+                p.parse::<u16>().map_err(|_| "РЅРµРІРµСЂРЅС‹Р№ РїРѕСЂС‚ РІ URL")?,
             ),
             None => (hostport.to_string(), 0),
         }
@@ -485,7 +485,7 @@ fn parse_response(raw: &[u8]) -> Result<(u16, Option<String>, Vec<u8>), String> 
 
     let mut lines = header_str.lines();
     let status_line = lines.next().unwrap_or("");
-    // "HTTP/1.1 200 OK" — the code is the second token, not a substring hunt:
+    // "HTTP/1.1 200 OK" вЂ” the code is the second token, not a substring hunt:
     // " 200" also matches "1200" and a proxy's " 2001".
     let status = status_line
         .split_whitespace()
@@ -525,7 +525,7 @@ fn resolve_redirect(base: &ParsedUrl, location: &str) -> Result<ParsedUrl, Strin
             ..base.clone()
         })
     } else {
-        // A bare relative path ("feed.json") — replace the last segment.
+        // A bare relative path ("feed.json") вЂ” replace the last segment.
         let up_to = base.path.rfind('/').unwrap_or(0);
         Ok(ParsedUrl {
             path: format!("{}/{}", &base.path[..up_to], loc),
@@ -537,7 +537,7 @@ fn resolve_redirect(base: &ParsedUrl, location: &str) -> Result<ParsedUrl, Strin
 /// Synchronously fetches and parses the feed, following redirects.
 pub fn fetch_update_info() -> Result<UpdateInfo, String> {
     let url = update_url()
-        .ok_or_else(|| "URL проверки обновлений не задан (OAG_UPDATE_URL)".to_string())?;
+        .ok_or_else(|| "URL РїСЂРѕРІРµСЂРєРё РѕР±РЅРѕРІР»РµРЅРёР№ РЅРµ Р·Р°РґР°РЅ (OAG_UPDATE_URL)".to_string())?;
     let now_ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -564,27 +564,27 @@ pub fn fetch_update_info() -> Result<UpdateInfo, String> {
             }
             301 | 302 | 303 | 307 | 308 => {
                 let loc = location
-                    .ok_or_else(|| format!("сервер вернул {status} без Location"))?;
+                    .ok_or_else(|| format!("СЃРµСЂРІРµСЂ РІРµСЂРЅСѓР» {status} Р±РµР· Location"))?;
                 current = resolve_redirect(&current, &loc)?;
             }
             s => {
                 return Err(format!(
-                    "сервер обновлений вернул статус {s} ({}:{})",
+                    "СЃРµСЂРІРµСЂ РѕР±РЅРѕРІР»РµРЅРёР№ РІРµСЂРЅСѓР» СЃС‚Р°С‚СѓСЃ {s} ({}:{})",
                     current.host, current.port
                 ))
             }
         }
     }
-    Err(format!("слишком много перенаправлений (>{MAX_REDIRECTS})"))
+    Err(format!("СЃР»РёС€РєРѕРј РјРЅРѕРіРѕ РїРµСЂРµРЅР°РїСЂР°РІР»РµРЅРёР№ (>{MAX_REDIRECTS})"))
 }
 
 /// Checks the feed, honouring `CHECK_INTERVAL` (8 hours) via the on-disk
-/// cache. `force = true` skips the cache — that is what the manual «Проверить
-/// обновления» button uses. An update returns `Ok(Some(info))`; a feed that
+/// cache. `force = true` skips the cache вЂ” that is what the manual В«РџСЂРѕРІРµСЂРёС‚СЊ
+/// РѕР±РЅРѕРІР»РµРЅРёСЏВ» button uses. An update returns `Ok(Some(info))`; a feed that
 /// matches the running version returns `Ok(None)`.
 pub fn check_update_cached(force: bool) -> Result<Option<UpdateInfo>, String> {
     let url = update_url()
-        .ok_or_else(|| "URL проверки обновлений не задан (OAG_UPDATE_URL)".to_string())?;
+        .ok_or_else(|| "URL РїСЂРѕРІРµСЂРєРё РѕР±РЅРѕРІР»РµРЅРёР№ РЅРµ Р·Р°РґР°РЅ (OAG_UPDATE_URL)".to_string())?;
     let now_unix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -625,7 +625,7 @@ pub fn check_update_cached(force: bool) -> Result<Option<UpdateInfo>, String> {
     }
 }
 
-/// The manual check the «Проверить обновления» button runs: always on the
+/// The manual check the В«РџСЂРѕРІРµСЂРёС‚СЊ РѕР±РЅРѕРІР»РµРЅРёСЏВ» button runs: always on the
 /// wire, never answered from the cache. Its result goes to a place the user
 /// is looking at, so errors are returned, not swallowed.
 pub fn manual_check() -> Result<Option<UpdateInfo>, String> {
@@ -775,18 +775,18 @@ fn stream_download_or_redirect<S: Read + Write>(
 
     if status != 200 {
         if status == 404 {
-            return Err("сервер вернул HTTP статус 404 (файлы релиза ещё загружаются на GitHub, подождите 2-3 минуты)".to_string());
+            return Err("СЃРµСЂРІРµСЂ РІРµСЂРЅСѓР» HTTP СЃС‚Р°С‚СѓСЃ 404 (С„Р°Р№Р»С‹ СЂРµР»РёР·Р° РµС‰С‘ Р·Р°РіСЂСѓР¶Р°СЋС‚СЃСЏ РЅР° GitHub, РїРѕРґРѕР¶РґРёС‚Рµ 2-3 РјРёРЅСѓС‚С‹)".to_string());
         }
-        return Err(format!("сервер вернул HTTP статус {status}"));
+        return Err(format!("СЃРµСЂРІРµСЂ РІРµСЂРЅСѓР» HTTP СЃС‚Р°С‚СѓСЃ {status}"));
     }
 
     let mut file = fs::File::create(dest_path)
-        .map_err(|e| format!("не удалось создать файл для сохранения {}: {e}", dest_path.display()))?;
+        .map_err(|e| format!("РЅРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ С„Р°Р№Р» РґР»СЏ СЃРѕС…СЂР°РЅРµРЅРёСЏ {}: {e}", dest_path.display()))?;
 
     let mut downloaded = 0;
     if !initial_body.is_empty() {
         file.write_all(initial_body)
-            .map_err(|e| format!("ошибка записи в файл: {e}"))?;
+            .map_err(|e| format!("РѕС€РёР±РєР° Р·Р°РїРёСЃРё РІ С„Р°Р№Р»: {e}"))?;
         downloaded += initial_body.len();
         on_progress(downloaded, content_length);
     }
@@ -797,22 +797,22 @@ fn stream_download_or_redirect<S: Read + Write>(
             Ok(0) => break,
             Ok(n) => {
                 file.write_all(&buf[..n])
-                    .map_err(|e| format!("ошибка записи в файл: {e}"))?;
+                    .map_err(|e| format!("РѕС€РёР±РєР° Р·Р°РїРёСЃРё РІ С„Р°Р№Р»: {e}"))?;
                 downloaded += n;
                 on_progress(downloaded, content_length);
             }
             Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
             Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
-            Err(e) => return Err(format!("ошибка загрузки: {e}")),
+            Err(e) => return Err(format!("РѕС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё: {e}")),
         }
     }
     file.flush()
-        .map_err(|e| format!("ошибка сохранения файла: {e}"))?;
+        .map_err(|e| format!("РѕС€РёР±РєР° СЃРѕС…СЂР°РЅРµРЅРёСЏ С„Р°Р№Р»Р°: {e}"))?;
 
     if let Some(expected) = content_length {
         if downloaded < expected {
             return Err(format!(
-                "загрузка прервана: получено {downloaded} из {expected} байт"
+                "Р·Р°РіСЂСѓР·РєР° РїСЂРµСЂРІР°РЅР°: РїРѕР»СѓС‡РµРЅРѕ {downloaded} РёР· {expected} Р±Р°Р№С‚"
             ));
         }
     }
@@ -851,7 +851,7 @@ pub fn download_file(
             }
         }
     }
-    Err(format!("слишком много перенаправлений (>{MAX_REDIRECTS})"))
+    Err(format!("СЃР»РёС€РєРѕРј РјРЅРѕРіРѕ РїРµСЂРµРЅР°РїСЂР°РІР»РµРЅРёР№ (>{MAX_REDIRECTS})"))
 }
 
 fn collect_binaries(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
@@ -913,7 +913,7 @@ fn find_binary_in_dir(dir: &std::path::Path) -> Option<PathBuf> {
 pub fn compute_file_sha256(path: &std::path::Path) -> Result<String, String> {
     use sha2::{Digest, Sha256};
     let mut file = fs::File::open(path)
-        .map_err(|e| format!("не удалось открыть файл для проверки хеша: {e}"))?;
+        .map_err(|e| format!("РЅРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєСЂС‹С‚СЊ С„Р°Р№Р» РґР»СЏ РїСЂРѕРІРµСЂРєРё С…РµС€Р°: {e}"))?;
     let mut hasher = Sha256::new();
     let mut buf = [0u8; 65536];
     loop {
@@ -921,7 +921,7 @@ pub fn compute_file_sha256(path: &std::path::Path) -> Result<String, String> {
             Ok(0) => break,
             Ok(n) => hasher.update(&buf[..n]),
             Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
-            Err(e) => return Err(format!("ошибка чтения файла при вычислении хеша: {e}")),
+            Err(e) => return Err(format!("РѕС€РёР±РєР° С‡С‚РµРЅРёСЏ С„Р°Р№Р»Р° РїСЂРё РІС‹С‡РёСЃР»РµРЅРёРё С…РµС€Р°: {e}")),
         }
     }
     let result = hasher.finalize();
@@ -939,7 +939,7 @@ pub fn verify_file_sha256(path: &std::path::Path, expected_hex: &str) -> Result<
         Ok(())
     } else {
         Err(format!(
-            "контрольная сумма не совпадает (ожидалось: {}, получено: {})",
+            "РєРѕРЅС‚СЂРѕР»СЊРЅР°СЏ СЃСѓРјРјР° РЅРµ СЃРѕРІРїР°РґР°РµС‚ (РѕР¶РёРґР°Р»РѕСЃСЊ: {}, РїРѕР»СѓС‡РµРЅРѕ: {})",
             clean_expected, actual
         ))
     }
@@ -966,7 +966,7 @@ pub fn extract_and_apply_update(archive_path: &std::path::Path) -> Result<PathBu
         let _ = fs::remove_dir_all(&extract_dir);
     }
     fs::create_dir_all(&extract_dir)
-        .map_err(|e| format!("не удалось создать папку распаковки: {e}"))?;
+        .map_err(|e| format!("РЅРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ РїР°РїРєСѓ СЂР°СЃРїР°РєРѕРІРєРё: {e}"))?;
 
     #[cfg(target_os = "windows")]
     {
@@ -986,9 +986,9 @@ pub fn extract_and_apply_update(archive_path: &std::path::Path) -> Result<PathBu
             crate::utils::no_window(&mut ps_cmd);
             let ps_status = ps_cmd
                 .status()
-                .map_err(|e| format!("ошибка распаковки PowerShell: {e}"))?;
+                .map_err(|e| format!("РѕС€РёР±РєР° СЂР°СЃРїР°РєРѕРІРєРё PowerShell: {e}"))?;
             if !ps_status.success() {
-                return Err("не удалось распаковать архив обновления".to_string());
+                return Err("РЅРµ СѓРґР°Р»РѕСЃСЊ СЂР°СЃРїР°РєРѕРІР°С‚СЊ Р°СЂС…РёРІ РѕР±РЅРѕРІР»РµРЅРёСЏ".to_string());
             }
         }
     }
@@ -1001,20 +1001,20 @@ pub fn extract_and_apply_update(archive_path: &std::path::Path) -> Result<PathBu
             .arg("-C")
             .arg(&extract_dir)
             .status()
-            .map_err(|e| format!("ошибка вызова tar: {e}"))?;
+            .map_err(|e| format!("РѕС€РёР±РєР° РІС‹Р·РѕРІР° tar: {e}"))?;
         if !tar_status.success() {
-            return Err("не удалось распаковать архив обновления".to_string());
+            return Err("РЅРµ СѓРґР°Р»РѕСЃСЊ СЂР°СЃРїР°РєРѕРІР°С‚СЊ Р°СЂС…РёРІ РѕР±РЅРѕРІР»РµРЅРёСЏ".to_string());
         }
     }
 
     find_binary_in_dir(&extract_dir)
-        .ok_or_else(|| "бинарный файл приложения не найден в архиве обновления".to_string())
+        .ok_or_else(|| "Р±РёРЅР°СЂРЅС‹Р№ С„Р°Р№Р» РїСЂРёР»РѕР¶РµРЅРёСЏ РЅРµ РЅР°Р№РґРµРЅ РІ Р°СЂС…РёРІРµ РѕР±РЅРѕРІР»РµРЅРёСЏ".to_string())
 }
 
 /// Replaces current binary with `new_exe` and restarts the process.
 pub fn restart_with_new_binary(new_exe: &std::path::Path) -> Result<(), String> {
     let current_exe = std::env::current_exe()
-        .map_err(|e| format!("не удалось определить путь к текущему приложению: {e}"))?;
+        .map_err(|e| format!("РЅРµ СѓРґР°Р»РѕСЃСЊ РѕРїСЂРµРґРµР»РёС‚СЊ РїСѓС‚СЊ Рє С‚РµРєСѓС‰РµРјСѓ РїСЂРёР»РѕР¶РµРЅРёСЋ: {e}"))?;
     let current_pid = std::process::id();
 
     // Prepare arguments for restarted process: forward user arguments, strip any previous --wait-pid,
@@ -1095,7 +1095,7 @@ pub fn restart_with_new_binary(new_exe: &std::path::Path) -> Result<(), String> 
             let mut cmd = std::process::Command::new(&current_exe);
             cmd.args(&clean_args);
             cmd.spawn()
-                .map_err(|e| format!("не удалось перезапустить обновлённое приложение: {e}"))?;
+                .map_err(|e| format!("РЅРµ СѓРґР°Р»РѕСЃСЊ РїРµСЂРµР·Р°РїСѓСЃС‚РёС‚СЊ РѕР±РЅРѕРІР»С‘РЅРЅРѕРµ РїСЂРёР»РѕР¶РµРЅРёРµ: {e}"))?;
             std::process::exit(0);
         }
 
@@ -1107,7 +1107,7 @@ pub fn restart_with_new_binary(new_exe: &std::path::Path) -> Result<(), String> 
             std::process::exit(0);
         }
 
-        Err("не удалось обновить исполняемый файл (отказано в доступе)".to_string())
+        Err("РЅРµ СѓРґР°Р»РѕСЃСЊ РѕР±РЅРѕРІРёС‚СЊ РёСЃРїРѕР»РЅСЏРµРјС‹Р№ С„Р°Р№Р» (РѕС‚РєР°Р·Р°РЅРѕ РІ РґРѕСЃС‚СѓРїРµ)".to_string())
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -1121,7 +1121,7 @@ pub fn restart_with_new_binary(new_exe: &std::path::Path) -> Result<(), String> 
             }
             let _ = fs::rename(&target, &old);
             fs::copy(new_exe, &target)
-                .map_err(|e| format!("не удалось обновить AppImage: {e}"))?;
+                .map_err(|e| format!("РЅРµ СѓРґР°Р»РѕСЃСЊ РѕР±РЅРѕРІРёС‚СЊ AppImage: {e}"))?;
             let _ = fs::set_permissions(&target, fs::Permissions::from_mode(0o755));
 
             crate::platform::single_instance::release_active_lock();
@@ -1129,7 +1129,7 @@ pub fn restart_with_new_binary(new_exe: &std::path::Path) -> Result<(), String> 
             let mut cmd = std::process::Command::new(&target);
             cmd.args(&clean_args);
             cmd.spawn()
-                .map_err(|e| format!("не удалось перезапустить AppImage: {e}"))?;
+                .map_err(|e| format!("РЅРµ СѓРґР°Р»РѕСЃСЊ РїРµСЂРµР·Р°РїСѓСЃС‚РёС‚СЊ AppImage: {e}"))?;
             std::process::exit(0);
         } else {
             let old = current_exe.with_extension("old");
@@ -1138,7 +1138,7 @@ pub fn restart_with_new_binary(new_exe: &std::path::Path) -> Result<(), String> 
             }
             let _ = fs::rename(&current_exe, &old);
             fs::copy(new_exe, &current_exe)
-                .map_err(|e| format!("не удалось заменить бинарник: {e}"))?;
+                .map_err(|e| format!("РЅРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РјРµРЅРёС‚СЊ Р±РёРЅР°СЂРЅРёРє: {e}"))?;
             let _ = fs::set_permissions(&current_exe, fs::Permissions::from_mode(0o755));
 
             crate::platform::single_instance::release_active_lock();
@@ -1146,7 +1146,7 @@ pub fn restart_with_new_binary(new_exe: &std::path::Path) -> Result<(), String> 
             let mut cmd = std::process::Command::new(&current_exe);
             cmd.args(&clean_args);
             cmd.spawn()
-                .map_err(|e| format!("не удалось перезапустить приложение: {e}"))?;
+                .map_err(|e| format!("РЅРµ СѓРґР°Р»РѕСЃСЊ РїРµСЂРµР·Р°РїСѓСЃС‚РёС‚СЊ РїСЂРёР»РѕР¶РµРЅРёРµ: {e}"))?;
             std::process::exit(0);
         }
     }
@@ -1159,7 +1159,7 @@ pub fn run_apply_update_helper(new_exe_str: &str) {
     let current_exe = match std::env::current_exe() {
         Ok(exe) => exe,
         Err(e) => {
-            crate::utils::message_box("Open Antigravity Update", &format!("Ошибка пути: {e}"));
+            crate::utils::message_box("Open Antigravity Update", &format!("РћС€РёР±РєР° РїСѓС‚Рё: {e}"));
             std::process::exit(1);
         }
     };
@@ -1222,7 +1222,7 @@ pub fn run_apply_update_helper(new_exe_str: &str) {
         if !rename_ok {
             crate::utils::message_box(
                 "Open Antigravity Update",
-                &format!("Не удалось подготовить замену исполняемого файла: {last_rename_err}"),
+                &format!("РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕРґРіРѕС‚РѕРІРёС‚СЊ Р·Р°РјРµРЅСѓ РёСЃРїРѕР»РЅСЏРµРјРѕРіРѕ С„Р°Р№Р»Р°: {last_rename_err}"),
             );
             std::process::exit(1);
         }
@@ -1246,7 +1246,7 @@ pub fn run_apply_update_helper(new_exe_str: &str) {
             let _ = fs::rename(&old_exe, &current_exe);
             crate::utils::message_box(
                 "Open Antigravity Update",
-                &format!("Не удалось скопировать обновлённый файл: {last_copy_err}"),
+                &format!("РќРµ СѓРґР°Р»РѕСЃСЊ СЃРєРѕРїРёСЂРѕРІР°С‚СЊ РѕР±РЅРѕРІР»С‘РЅРЅС‹Р№ С„Р°Р№Р»: {last_copy_err}"),
             );
             std::process::exit(1);
         }
@@ -1282,7 +1282,7 @@ pub fn run_apply_update_helper(new_exe_str: &str) {
         if let Err(e) = cmd.spawn() {
             crate::utils::message_box(
                 "Open Antigravity Update",
-                &format!("Не удалось запустить обновлённое приложение: {e}"),
+                &format!("РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РїСѓСЃС‚РёС‚СЊ РѕР±РЅРѕРІР»С‘РЅРЅРѕРµ РїСЂРёР»РѕР¶РµРЅРёРµ: {e}"),
             );
             std::process::exit(1);
         }
@@ -1304,7 +1304,7 @@ pub fn perform_auto_update(
 ) {
     let Some(url) = info.platform_download_url() else {
         let _ = progress_tx.send(UpdateProgress::Failed(
-            "ссылка на скачивание для вашей платформы отсутствует".to_string(),
+            "СЃСЃС‹Р»РєР° РЅР° СЃРєР°С‡РёРІР°РЅРёРµ РґР»СЏ РІР°С€РµР№ РїР»Р°С‚С„РѕСЂРјС‹ РѕС‚СЃСѓС‚СЃС‚РІСѓРµС‚".to_string(),
         ));
         wake();
         return;
@@ -1312,7 +1312,7 @@ pub fn perform_auto_update(
 
     if url.to_ascii_lowercase().ends_with("_setup.exe") {
         let _ = progress_tx.send(UpdateProgress::Failed(
-            "Для обновления требуется zip-архив приложения, а не exe-установщик.".to_string(),
+            "Р”Р»СЏ РѕР±РЅРѕРІР»РµРЅРёСЏ С‚СЂРµР±СѓРµС‚СЃСЏ zip-Р°СЂС…РёРІ РїСЂРёР»РѕР¶РµРЅРёСЏ, Р° РЅРµ exe-СѓСЃС‚Р°РЅРѕРІС‰РёРє.".to_string(),
         ));
         wake();
         return;
@@ -1337,11 +1337,11 @@ pub fn perform_auto_update(
                 let p = ((downloaded as f64 / tot as f64) * 100.0).min(100.0) as u8;
                 let mb_down = downloaded as f64 / (1024.0 * 1024.0);
                 let mb_tot = tot as f64 / (1024.0 * 1024.0);
-                (p, format!("{:.1} / {:.1} МБ ({}%)", mb_down, mb_tot, p))
+                (p, format!("{:.1} / {:.1} РњР‘ ({}%)", mb_down, mb_tot, p))
             }
             _ => {
                 let mb_down = downloaded as f64 / (1024.0 * 1024.0);
-                (0, format!("{:.1} МБ", mb_down))
+                (0, format!("{:.1} РњР‘", mb_down))
             }
         };
         let _ = tx_clone.send(UpdateProgress::Downloading { percent, text });
@@ -1349,7 +1349,7 @@ pub fn perform_auto_update(
     };
 
     if let Err(e) = download_file(url, &archive_path, &on_progress) {
-        let _ = progress_tx.send(UpdateProgress::Failed(format!("Ошибка загрузки: {e}")));
+        let _ = progress_tx.send(UpdateProgress::Failed(format!("РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё: {e}")));
         wake();
         return;
     }
@@ -1360,7 +1360,7 @@ pub fn perform_auto_update(
         wake();
         if let Err(e) = verify_file_sha256(&archive_path, expected_hash) {
             let _ = fs::remove_file(&archive_path);
-            let _ = progress_tx.send(UpdateProgress::Failed(format!("Ошибка проверки целостности: {e}")));
+            let _ = progress_tx.send(UpdateProgress::Failed(format!("РћС€РёР±РєР° РїСЂРѕРІРµСЂРєРё С†РµР»РѕСЃС‚РЅРѕСЃС‚Рё: {e}")));
             wake();
             return;
         }
@@ -1374,7 +1374,7 @@ pub fn perform_auto_update(
         match extract_and_apply_update(&archive_path) {
             Ok(bin) => bin,
             Err(e) => {
-                let _ = progress_tx.send(UpdateProgress::Failed(format!("Ошибка установки: {e}")));
+                let _ = progress_tx.send(UpdateProgress::Failed(format!("РћС€РёР±РєР° СѓСЃС‚Р°РЅРѕРІРєРё: {e}")));
                 wake();
                 return;
             }
@@ -1386,279 +1386,12 @@ pub fn perform_auto_update(
     std::thread::sleep(Duration::from_millis(600));
 
     if let Err(e) = restart_with_new_binary(&new_binary) {
-        let _ = progress_tx.send(UpdateProgress::Failed(format!("Ошибка перезапуска: {e}")));
+        let _ = progress_tx.send(UpdateProgress::Failed(format!("РћС€РёР±РєР° РїРµСЂРµР·Р°РїСѓСЃРєР°: {e}")));
         wake();
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
 
-    #[test]
-    fn test_current_version_not_empty() {
-        assert!(!current_version().is_empty());
-    }
-
-    #[test]
-    fn test_version_comparison() {
-        assert!(is_newer_version("2.11.0_1", "2.11.0"));
-        assert!(is_newer_version("v2.11.0_4", "2.11.0_1"));
-        assert!(is_newer_version("2.12.0", "2.11.0_5"));
-        assert!(is_newer_version("v3.0.0", "2.11.0"));
-        assert!(is_newer_version("2.17.0.3", "2.17.0"));
-        assert!(!is_newer_version("2.17.0.3", "2.17.0.3"));
-        assert!(!is_newer_version("2.17.0", "2.17.0.3"));
-        assert!(!is_newer_version("2.11.0", "2.11.0"));
-        assert!(!is_newer_version("v2.11.0", "2.11.0"));
-        assert!(!is_newer_version("2.11.0_1", "2.11.0_4"));
-        assert!(!is_newer_version("2.10.0", "2.11.0"));
-    }
-
-    #[test]
-    fn test_update_info_json_deserialization() {
-        let sample = r#"{
-            "version": "1.1.2",
-            "notes": "отчёт в data/, кнопка «Завершить процесс»",
-            "page": "https://github.com/keelbismark/OpenAntigravity",
-            "url_windows": "https://example.com/OpenAntigravity_windows_v1.1.2.zip",
-            "url_linux": "https://example.com/OpenAntigravity_linux_v1.1.2.tar.gz"
-        }"#;
-
-        let info: UpdateInfo = serde_json::from_str(sample).expect("valid json");
-        assert_eq!(info.display_version(), "1.1.2");
-        assert!(info.is_newer_than_current() == is_newer_version("1.1.2", current_version()));
-        assert_eq!(info.url_windows.as_deref(), Some("https://example.com/OpenAntigravity_windows_v1.1.2.zip"));
-    }
-
-    #[test]
-    fn test_update_info_platform_download_url_prefers_portable_zip() {
-        let sample = r#"{
-            "version": "1.4.1",
-            "notes": "Open Antigravity v1.4.1",
-            "page": "https://github.com/keelbismark/OpenAntigravity/releases/tag/v1.4.1",
-            "url_windows": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.4.1/OpenAntigravity_windows_v1.4.1_setup.exe",
-            "url_windows_setup": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.4.1/OpenAntigravity_windows_v1.4.1_setup.exe",
-            "url_windows_portable": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.4.1/OpenAntigravity_windows_v1.4.1_portable.zip",
-            "url_linux": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.4.1/OpenAntigravity_linux_v1.4.1.tar.gz",
-            "url_appimage": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.4.1/OpenAntigravity-x86_64.AppImage"
-        }"#;
-
-        let info: UpdateInfo = serde_json::from_str(sample).expect("valid json");
-        #[cfg(target_os = "windows")]
-        {
-            assert_eq!(
-                info.platform_download_url(),
-                Some("https://github.com/keelbismark/OpenAntigravity/releases/download/v1.4.1/OpenAntigravity_windows_v1.4.1_portable.zip")
-            );
-            assert_eq!(
-                info.landing_url(),
-                Some("https://github.com/keelbismark/OpenAntigravity/releases/download/v1.4.1/OpenAntigravity_windows_v1.4.1_setup.exe")
-            );
-        }
-    }
-
-    #[test]
-    fn test_update_info_optional_fields_default() {
-        // Only `version` is required; a hand-edited feed without the rest
-        // must still parse.
-        let info: UpdateInfo =
-            serde_json::from_str(r#"{ "version": "v3.0.0" }"#).expect("minimal json");
-        assert_eq!(info.display_version(), "3.0.0");
-        assert!(info.notes.is_none());
-        assert!(info.landing_url().is_none());
-    }
-
-    #[test]
-    fn test_parse_url() {
-        let p = parse_url("https://example.com/feed/version.json").expect("https url");
-        assert!(p.tls);
-        assert_eq!(p.host, "example.com");
-        assert_eq!(p.port, 443);
-        assert_eq!(p.path, "/feed/version.json");
-
-        let p = parse_url("http://10.0.0.1:8080/").expect("http url with port");
-        assert!(!p.tls);
-        assert_eq!(p.host, "10.0.0.1");
-        assert_eq!(p.port, 8080);
-        assert_eq!(p.path, "/");
-
-        let p = parse_url("http://[::1]:9000/v.json").expect("ipv6 literal");
-        assert_eq!(p.host, "::1");
-        assert_eq!(p.port, 9000);
-
-        let p = parse_url("https://example.com").expect("no path");
-        assert_eq!(p.path, "/");
-
-        assert!(parse_url("ftp://example.com/x").is_err());
-        assert!(parse_url("example.com/x").is_err());
-        assert!(parse_url("http://host:notaport/").is_err());
-    }
-
-    #[test]
-    fn test_resolve_redirect() {
-        let base = parse_url("http://old.example.com/feed/version.json").expect("base");
-        let abs = resolve_redirect(&base, "https://new.example.com/v.json").expect("absolute");
-        assert_eq!(abs.host, "new.example.com");
-        assert!(abs.tls);
-
-        let rel = resolve_redirect(&base, "/feed/v2.json").expect("root-relative");
-        assert_eq!(rel.host, "old.example.com");
-        assert_eq!(rel.path, "/feed/v2.json");
-
-        let bare = resolve_redirect(&base, "v2.json").expect("bare relative");
-        assert_eq!(bare.path, "/feed/v2.json");
-    }
-
-    #[test]
-    fn test_landing_url_prefers_own_platform() {
-        let info = UpdateInfo {
-            version: "1.0.0".into(),
-            notes: None,
-            date: None,
-            page: Some("https://example.com/page".into()),
-            url_windows: Some("https://example.com/win.zip".into()),
-            url_windows_setup: None,
-            url_windows_portable: None,
-            url_linux: Some("https://example.com/linux.tar.gz".into()),
-            url_appimage: Some("https://example.com/appimage".into()),
-            sha256_windows: None,
-            sha256_linux: None,
-            sha256_appimage: None,
-            sha256: None,
-        };
-        let landing = info.landing_url().expect("some landing").to_string();
-        if cfg!(target_os = "windows") {
-            assert_eq!(landing, "https://example.com/win.zip");
-            assert_eq!(info.platform_download_url(), Some("https://example.com/win.zip"));
-        } else {
-            assert!(landing.contains("example.com"));
-            assert!(info.platform_download_url().is_some());
-        }
-    }
-
-    #[test]
-    fn test_decode_chunked() {
-        let chunked = b"5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n";
-        let decoded = decode_chunked(chunked).expect("chunked decode");
-        assert_eq!(decoded, b"hello world");
-    }
-
-    #[test]
-    fn test_parse_response_status_and_location() {
-        let raw = b"HTTP/1.1 302 Found\r\nLocation: https://example.com/new\r\nContent-Length: 0\r\n\r\n";
-        let (status, location, body) = parse_response(raw).expect("parse");
-        assert_eq!(status, 302);
-        assert_eq!(location.as_deref(), Some("https://example.com/new"));
-        assert!(body.is_empty());
-
-        let raw = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"version\":\"1\"}";
-        let (status, location, body) = parse_response(raw).expect("parse");
-        assert_eq!(status, 200);
-        assert!(location.is_none());
-        assert_eq!(body, b"{\"version\":\"1\"}");
-    }
-
-    #[test]
-    fn test_tls_config_init() {
-        let cfg = tls_config();
-        assert_eq!(cfg.alpn_protocols, vec![b"http/1.1".to_vec()]);
-    }
-
-    #[test]
-    fn test_baked_update_url() {
-        let url = update_url();
-        assert!(url.is_some(), "baked update url must not be empty");
-        assert!(url.unwrap().contains("version.json"));
-    }
-
-    #[test]
-    #[ignore = "performs a real network request; point OAG_UPDATE_URL at a live feed to exercise the happy path"]
-    fn test_live_fetch_update_info() {
-        let url = std::env::var("OAG_UPDATE_URL")
-            .unwrap_or_else(|_| "http://localhost:1/version.json".to_string());
-        std::env::set_var("OAG_UPDATE_URL", &url);
-        match fetch_update_info() {
-            Ok(info) => {
-                // A live feed answered: the document must at least name a version.
-                assert!(!info.version.is_empty(), "feed returned an empty version");
-            }
-            Err(e) => {
-                // The default target deliberately listens on nothing — the
-                // point is that the whole path runs and fails honestly.
-                assert!(
-                    url.contains("localhost:1"),
-                    "live fetch failed against a real feed: {e}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn test_unique_old_file_replacement_cycle() {
-        let dir = std::env::temp_dir().join(format!("oag_test_repl_{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let current = dir.join("app.exe");
-        let new_bin = dir.join("app_new.exe");
-        fs::write(&current, b"version1").unwrap();
-        fs::write(&new_bin, b"version2").unwrap();
-
-        let stamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0);
-        let old = current.with_extension(format!("exe.old.{}", stamp));
-
-        assert!(fs::rename(&current, &old).is_ok());
-        assert!(fs::copy(&new_bin, &current).is_ok());
-        assert_eq!(fs::read(&current).unwrap(), b"version2");
-        assert_eq!(fs::read(&old).unwrap(), b"version1");
-        assert!(fs::remove_file(&old).is_ok());
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn test_compute_and_verify_sha256() {
-        let temp_file = std::env::temp_dir().join(format!("oag_test_sha_{}.bin", std::process::id()));
-        fs::write(&temp_file, b"Open Antigravity Update Test Payload").unwrap();
-
-        // sha256 of "Open Antigravity Update Test Payload" is:
-        // echo -n "Open Antigravity Update Test Payload" | sha256sum
-        // let's compute it with our function:
-        let hash = compute_file_sha256(&temp_file).expect("compute sha256");
-        assert_eq!(hash.len(), 64);
-        assert!(verify_file_sha256(&temp_file, &hash).is_ok());
-        assert!(verify_file_sha256(&temp_file, &hash.to_uppercase()).is_ok());
-        assert!(verify_file_sha256(&temp_file, "0000000000000000000000000000000000000000000000000000000000000000").is_err());
-
-        let _ = fs::remove_file(&temp_file);
-    }
-
-    #[test]
-    fn test_expected_sha256_resolution() {
-        let mut info = UpdateInfo {
-            version: "2.0.0".into(),
-            notes: None,
-            date: None,
-            page: None,
-            url_windows: None,
-            url_windows_setup: None,
-            url_windows_portable: None,
-            sha256_windows: Some("abc_win".into()),
-            url_linux: None,
-            sha256_linux: Some("abc_linux".into()),
-            url_appimage: None,
-            sha256_appimage: Some("abc_appimage".into()),
-            sha256: Some("abc_generic".into()),
-        };
-
-        if cfg!(target_os = "windows") {
-            assert_eq!(info.expected_sha256(), Some("abc_win"));
-            info.sha256_windows = None;
-            assert_eq!(info.expected_sha256(), Some("abc_generic"));
-        } else {
-            assert!(info.expected_sha256().is_some());
-        }
-    }
-}
+#[cfg(test)]
+mod tests;
