@@ -18,8 +18,98 @@ on:
 permissions:
   contents: write
 
+# One release per tag at a time. A tag can be pushed twice (a corrective
+# force-push, for instance); without this, two full builds race to upload the
+# same assets. `check-release` below skips a repeat entirely.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  check-release:
+    name: Check release tag and existing release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.VERSION }}
+      exists: ${{ steps.check.outputs.exists }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract version
+        id: ver
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            V="${{ github.event.inputs.version }}"
+          elif [[ "${{ github.ref }}" =~ ^refs/tags/v ]]; then
+            V="${GITHUB_REF#refs/tags/v}"
+          elif [ -f VERSION ]; then
+            V="$(tr -d '\r\n' < VERSION)"
+          else
+            echo "Error: VERSION file not found" >&2
+            exit 1
+          fi
+          echo "VERSION=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Validate tag against version files
+        shell: bash
+        env:
+          VERSION: ${{ steps.ver.outputs.VERSION }}
+        run: |
+          # A tag pushed at the wrong commit would publish artifacts named
+          # after a version the build never produced. Fail before spending
+          # twenty minutes building them.
+          if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            TAG="${GITHUB_REF#refs/tags/v}"
+            if [ "$TAG" != "$VERSION" ]; then
+              echo "Tag v${TAG} does not match VERSION=${VERSION}" >&2
+              exit 1
+            fi
+          fi
+          CARGO_VERSION="$(sed -nE 's/^version = "([^"]+)"/\1/p' Cargo.toml | head -n1)"
+          if [ -n "$CARGO_VERSION" ] && [ "$CARGO_VERSION" != "$VERSION" ]; then
+            echo "Cargo.toml version ${CARGO_VERSION} does not match VERSION=${VERSION}" >&2
+            exit 1
+          fi
+          echo "Tag and version files agree: ${VERSION}"
+
+      - name: Skip if this release is already published
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.VERSION }}
+        run: |
+          # A force-pushed tag retriggers this workflow. Rebuilding and
+          # re-uploading identical assets wastes twenty minutes and can race
+          # the first run. Skip only when every asset is already there - a
+          # half-published release still needs a full run.
+          if ! gh release view "v${VERSION}" >/dev/null 2>&1; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          ASSETS="$(gh release view "v${VERSION}" --json assets -q '.assets[].name' 2>/dev/null || true)"
+          MISSING=0
+          for f in \
+            "OpenAntigravity_windows_v${VERSION}_setup.exe" \
+            "OpenAntigravity_windows_v${VERSION}_portable.zip" \
+            "OpenAntigravity_linux_v${VERSION}.tar.gz" \
+            "OpenAntigravity-x86_64.AppImage" \
+            "version.json" \
+            "SHA256SUMS.txt"; do
+            printf '%s\n' "$ASSETS" | grep -qx "$f" || MISSING=1
+          done
+          if [ "$MISSING" -eq 0 ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release v${VERSION} is complete - skipping rebuild and publish."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Release v${VERSION} exists but is incomplete - rebuilding."
+          fi
+
   build-linux:
+    needs: check-release
+    if: needs.check-release.outputs.exists != 'true'
     name: Build Linux Portable & AppImage
     runs-on: ubuntu-22.04
     steps:
@@ -99,6 +189,8 @@ jobs:
 
   build-windows:
     name: Build Windows Portable
+    needs: check-release
+    if: needs.check-release.outputs.exists != 'true'
     runs-on: windows-latest
     steps:
       - name: Checkout repository
@@ -162,7 +254,8 @@ jobs:
 
   publish-release:
     name: Publish GitHub Release
-    needs: [build-linux, build-windows]
+    needs: [check-release, build-linux, build-windows]
+    if: needs.check-release.outputs.exists != 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -298,14 +391,34 @@ jobs:
 
       - name: Sync version files, docs, and index.html
         shell: bash
+        env:
+          VERSION: ${{ steps.ver.outputs.VERSION }}
         run: |
+          # This job checks out a detached tag, and main may have moved since
+          # that tag was created - the previous release's docs sync is exactly
+          # that case. Apply the generated files on top of the real main, never
+          # on the tag's tree, or the push is rejected as non-fast-forward.
+          git fetch origin main
+          git checkout -B release-docs-sync origin/main
+
           cp dist_release/version.json docs/version.json
-          echo "${{ steps.ver.outputs.VERSION }}" > VERSION
-          sed -i -E "s/v[0-9]+\.[0-9]+\.[0-9]+/v${{ steps.ver.outputs.VERSION }}/g" docs/index.html
-          sed -i -E 's/^version = "[0-9]+\.[0-9]+\.[0-9]+"/version = "'"${{ steps.ver.outputs.VERSION }}"'"/' Cargo.toml
-          cargo update -p open_antigravity --precise "${{ steps.ver.outputs.VERSION }}" 2>/dev/null || cargo check 2>/dev/null || true
+          echo "${VERSION}" > VERSION
+          sed -i -E "s/v[0-9]+\.[0-9]+\.[0-9]+/v${VERSION}/g" docs/index.html
+          sed -i -E "s/^version = \"[0-9]+\.[0-9]+\.[0-9]+\"/version = \"${VERSION}\"/" Cargo.toml
+          if ! cargo update -p open_antigravity --precise "${VERSION}" 2>/dev/null; then
+            echo "Cargo.lock version refresh skipped - the feed does not depend on it."
+          fi
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add docs/version.json docs/index.html VERSION Cargo.toml Cargo.lock
-          git commit -m "chore(release): bump version to v${{ steps.ver.outputs.VERSION }}" || true
-          git push origin HEAD:main || true
+          if git diff --cached --quiet; then
+            echo "Version files and docs are already current - nothing to commit."
+          else
+            git commit -m "chore(release): sync update feed and docs to v${VERSION}"
+          fi
+
+          # Deliberately no `|| true` here. A rejected push leaves the live feed
+          # pointing at the old release - that is a failed release and must be
+          # reported as one, not swallowed by a green job.
+          git push origin release-docs-sync:main
