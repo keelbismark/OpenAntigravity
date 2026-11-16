@@ -7,7 +7,7 @@
   "url_windows_portable": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.5.1/OpenAntigravity_windows_v1.5.1_portable.zip",
   "url_linux": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.5.1/OpenAntigravity_linux_v1.5.1.tar.gz",
   "url_appimage": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.5.1/OpenAntigravity-x86_64.AppImage",
-  "sha256_windows": "b7c5ab969c7a2b29a4ed7e6c80f520320c1df63167d76638c4dc2785969939d2",
-  "sha256_linux": "e3555d16d8e71d4fd0b10429ea3c25c5a7d91c87f3a022662a11d56ce8833d89",
-  "sha256_appimage": "1f12561d9eda8a932281d8d6937b4e0ec93b890f6f900d43833531ac7f05c09b"
+  "sha256_windows": "8399f53ae114e812f2147c613bb25e2b08d3a48b1d9a1ea5241b34034d3f27b9",
+  "sha256_linux": "fbfdd5593e02e5370afc7a53bbed86af5d42e410b32702313d05b7d15d2783dc",
+  "sha256_appimage": "bebad3b0825cdd03a81300ccd6cd48634520c0458349114fd475ede1da377157"
 }
