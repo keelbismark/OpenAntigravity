@@ -96,6 +96,10 @@ pub struct Facts {
     /// local proxy lives in the same service, and the loopback door only opens
     /// once the relay answers the gate hosts.
     pub bypass_on: bool,
+    /// The local tunnel is wanted. The patched Language Server reads
+    /// `OAG_GATEWAY`; without this switch it has no route at all, even when
+    /// the DNS bypass and the relay are perfectly healthy.
+    pub local_proxy_on: bool,
     pub relay_running: bool,
     pub relay_outdated: bool,
     /// Our DNS rules are in. Without them nothing on the machine asks the
@@ -210,6 +214,7 @@ impl Facts {
             installs_found: s.installs.iter().any(|r| r.path.is_some()),
             patch_on: s.client_patch.is_on(),
             bypass_on: s.dns.is_on(),
+            local_proxy_on: s.local_proxy.is_on(),
             relay_running: s.relay_running,
             relay_outdated: s.relay_outdated,
             rules: s.rules || !cfg!(target_os = "windows"),
@@ -503,6 +508,20 @@ pub fn headline(f: &Facts) -> Headline {
         };
     }
 
+    // The DNS bypass can be up while the local tunnel is off - the exact
+    // state that leaves the patched Language Server without OAG_GATEWAY, so
+    // sign-in fails with 400/Bad Gateway while the DNS half looks healthy.
+    if f.bypass_on && !f.local_proxy_on {
+        return Headline {
+            tone: Tone::Action,
+            title: "Локальный шлюз остановлен".into(),
+            detail: "Обход включён, но туннель для Language Server выключен. \
+                     Включите его, чтобы авторизация прошла."
+                .into(),
+            action: Some(Action::EnableAll),
+        };
+    }
+
     if service_broken {
         return Headline {
             tone: Tone::Action,
@@ -703,6 +722,7 @@ mod tests {
             installs_found: true,
             patch_on: true,
             bypass_on: true,
+            local_proxy_on: true,
             relay_running: true,
             relay_outdated: false,
             rules: true,
@@ -1092,6 +1112,26 @@ mod tests {
         let h = headline(&f);
         assert_eq!(h.title, "Windows закрыла порт 443");
         assert!(h.detail.contains("net stop winnat"), "{}", h.detail);
+    }
+
+    /// With the DNS bypass up but the local tunnel switched off, the patched
+    /// Language Server has no proxy variable and sign-in fails with
+    /// 400/Bad Gateway. The headline must never say "services ready" in that
+    /// state - measured on a real machine: the overview said "services ready"
+    /// while the diagnostics tab said the gateway was stopped.
+    #[test]
+    fn a_local_proxy_switch_off_is_not_services_ready() {
+        let f = Facts {
+            local_proxy_on: false,
+            ..working()
+        };
+        let h = headline(&f);
+        assert_ne!(
+            h.title, "Службы готовы",
+            "a sign-in that cannot reach a proxy is not 'services ready'"
+        );
+        assert_eq!(h.title, "Локальный шлюз остановлен");
+        assert_eq!(h.action, Some(Action::EnableAll));
     }
 
     /// A relay nothing answers: blocked if this window gets out, offline if it

@@ -174,11 +174,12 @@ pub(super) fn enable_all(ctx: &mut Ctx) {
         }
         apply(ctx, Cap::Dns, true);
     }
-    // A proxy the user set up themselves stays theirs (G33): `enable_local_proxy`
-    // says so and leaves ours off, which also keeps the loopback door shut.
-    if !endpoint::proxy_env_is_ours() {
-        apply(ctx, Cap::LocalProxy, true);
-    }
+    // Always. `OAG_GATEWAY` is private to patched binaries, so a foreign proxy
+    // in the system cannot be hijacked by it. The old guard skipped this step
+    // whenever another proxy was set, leaving the Language Server with no
+    // route at all while the DNS half reported "services ready" - measured
+    // on a real machine as a 400/Bad Gateway at sign-in.
+    apply(ctx, Cap::LocalProxy, true);
     // Whether or not the patch found anything to patch: auto-patch is what
     // patches the Antigravity installed after this click (D27).
     if admin && !background::is_watchdog_enabled() {
@@ -699,32 +700,21 @@ fn enable_local_proxy(ctx: &mut Ctx) {
         }
     }
 
-    // 2. Measured (G33): ours outranks theirs inside the patched server. A user
-    //    who configured their own proxy must keep it, so ours comes off — this
-    //    is not a "skip".
-    if endpoint::foreign_proxy(&url).is_some() {
-        match endpoint::remove_proxy(&url, "") {
-            Ok(()) => {
-                ctx.log(
-                    Level::Warn,
-                    "В системе задан свой прокси — наш не включаем, чтобы не перехватывать чужой.",
-                );
-                ctx.settings.local_proxy = false;
-            }
-            // Swallowed by a `let _ =` until `2.15.1_2`, and that is one way the
-            // two readers came apart: the setting went off while the variable
-            // stayed set, so the relay stopped writing it and the window went on
-            // drawing it as on (G74). A removal that did not happen must not be
-            // recorded as a switch that did.
-            Err(e) => ctx.log(
-                Level::Err,
-                format!(
-                    "В системе задан свой прокси, но нашу переменную снять не удалось: {}",
-                    e
-                ),
+    // 2. A foreign proxy in the system is left alone - and no longer turns our
+    //    own route off. `OAG_GATEWAY` has a private name that only patched
+    //    binaries read, so there is nothing to hijack: the old code wrote
+    //    `local_proxy = false` here, and the Language Server then went direct
+    //    and sign-in failed while the window said "services ready". We do not
+    //    print the value: it can carry a username and password.
+    if let Some(foreign) = endpoint::foreign_proxy(&url) {
+        ctx.log(
+            Level::Warn,
+            format!(
+                "В системе задан свой прокси ({}) — он остаётся нетронутым; \
+                 наш приватный адрес пишется только для пропатченных процессов.",
+                foreign.found_in
             ),
-        }
-        return;
+        );
     }
 
     // 3. The variable has a private name that only a patched binary reads. If
