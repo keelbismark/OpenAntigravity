@@ -561,13 +561,24 @@ pub fn race_all_upstreams(budget: Duration) -> Vec<UpstreamRaceResult> {
     handles.into_iter().filter_map(|h| h.join().ok()).collect()
 }
 
-/// Whether the route should be tried for this connection.
+/// Whether the user gave us a proxy and wants it used - without asking about
+/// its current health.
 ///
-/// Three things have to hold: the user gave us one, it is answering, and it
-/// comes out somewhere Google will accept. The last is checked against a pinned
-/// address rather than a clock - see `Route`.
+/// Health orders the route table; it must not take the route out of it. With
+/// every route benched, the old `available()` removed Own from the table
+/// altogether, and the table fell through to a benched *direct* tunnel - the
+/// one route the bypass exists to avoid - and answered sign-in with 502 while
+/// the window's own test showed the proxy reaching Google. Measured in the
+/// field on v1.5.2.
+pub fn configured_and_enabled() -> bool {
+    crate::settings::own_proxy_enabled() && configured().is_some()
+}
+
+/// Whether the route is currently answering and exits somewhere usable.
+/// Ordering uses `configured_and_enabled`; this one is for callers that want
+/// the route's health as well as its existence.
 pub fn available() -> bool {
-    crate::settings::own_proxy_enabled() && configured().is_some() && OWN.usable()
+    configured_and_enabled() && OWN.usable()
 }
 
 fn basic(auth: &str) -> String {

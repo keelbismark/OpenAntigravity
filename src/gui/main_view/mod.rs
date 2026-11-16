@@ -182,14 +182,29 @@ fn footer(app: &mut App, ui: &mut egui::Ui) {
             .report_saved
             .clone()
             .filter(|(at, _)| at.elapsed() < REPORT_SHOWN_FOR);
+        let copied = app
+            .report_clipboard_at
+            .filter(|at| at.elapsed() < REPORT_SHOWN_FOR);
 
         if let Some((_, path)) = &saved {
             let show_resp = widgets::btn(ui, Some(Icon::Folder), "Показать отчёт", FOOTER_TEXT, None)
-                .on_hover_text("Открыть каталог с файлом отчёта в проводнике");
+                .on_hover_text(format!(
+                    "Файл: {}\nОтчёт также скопирован в буфер обмена.",
+                    path.display()
+                ));
 
             if show_resp.clicked() {
                 reveal_report = Some(path.clone());
             }
+        } else if copied.is_some() {
+            // The file write failed. Until now the button went silently back
+            // to "Export" and the user had no idea the report was in the
+            // clipboard - the only copy there is.
+            let _ = widgets::btn(ui, Some(Icon::Export), "Отчёт в буфере", FOOTER_TEXT, None)
+                .on_hover_text(
+                    "Записать файл не удалось. Отчёт скопирован в буфер обмена — \
+                     вставьте его в сообщение клавишами Ctrl+V.",
+                );
         } else {
             let report_resp = widgets::btn(ui, Some(Icon::Export), "Экспорт отчёта", FOOTER_TEXT, None)
                 .on_hover_text("Сохранить диагностический отчёт для анализа неполадок");

@@ -776,7 +776,10 @@ fn vpn_usable() -> bool {
 /// pool with nothing in it, a name the DNS layer is not substituting.
 pub fn route_usable(kind: routes::Kind, host: &str) -> bool {
     match kind {
-        routes::Kind::Own => upstream::available(),
+        // Health is an ordering signal (`order_with` puts a benched Own last),
+        // not a reason to remove it. Removing it left a benched direct tunnel
+        // as the only route and sign-in got 502 while the proxy was healthy.
+        routes::Kind::Own => upstream::configured_and_enabled(),
         // The window's switch, checked at the one place the route is offered
         // from. Off means the route is simply not usable, which the table
         // already knows how to deal with - it is the same answer an exit that
