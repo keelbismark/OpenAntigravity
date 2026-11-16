@@ -684,6 +684,16 @@ fn order_with(s: &Snapshot, has_dns_layer: bool, usable: impl Fn(Kind) -> bool) 
             .max(live(s.silent[i]))
     };
     benched.sort_by_key(ends);
+    // A benched direct tunnel goes last, whatever its clock says. The bench
+    // is a timeout, not a verdict that the blocked route started working.
+    // Sorting only by expiry put direct ahead of the user's proxy in the
+    // field (v1.5.3): its three-minute bench ended sooner, so every gate
+    // connection went straight into the region block and came back 502 while
+    // the proxy was verified reaching Google.
+    if let Some(pos) = benched.iter().position(|k| *k == Kind::Direct) {
+        let direct = benched.remove(pos);
+        benched.push(direct);
+    }
     out.extend(benched);
     out
 }

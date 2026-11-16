@@ -187,7 +187,10 @@
         s.penalised[Kind::Exits.index()] = Some(now + ms(60_000));
         s.penalised[Kind::Relay.index()] = Some(now + ms(3_600_000));
         let order = order_with(&s, true, |k| k != Kind::Own && k != Kind::Vpn);
-        assert_eq!(order, vec![Kind::Exits, Kind::Direct, Kind::Relay]);
+        // Direct sorts by its clock like the others, but a benched direct
+        // tunnel is always tried last: a timeout is not a verdict that the
+        // region block went away.
+        assert_eq!(order, vec![Kind::Exits, Kind::Relay, Kind::Direct]);
     }
 
     #[test]
@@ -239,6 +242,24 @@
         // An unusable Own is not offered at all, benched or not.
         let order = order_with(&s, true, |k| k != Kind::Vpn && k != Kind::Own);
         assert!(!order.contains(&Kind::Own));
+    }
+
+    /// Field report v1.5.3: every route benched, the user's proxy verified
+    /// reaching Google (TLS 776 ms), yet the table put the benched direct
+    /// tunnel first because its bench ended sooner. Sign-in got 502.
+    #[test]
+    fn a_benched_direct_never_leads_a_benched_user_proxy() {
+        let now = Instant::now();
+        let mut s = blank();
+        s.penalised[Kind::Direct.index()] = Some(now + ms(180_000));
+        s.penalised[Kind::Own.index()] = Some(now + ms(600_000));
+        let order = order_with(&s, true, |_| true);
+        let own = order.iter().position(|k| *k == Kind::Own).unwrap();
+        let direct = order.iter().position(|k| *k == Kind::Direct).unwrap();
+        assert!(
+            own < direct,
+            "a benched direct must not lead a benched user proxy: {order:?}"
+        );
     }
 
     #[test]
