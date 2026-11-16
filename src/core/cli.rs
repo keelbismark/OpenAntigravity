@@ -26,6 +26,8 @@ pub fn is_cli_flag(arg: &str) -> bool {
             | "diag"
             | "shortcut"
             | "create-shortcut"
+            | "launch"
+            | "autostart"
             | "help"
             | "h"
             | "?"
@@ -64,6 +66,8 @@ pub fn dispatch(args: &[String]) -> Option<i32> {
         "fix" | "repair" => Some(handle_fix()),
         "check" | "diagnose" | "diag" => Some(handle_check(has_json)),
         "shortcut" | "create-shortcut" => Some(handle_shortcut()),
+        "launch" => Some(handle_launch(args)),
+        "autostart" => Some(handle_autostart(args)),
         "help" | "h" | "?" => {
             crate::print_help();
             Some(0)
@@ -230,6 +234,10 @@ pub fn handle_status(json: bool) -> i32 {
             })
             .collect();
 
+        let autostart_on = crate::platform::autostart::is_enabled();
+        let autostart_admin = crate::platform::autostart::is_admin_enabled();
+        let settings = crate::settings::Settings::load();
+
         let output = json!({
             "version": crate::update::current_version(),
             "platform": env::consts::OS,
@@ -241,6 +249,11 @@ pub fn handle_status(json: bool) -> i32 {
                 "active": proxy_active,
             },
             "background_service": service_active,
+            "autostart": {
+                "enabled": autostart_on,
+                "admin": autostart_admin,
+            },
+            "auto_launch": settings.auto_launch.label(),
             "installs": installs_json,
         });
 
@@ -287,6 +300,24 @@ pub fn handle_status(json: bool) -> i32 {
 
         let service_badge = if service_active { "[OK]  " } else { "[INFO]" };
         println!("  {} Фоновый релей: {}", service_badge, if service_active { "активен" } else { "остановлен" });
+
+        println!("\n▶ Автозапуск и интеграция");
+        let autostart_on = crate::platform::autostart::is_enabled();
+        let autostart_admin = crate::platform::autostart::is_admin_enabled();
+        let autostart_str = if autostart_on {
+            if autostart_admin {
+                "включён (от имени администратора, Планировщик Highest)"
+            } else {
+                "включён (обычный режим пользователя, HKCU Run)"
+            }
+        } else {
+            "выключен"
+        };
+        let autostart_badge = if autostart_on { "[OK]  " } else { "[INFO]" };
+        println!("  {} Автозапуск с системой: {}", autostart_badge, autostart_str);
+
+        let settings = crate::settings::Settings::load();
+        println!("  [INFO] Автозапуск Antigravity при старте: {}", settings.auto_launch.label());
 
         println!("\n════════════════════════════════════════════════════════════════");
         if ready {
@@ -374,6 +405,67 @@ pub fn handle_shortcut() -> i32 {
     }
 }
 
+/// Launches chosen Antigravity component.
+pub fn handle_launch(args: &[String]) -> i32 {
+    let target_arg = args.iter().skip(2).find(|a| !a.starts_with('-')).map(|s| s.to_lowercase());
+    let auto_target = match target_arg.as_deref() {
+        Some("ide") => crate::platform::launcher::AutoLaunchTarget::Ide,
+        Some("cli") | Some("agy") => crate::platform::launcher::AutoLaunchTarget::Cli,
+        Some("antigravity") | Some("desktop") | Some("2.0") => crate::platform::launcher::AutoLaunchTarget::Antigravity,
+        _ => crate::platform::launcher::AutoLaunchTarget::Any,
+    };
+
+    println!("▶ Запуск компонента: {}", auto_target.label());
+    let manual_paths = crate::settings::Settings::load().manual_paths;
+    match crate::platform::launcher::launch_target(auto_target, &manual_paths) {
+        Ok(msg) => {
+            println!("  [OK] {}", msg);
+            0
+        }
+        Err(err) => {
+            eprintln!("  [FAIL] {}", err);
+            1
+        }
+    }
+}
+
+/// Configures autostart on system boot (with or without administrator privileges).
+pub fn handle_autostart(args: &[String]) -> i32 {
+    let mode = args.iter().skip(2).find(|a| !a.starts_with('-')).map(|s| s.to_lowercase());
+    let as_admin = args.iter().any(|a| a.trim_start_matches('-').eq_ignore_ascii_case("admin"))
+        || mode.as_deref() == Some("admin");
+
+    match mode.as_deref() {
+        Some("off") | Some("disable") => {
+            println!("▶ Отключение автозапуска...");
+            match crate::platform::autostart::set_enabled(false) {
+                Ok(()) => {
+                    println!("  [OK] Автозапуск успешно отключён");
+                    0
+                }
+                Err(err) => {
+                    eprintln!("  [FAIL] Ошибка отключения автозапуска: {err}");
+                    1
+                }
+            }
+        }
+        _ => {
+            let admin_str = if as_admin { "от имени администратора" } else { "в обычном режиме" };
+            println!("▶ Включение автозапуска ({})...", admin_str);
+            match crate::platform::autostart::set_enabled_with_admin(true, as_admin) {
+                Ok(()) => {
+                    println!("  [OK] Автозапуск успешно настроен ({})", admin_str);
+                    0
+                }
+                Err(err) => {
+                    eprintln!("  [FAIL] Ошибка настройки автозапуска: {err}");
+                    1
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -383,6 +475,8 @@ mod tests {
         assert!(is_cli_flag("--status"));
         assert!(is_cli_flag("status"));
         assert!(is_cli_flag("--patch"));
+        assert!(is_cli_flag("--launch"));
+        assert!(is_cli_flag("--autostart"));
         assert!(!is_cli_flag("--json"));
         assert!(!is_cli_flag("--unknown"));
     }

@@ -1,6 +1,7 @@
 use regex::Regex;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use crate::patch_binary::RepatchOutcome;
 
@@ -496,16 +497,31 @@ fn strip_desktop_hook(content: &str) -> String {
     content.to_string()
 }
 
+static RE_GETUS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"let ([A-Za-z_$]+)=(.*\.getUserStatus\(\{\}\)\)\)\.userStatus);if\(([A-Za-z_$]+)\)\{"#)
+        .expect("static regex RE_GETUS")
+});
+
+static RE_AUTH: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"_handleAuthErrorResponse\(([A-Za-z_$]+)\)\{var ([A-Za-z_$]+)=([A-Za-z_$]+)\?\.failureDetails;"#)
+        .expect("static regex RE_AUTH")
+});
+
+static RE_INEL: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"\?\.failureDetails\?\.case===\"ineligible\"\?this\._authActor\.send\(\{type:\"SET_INELIGIBLE\""#)
+        .expect("static regex RE_INEL")
+});
+
+static RE_ELIGIBLE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(isEligible:\s*)false"#).expect("static regex RE_ELIGIBLE")
+});
+
 fn apply_desktop_inline_patches(content: &str) -> String {
     let mut output = content.to_string();
 
     output = output.replace("ineligible", "inexigible");
 
-    let re_getus = Regex::new(
-        r#"let ([A-Za-z_$]+)=(.*\.getUserStatus\(\{\}\)\)\)\.userStatus);if\(([A-Za-z_$]+)\)\{"#,
-    )
-    .unwrap();
-    output = re_getus.replace_all(&output, |caps: &regex::Captures| {
+    output = RE_GETUS.replace_all(&output, |caps: &regex::Captures| {
         let v = caps.get(1).map_or("", |m| m.as_str());
         let expr = caps.get(2).map_or("", |m| m.as_str());
         let cond = caps.get(3).map_or("", |m| m.as_str());
@@ -515,8 +531,7 @@ fn apply_desktop_inline_patches(content: &str) -> String {
         format!("let {v}={expr};{v}={{\"planStatus\":{{\"planInfo\":{{\"planName\":\"pro\"}}}},\"disableTelemetry\":false,\"userDataCollectionForceDisabled\":false}};if({v}){{")
     }).to_string();
 
-    let re_auth = Regex::new(r#"_handleAuthErrorResponse\(([A-Za-z_$]+)\)\{var ([A-Za-z_$]+)=([A-Za-z_$]+)\?\.failureDetails;"#).unwrap();
-    output = re_auth.replace_all(&output, |caps: &regex::Captures| {
+    output = RE_AUTH.replace_all(&output, |caps: &regex::Captures| {
         let p = caps.get(1).map_or("", |m| m.as_str());
         let v = caps.get(2).map_or("", |m| m.as_str());
         let s = caps.get(3).map_or("", |m| m.as_str());
@@ -526,15 +541,13 @@ fn apply_desktop_inline_patches(content: &str) -> String {
         format!("_handleAuthErrorResponse({p}){{var {v}={p}?.failureDetails; if({v}?.case===\"inexigible\"){{ this._authActor.send({{type:\"AUTH_SUCCESS\",tokenInfo:{{accessToken:\"\"}},scopes:[],isGcpTos:false}}); return; }}")
     }).to_string();
 
-    let re_inel = Regex::new(r#"\?\.failureDetails\?\.case===\"ineligible\"\?this\._authActor\.send\(\{type:\"SET_INELIGIBLE\""#).unwrap();
-    output = re_inel
+    output = RE_INEL
         .replace_all(&output, |_caps: &regex::Captures| {
             "?.failureDetails?.case===\"NEVER_MATCH\"?this._authActor.send({type:\"SET_INELIGIBLE\""
         })
         .to_string();
 
-    let re_eligible = Regex::new(r#"(isEligible:\s*)false"#).unwrap();
-    output = re_eligible
+    output = RE_ELIGIBLE
         .replace_all(&output, |caps: &regex::Captures| {
             let prefix = caps.get(1).map_or("isEligible:", |m| m.as_str());
             format!("{}true", prefix)
@@ -544,10 +557,149 @@ fn apply_desktop_inline_patches(content: &str) -> String {
     output
 }
 
+pub fn patch_extension_js(inst: &Path) -> Result<bool, String> {
+    let ext_path = inst
+        .join("resources")
+        .join("app")
+        .join("extensions")
+        .join("antigravity")
+        .join("dist")
+        .join("extension.js");
+    if !ext_path.exists() {
+        return Ok(false);
+    }
+    patch_extension_js_at(&ext_path)
+}
+
+/// The patch itself, given the file rather than the install root. The
+/// watchdog knows the file: an update may have replaced it while the install
+/// root is unchanged.
+fn patch_extension_js_at(ext_path: &Path) -> Result<bool, String> {
+    let content = fs::read_to_string(ext_path).map_err(|e| e.to_string())?;
+    if content.contains(EXT_FENCE) || content.contains(crate::platform::legacy::EXT_FENCE) {
+        return Ok(true);
+    }
+
+    obfstr::obfstr! {
+        let p1_str = r#"const t=await ([A-Za-z_$][A-Za-z_$0-9.]*)\.UserStatus\.getUserStatus\(\);if\(!t\)return\[\];const n=\(0,([A-Za-z_$][A-Za-z_$0-9.]*)\)\(t,([A-Za-z_$][A-Za-z_$0-9.]*)\),\{email:([A-Za-z_$][A-Za-z_$0-9]*),name:([A-Za-z_$][A-Za-z_$0-9]*)\}=n;return""===([A-Za-z_$][A-Za-z_$0-9]*)\?\[\]:"#;
+    }
+    let p1 = Regex::new(p1_str).unwrap();
+    let new_content = p1.replace(&content, |caps: &regex::Captures| {
+        let ns = &caps[1];
+        let p2 = &caps[2];
+        let dz7 = &caps[3];
+        let email = &caps[4];
+        let name = &caps[5];
+        format!(
+            "const t=await {ns}.UserStatus.getUserStatus();let {email}=\"\",{name}=\"\";try{{if(t){{const n=(0,{p2})(t,{dz7});{email}=n.email||\"\";{name}=n.name||\"\";}}}}catch(_){{}}if({email}===\"\"){{{email}=\"antigravity-user\";{name}=\"User\";}}return false?[]:"
+        )
+    });
+
+    if new_content == content {
+        return Err("Сигнатура extension.js не найдена (возможно, другая версия)".to_string());
+    }
+
+    // Leading fence stays the idempotence check; the trailing marker is the
+    // canary trailer every rewritten file carries.
+    let marked = format!(
+        "/*[OAG_EXT_PATCHED]*/\n{}\n{}",
+        new_content,
+        crate::canary::file_marker()
+    );
+    backup_once(ext_path);
+    write_atomic(ext_path, &marked).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+/// The watchdog's form of the extension patch.
+///
+/// `patch_extension_js` answers "true" both when it patched and when the
+/// fence said it was already patched, so the watcher has to ask about the
+/// fence itself first: it needs to know whether to record a change, not
+/// merely whether the file ended up correct.
+pub fn repatch_extension_js(ext_path: &Path) -> RepatchOutcome {
+    let already = fs::read_to_string(ext_path)
+        .map(|c| c.contains(EXT_FENCE) || c.contains(crate::platform::legacy::EXT_FENCE))
+        .unwrap_or(false);
+    if already {
+        return RepatchOutcome::AlreadyPatched;
+    }
+    match patch_extension_js_at(ext_path) {
+        Ok(true) => RepatchOutcome::Repatched(1),
+        Ok(false) => RepatchOutcome::AlreadyPatched,
+        Err(e) if e.contains("Сигнатура") => RepatchOutcome::SignatureMissing,
+        Err(e) => RepatchOutcome::Failed(e),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::env;
+
+    /// An install with an `extension.js` at the place the patcher looks.
+    fn install_with_extension_js(name: &str, content: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let root = env::temp_dir().join(format!("oag_ext_{name}_{}", std::process::id()));
+        let js = root
+            .join("resources")
+            .join("app")
+            .join("extensions")
+            .join("antigravity")
+            .join("dist")
+            .join("extension.js");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(js.parent().unwrap()).unwrap();
+        std::fs::write(&js, content).unwrap();
+        (root, js)
+    }
+
+    /// The signature the patcher expects, in the shape a minified bundle has.
+    const EXT_SIGNATURE: &str = "const t=await a.UserStatus.getUserStatus();if(!t)return[];const n=(0,f)(t,d),{email:e,name:r}=n;return\"\"===z?[]:";
+
+    /// The extension patch is written once, and the fence makes a second run
+    /// a no-op.
+    ///
+    /// Without the fence a second run would append a fresh canary trailer to
+    /// an already patched file every time the window applies the patch.
+    #[test]
+    fn extension_js_is_patched_once_and_the_second_run_changes_nothing() {
+        let (root, js) = install_with_extension_js("idempotent", EXT_SIGNATURE);
+
+        patch_extension_js(&root).expect("the signature must be found");
+        let patched = std::fs::read_to_string(&js).unwrap();
+        assert!(patched.contains(EXT_FENCE), "the fence must be written");
+        assert!(
+            patched.contains("antigravity-user"),
+            "the fallback must be installed"
+        );
+
+        patch_extension_js(&root).expect("the second run must not error");
+        assert_eq!(
+            std::fs::read_to_string(&js).unwrap(),
+            patched,
+            "the second run must not rewrite the file"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A bundle whose shape this build does not recognise is left exactly as
+    /// it was, and the caller is told - the same rule as `main.js`.
+    #[test]
+    fn an_unknown_extension_js_is_left_untouched() {
+        let (root, js) = install_with_extension_js("unknown", "const x = 1;");
+        let original = std::fs::read_to_string(&js).unwrap();
+
+        let err = patch_extension_js(&root).expect_err("an unknown signature is an error");
+        assert!(err.contains("Сигнатура"), "the error must say what happened: {err}");
+        assert_eq!(
+            std::fs::read_to_string(&js).unwrap(),
+            original,
+            "an unrecognised file must not be modified"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn detects_a_marker_written_by_this_build() {
@@ -589,11 +741,11 @@ mod tests {
         // A second backup must NOT overwrite the pristine one.
         backup_once(&target);
 
-        assert_eq!(restore_js(&target).unwrap(), true);
+        assert!(restore_js(&target).unwrap());
         assert_eq!(fs::read_to_string(&target).unwrap(), original, "byte-exact");
         assert!(!backup_path(&target).exists(), "backup consumed");
         // Nothing left to undo now.
-        assert_eq!(restore_js(&target).unwrap(), false);
+        assert!(!restore_js(&target).unwrap());
 
         fs::remove_dir_all(&dir).ok();
     }
@@ -607,7 +759,7 @@ mod tests {
         let target = dir.join("main.js");
         fs::write(&target, "body\n// UNLOCKED").unwrap();
 
-        assert_eq!(restore_js(&target).unwrap(), true);
+        assert!(restore_js(&target).unwrap());
         assert!(!has_marker(&fs::read_to_string(&target).unwrap()));
 
         fs::remove_dir_all(&dir).ok();
@@ -672,52 +824,4 @@ mod tests {
     fn a_non_modular_shell_is_not_v24() {
         assert!(!is_new_desktop_architecture("const x = 1;"));
     }
-}
-
-pub fn patch_extension_js(inst: &Path) -> Result<bool, String> {
-    let ext_path = inst
-        .join("resources")
-        .join("app")
-        .join("extensions")
-        .join("antigravity")
-        .join("dist")
-        .join("extension.js");
-    if !ext_path.exists() {
-        return Ok(false);
-    }
-
-    let content = fs::read_to_string(&ext_path).map_err(|e| e.to_string())?;
-    if content.contains(EXT_FENCE) || content.contains(crate::platform::legacy::EXT_FENCE) {
-        return Ok(true);
-    }
-
-    obfstr::obfstr! {
-        let p1_str = r#"const t=await ([A-Za-z_$][A-Za-z_$0-9.]*)\.UserStatus\.getUserStatus\(\);if\(!t\)return\[\];const n=\(0,([A-Za-z_$][A-Za-z_$0-9.]*)\)\(t,([A-Za-z_$][A-Za-z_$0-9.]*)\),\{email:([A-Za-z_$][A-Za-z_$0-9]*),name:([A-Za-z_$][A-Za-z_$0-9]*)\}=n;return""===([A-Za-z_$][A-Za-z_$0-9]*)\?\[\]:"#;
-    }
-    let p1 = Regex::new(p1_str).unwrap();
-    let new_content = p1.replace(&content, |caps: &regex::Captures| {
-        let ns = &caps[1];
-        let p2 = &caps[2];
-        let dz7 = &caps[3];
-        let email = &caps[4];
-        let name = &caps[5];
-        format!(
-            "const t=await {ns}.UserStatus.getUserStatus();let {email}=\"\",{name}=\"\";try{{if(t){{const n=(0,{p2})(t,{dz7});{email}=n.email||\"\";{name}=n.name||\"\";}}}}catch(_){{}}if({email}===\"\"){{{email}=\"antigravity-user\";{name}=\"User\";}}return false?[]:"
-        )
-    });
-
-    if new_content == content {
-        return Err("Сигнатура extension.js не найдена (возможно, другая версия)".to_string());
-    }
-
-    // Leading fence stays the idempotence check; the trailing marker is the
-    // canary trailer every rewritten file carries.
-    let marked = format!(
-        "/*[OAG_EXT_PATCHED]*/\n{}\n{}",
-        new_content,
-        crate::canary::file_marker()
-    );
-    backup_once(&ext_path);
-    write_atomic(&ext_path, &marked).map_err(|e| e.to_string())?;
-    Ok(true)
 }

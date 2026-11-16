@@ -337,14 +337,21 @@ impl App {
     }
 
     fn toggle_autostart_now(&mut self) {
-        let current = crate::platform::autostart::is_enabled();
-        let target = !current;
-        match crate::platform::autostart::set_enabled(target) {
+        let is_on = crate::platform::autostart::is_enabled();
+        let is_admin = crate::platform::autostart::is_admin_enabled();
+
+        let (target_on, target_admin) = match (is_on, is_admin) {
+            (false, _) => (true, true),
+            (true, true) => (true, false),
+            (true, false) => (false, false),
+        };
+
+        match crate::platform::autostart::set_enabled_with_admin(target_on, target_admin) {
             Ok(()) => {
-                let msg = if target {
-                    "Автозапуск с системой включён".to_string()
-                } else {
-                    "Автозапуск с системой выключен".to_string()
+                let msg = match (target_on, target_admin) {
+                    (true, true) => "Автозапуск: включён (от администратора, Highest)".to_string(),
+                    (true, false) => "Автозапуск: включён (обычный режим HKCU)".to_string(),
+                    (false, _) => "Автозапуск: выключен".to_string(),
                 };
                 self.toast(msg.clone());
                 if self.log.len() >= LOG_LIMIT {
@@ -354,6 +361,52 @@ impl App {
             }
             Err(err) => {
                 let msg = format!("Ошибка автозапуска: {err}");
+                self.toast(msg.clone());
+                if self.log.len() >= LOG_LIMIT {
+                    self.log.remove(0);
+                }
+                self.log.push((Level::Err, msg));
+            }
+        }
+    }
+
+    fn launch_selected_or_any(&mut self, row: Option<Row>) {
+        if let Some(Row::Install(idx)) = row {
+            if let Some(inst) = self.status.as_ref().and_then(|s| s.installs.get(idx)) {
+                if let Some(path) = &inst.path {
+                    match crate::platform::launcher::launch_install(path) {
+                        Ok(msg) => {
+                            self.toast(msg.clone());
+                            if self.log.len() >= LOG_LIMIT {
+                                self.log.remove(0);
+                            }
+                            self.log.push((Level::Ok, msg));
+                        }
+                        Err(err) => {
+                            let msg = format!("Ошибка запуска: {err}");
+                            self.toast(msg.clone());
+                            if self.log.len() >= LOG_LIMIT {
+                                self.log.remove(0);
+                            }
+                            self.log.push((Level::Err, msg));
+                        }
+                    }
+                    return;
+                }
+            }
+        }
+
+        let manual_paths = crate::settings::Settings::load().manual_paths;
+        match crate::platform::launcher::launch_target(crate::platform::launcher::AutoLaunchTarget::Any, &manual_paths) {
+            Ok(msg) => {
+                self.toast(msg.clone());
+                if self.log.len() >= LOG_LIMIT {
+                    self.log.remove(0);
+                }
+                self.log.push((Level::Ok, msg));
+            }
+            Err(err) => {
+                let msg = format!("Ошибка запуска: {err}");
                 self.toast(msg.clone());
                 if self.log.len() >= LOG_LIMIT {
                     self.log.remove(0);
@@ -610,6 +663,7 @@ impl App {
             KeyCode::Char('d') => self.start_diagnostics_now(),
             KeyCode::Char('s') => self.create_shortcuts_now(),
             KeyCode::Char('t') => self.toggle_autostart_now(),
+            KeyCode::Char('l') => self.launch_selected_or_any(row),
             KeyCode::Char('o') => self.save_report(),
             KeyCode::Char('u') => self.check_updates_now(),
             KeyCode::Char('U') => self.start_auto_update_now(),

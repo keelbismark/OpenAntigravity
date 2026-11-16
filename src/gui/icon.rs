@@ -54,7 +54,7 @@ mod tests {
         assert_eq!(icon.rgba.len(), (ICON_W * ICON_H * 4) as usize);
         // A fully transparent blob would draw as nothing at all.
         assert!(
-            icon.rgba.chunks_exact(4).any(|px| px[3] != 0),
+            icon.rgba.as_chunks::<4>().0.iter().any(|px| px[3] != 0),
             "the icon is entirely transparent"
         );
     }

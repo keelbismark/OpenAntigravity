@@ -137,6 +137,7 @@ pub fn run() -> Result<(), String> {
 
 /// Every listener or none: a door open for one gate host and shut for the other
 /// would send half of Antigravity's calls somewhere else.
+#[allow(clippy::result_large_err)]
 fn bind_all() -> Result<Vec<(&'static str, TcpListener)>, crate::gate::Blocker> {
     let mut listeners = Vec::with_capacity(HOSTS.len());
     for (host, ip) in HOSTS {
@@ -146,6 +147,7 @@ fn bind_all() -> Result<Vec<(&'static str, TcpListener)>, crate::gate::Blocker> 
 }
 
 /// A few tries, because a port held for a moment at logon frees itself.
+#[allow(clippy::result_large_err)]
 fn bind(ip: Ipv4Addr) -> Result<TcpListener, crate::gate::Blocker> {
     let addr = SocketAddr::from((ip, PORT));
     let mut last = None;

@@ -530,8 +530,10 @@ pub fn get_ranked_upstreams() -> Vec<Upstream> {
     all
 }
 
+pub type UpstreamRaceResult = (Upstream, Result<(u64, Option<String>), String>);
+
 /// Races all configured upstreams, measuring latency to Google Cloud Code and updating scores.
-pub fn race_all_upstreams(budget: Duration) -> Vec<(Upstream, Result<(u64, Option<String>), String>)> {
+pub fn race_all_upstreams(budget: Duration) -> Vec<UpstreamRaceResult> {
     let all = configured_all();
     if all.is_empty() {
         return Vec::new();

@@ -205,7 +205,7 @@ impl App {
             " · u — обновления"
         };
         let keys = format!(
-            "↑↓ выбор · Пробел/Enter — вкл/выкл{offered} · d — тест сети · s — ярлыки · t — автозапуск · o — отчёт{update_key} · q — выход"
+            "↑↓ выбор · Пробел/Enter — вкл/выкл{offered} · d — тест · l — запуск · s — ярлыки · t — автозапуск · o — отчёт{update_key} · q — выход"
         );
         f.render_widget(
             Paragraph::new(keys).style(Style::new().fg(Color::DarkGray)),

@@ -1392,6 +1392,4 @@ pub fn perform_auto_update(
 }
 
 #[cfg(test)]
-
-#[cfg(test)]
 mod tests;

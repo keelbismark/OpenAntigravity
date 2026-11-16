@@ -124,44 +124,6 @@ fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), std::io::Error> {
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::env;
-
-    /// Locates a real Antigravity Desktop install, if one is present. These
-    /// tests assert against the shipping archive rather than a fixture, so they
-    /// skip cleanly on machines without the app.
-    fn installed_asar() -> Option<std::path::PathBuf> {
-        let local = env::var("LOCALAPPDATA").ok()?;
-        let p = Path::new(&local)
-            .join("Programs")
-            .join("Antigravity")
-            .join("resources")
-            .join("app.asar");
-        p.exists().then_some(p)
-    }
-
-    #[test]
-    fn reads_a_file_out_of_the_archive_without_unpacking() {
-        let Some(asar) = installed_asar() else { return };
-        let pkg = read_asar_entry(&asar, "package.json").expect("package.json in app.asar");
-        let text = String::from_utf8(pkg).expect("utf-8");
-        assert!(text.contains("\"name\": \"antigravity\""), "got: {}", text);
-
-        let main = read_asar_entry(&asar, "dist/main.js").expect("dist/main.js in app.asar");
-        assert!(!main.is_empty());
-    }
-
-    #[test]
-    fn missing_entries_return_none() {
-        let Some(asar) = installed_asar() else { return };
-        assert!(read_asar_entry(&asar, "dist/does-not-exist.js").is_none());
-        // A directory node carries no payload.
-        assert!(read_asar_entry(&asar, "dist").is_none());
-    }
-}
-
 /// Unpacks app.asar into app_dir and renames the archive to app.asar.bak.
 /// Electron prefers resources/app over resources/app.asar, so a half-finished
 /// extraction would leave a broken install - on any error the partial output is
@@ -202,4 +164,42 @@ pub fn extract_asar(app_asar: &Path, app_dir: &Path) -> bool {
     }
 
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+
+    /// Locates a real Antigravity Desktop install, if one is present. These
+    /// tests assert against the shipping archive rather than a fixture, so they
+    /// skip cleanly on machines without the app.
+    fn installed_asar() -> Option<std::path::PathBuf> {
+        let local = env::var("LOCALAPPDATA").ok()?;
+        let p = Path::new(&local)
+            .join("Programs")
+            .join("Antigravity")
+            .join("resources")
+            .join("app.asar");
+        p.exists().then_some(p)
+    }
+
+    #[test]
+    fn reads_a_file_out_of_the_archive_without_unpacking() {
+        let Some(asar) = installed_asar() else { return };
+        let pkg = read_asar_entry(&asar, "package.json").expect("package.json in app.asar");
+        let text = String::from_utf8(pkg).expect("utf-8");
+        assert!(text.contains("\"name\": \"antigravity\""), "got: {}", text);
+
+        let main = read_asar_entry(&asar, "dist/main.js").expect("dist/main.js in app.asar");
+        assert!(!main.is_empty());
+    }
+
+    #[test]
+    fn missing_entries_return_none() {
+        let Some(asar) = installed_asar() else { return };
+        assert!(read_asar_entry(&asar, "dist/does-not-exist.js").is_none());
+        // A directory node carries no payload.
+        assert!(read_asar_entry(&asar, "dist").is_none());
+    }
 }

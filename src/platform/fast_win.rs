@@ -217,6 +217,49 @@ pub fn set_user_env(name: &str, value: Option<&str>) -> Result<(), String> {
 }
 
 // ---------------------------------------------------------------------------
+// HKCU Run autostart via Registry
+// ---------------------------------------------------------------------------
+
+const HKCU_RUN_SUBKEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+
+/// Reads an autostart command from `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
+pub fn get_hkcu_run(name: &str) -> Option<String> {
+    get_reg_env(HKEY_CURRENT_USER, HKCU_RUN_SUBKEY, name)
+}
+
+/// Sets or deletes an autostart command in `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
+pub fn set_hkcu_run(name: &str, value: Option<&str>) -> Result<(), String> {
+    let subkey_w = to_wide(HKCU_RUN_SUBKEY);
+    let name_w = to_wide(name);
+    let mut key: isize = 0;
+    unsafe {
+        if RegOpenKeyExW(HKEY_CURRENT_USER, subkey_w.as_ptr(), 0, KEY_WRITE, &mut key) != 0 {
+            return Err("Не удалось открыть HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run для записи".to_string());
+        }
+        let res = match value {
+            Some(v) => {
+                let v_w = to_wide(v);
+                RegSetValueExW(
+                    key,
+                    name_w.as_ptr(),
+                    0,
+                    REG_SZ,
+                    v_w.as_ptr() as *const u8,
+                    (v_w.len() * 2) as u32,
+                )
+            }
+            None => RegDeleteValueW(key, name_w.as_ptr()),
+        };
+        RegCloseKey(key);
+        if res == 0 || (value.is_none() && (res == 2 || res == 0)) {
+            Ok(())
+        } else {
+            Err(format!("Ошибка реестра при сохранении автозапуска: {res}"))
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Process liveness & snapshotting via Toolhelp32 & OpenProcess
 // ---------------------------------------------------------------------------
 
@@ -520,5 +563,28 @@ pub fn has_conflicting_rules(namespaces: &[&str], our_tag: &str) -> Option<bool>
         }
         RegCloseKey(key);
         Some(has_conflict)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hkcu_run_read_write_delete() {
+        let test_name = "OpenAntigravity_TestEntry";
+        let test_val = "\"C:\\Test\\App.exe\" --arg";
+
+        // Cleanup before test
+        let _ = set_hkcu_run(test_name, None);
+        assert_eq!(get_hkcu_run(test_name), None);
+
+        // Write
+        assert!(set_hkcu_run(test_name, Some(test_val)).is_ok());
+        assert_eq!(get_hkcu_run(test_name).as_deref(), Some(test_val));
+
+        // Delete
+        assert!(set_hkcu_run(test_name, None).is_ok());
+        assert_eq!(get_hkcu_run(test_name), None);
     }
 }

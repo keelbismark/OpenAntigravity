@@ -733,6 +733,32 @@ pub fn inspect_install(install: &std::path::Path) -> InstallState {
     InstallState { files }
 }
 
+/// Reverses the binary patch so an install can be returned to stock without
+/// reinstalling.
+/// Reverts every native binary of one install and reports each outcome.
+///
+/// Returns results rather than a count, and prints nothing: a count cannot say
+/// that one file failed, and the caller used to read "reverted 1 of 2" as a
+/// clean revert. The window has no console for the difference to appear on
+/// either.
+pub fn unpatch_all_binaries(inst: &Path) -> Vec<(String, Result<usize, String>)> {
+    let mut results = Vec::new();
+    for bin in binary_targets(inst) {
+        let label = bin
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        // The proxy rename first: it is the one that stops the binary reading
+        // our variable, and a revert that failed halfway should at least leave
+        // the language server on the stock proxy channel. Silent - a build that
+        // never carried it is not an error to report.
+        unpatch_proxy_var(&bin).ok();
+        results.push((label, unpatch_binary(&bin)));
+    }
+    results
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1152,30 +1178,4 @@ mod tests {
         assert!(!mixed_unreadable.fully_patched());
         assert!(mixed_unreadable.partially_patched());
     }
-}
-
-/// Reverses the binary patch so an install can be returned to stock without
-/// reinstalling.
-/// Reverts every native binary of one install and reports each outcome.
-///
-/// Returns results rather than a count, and prints nothing: a count cannot say
-/// that one file failed, and the caller used to read "reverted 1 of 2" as a
-/// clean revert. The window has no console for the difference to appear on
-/// either.
-pub fn unpatch_all_binaries(inst: &Path) -> Vec<(String, Result<usize, String>)> {
-    let mut results = Vec::new();
-    for bin in binary_targets(inst) {
-        let label = bin
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
-        // The proxy rename first: it is the one that stops the binary reading
-        // our variable, and a revert that failed halfway should at least leave
-        // the language server on the stock proxy channel. Silent - a build that
-        // never carried it is not an error to report.
-        unpatch_proxy_var(&bin).ok();
-        results.push((label, unpatch_binary(&bin)));
-    }
-    results
 }

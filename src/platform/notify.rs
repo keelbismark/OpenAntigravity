@@ -30,7 +30,7 @@ mod win32 {
     use std::os::windows::ffi::OsStrExt;
 
     #[repr(C)]
-    #[allow(non_snake_case)]
+    #[allow(non_snake_case, clippy::upper_case_acronyms)]
     struct NOTIFYICONDATAW {
         cbSize: u32,
         hWnd: isize,

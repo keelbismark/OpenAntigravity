@@ -38,6 +38,8 @@ Open Antigravity is a high-performance, zero-external-dependency portable utilit
 - `--fix, --repair`: Executes self-test diagnostics and automatically applies deterministic remediations for detected problems.
 - `--check, --diagnose [--json]`: Comprehensive network, DNS, and TLS self-test. `--json` outputs machine-parseable diagnostics for observability.
 - `--shortcut`: Creates application shortcuts on Desktop and Start Menu.
+- `--launch [ide|cli|any]`: Launches selected Antigravity component with proxy environment variables configured.
+- `--autostart [on|off|admin]`: Configures system autostart with optional Administrator privileges (Task Scheduler Highest runlevel).
 
 ### Informational & Interactive Flags
 - `-h, --help`: Displays CLI usage options.

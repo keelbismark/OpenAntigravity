@@ -23,6 +23,12 @@ use std::sync::Mutex;
 use std::time::Duration;
 use std::time::Instant;
 
+pub use crate::platform::launcher::AutoLaunchTarget;
+
+fn default_autostart_as_admin() -> bool {
+    true
+}
+
 const FILE_NAME: &str = "settings.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,6 +121,14 @@ pub struct Settings {
     /// Installs the user pointed at by hand, on top of the ones found by the
     /// scan (the pencil next to each path).
     pub manual_paths: Vec<PathBuf>,
+
+    /// Whether autostart should run with elevated Administrator privileges via Task Scheduler.
+    #[serde(default = "default_autostart_as_admin")]
+    pub autostart_as_admin: bool,
+
+    /// Optional automatic launcher target for Antigravity components on startup.
+    #[serde(default)]
+    pub auto_launch: AutoLaunchTarget,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -148,6 +162,8 @@ impl Default for Settings {
             own_proxy_enabled: crate::upstream::builtin_proxy().is_some(),
             proxy_profiles: Vec::new(),
             manual_paths: Vec::new(),
+            autostart_as_admin: default_autostart_as_admin(),
+            auto_launch: AutoLaunchTarget::None,
         }
     }
 }
@@ -451,8 +467,10 @@ mod tests {
     /// says, until the user asks for the patch again.
     #[test]
     fn a_patch_switched_off_by_hand_is_not_put_back() {
-        let mut s = Settings::default();
-        s.patch_declined = true;
+        let mut s = Settings {
+            patch_declined: true,
+            ..Default::default()
+        };
         assert!(s.auto_patch, "the auto-patch wish itself is kept");
         assert!(!s.auto_patch_wanted());
         s.patch_declined = false;
@@ -543,5 +561,17 @@ mod tests {
         let s: Settings = serde_json::from_str(json).expect("unknown fields are ignored");
         assert!(!s.dns);
         assert!(s.local_proxy, "fields left out keep their default");
+    }
+
+    #[test]
+    fn test_autostart_and_auto_launch_settings_default() {
+        let s = Settings::default();
+        assert!(s.autostart_as_admin);
+        assert_eq!(s.auto_launch, AutoLaunchTarget::None);
+
+        let json = r#"{"autostart_as_admin": false, "auto_launch": "ide"}"#;
+        let parsed: Settings = serde_json::from_str(json).expect("parses custom autostart");
+        assert!(!parsed.autostart_as_admin);
+        assert_eq!(parsed.auto_launch, AutoLaunchTarget::Ide);
     }
 }

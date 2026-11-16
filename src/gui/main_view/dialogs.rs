@@ -178,28 +178,28 @@ pub fn changelog_dialog(app: &mut App, ctx: &egui::Context) {
                     if let Some(notes) = &rel.notes {
                         for line in notes.lines() {
                             let trimmed = line.trim();
-                            if trimmed.starts_with("### ") {
+                            if let Some(content) = trimmed.strip_prefix("### ") {
                                 ui.add_space(6.0);
                                 ui.label(
-                                    egui::RichText::new(&trimmed[4..])
+                                    egui::RichText::new(content)
                                         .size(13.0)
                                         .strong()
                                         .color(theme::ACCENT),
                                 );
                                 ui.add_space(2.0);
-                            } else if trimmed.starts_with("## ") {
+                            } else if let Some(content) = trimmed.strip_prefix("## ") {
                                 ui.add_space(8.0);
                                 ui.label(
-                                    egui::RichText::new(&trimmed[3..])
+                                    egui::RichText::new(content)
                                         .size(14.0)
                                         .strong()
                                         .color(theme::TEXT),
                                 );
                                 ui.add_space(4.0);
-                            } else if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
+                            } else if let Some(content) = trimmed.strip_prefix("- ").or_else(|| trimmed.strip_prefix("* ")) {
                                 ui.horizontal(|ui| {
                                     ui.label(egui::RichText::new("•").size(12.0).color(theme::ACCENT));
-                                    ui.label(egui::RichText::new(&trimmed[2..]).size(12.0).color(theme::TEXT));
+                                    ui.label(egui::RichText::new(content).size(12.0).color(theme::TEXT));
                                 });
                             } else if trimmed.is_empty() {
                                 ui.add_space(4.0);

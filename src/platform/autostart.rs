@@ -6,7 +6,7 @@
 #[cfg(not(target_os = "windows"))]
 use std::path::{Path, PathBuf};
 
-/// Проверяет, включён ли автозапуск в текущей системе.
+/// Проверяет, включён ли автозапуск в текущей системе (планировщик задач либо реестр).
 pub fn is_enabled() -> bool {
     #[cfg(target_os = "windows")]
     {
@@ -18,14 +18,32 @@ pub fn is_enabled() -> bool {
     }
 }
 
-/// Включает или выключает автозапуск приложения при старте системы.
-pub fn set_enabled(enabled: bool) -> Result<(), String> {
+/// Проверяет, настроен ли автозапуск с правами администратора (через Планировщик Windows).
+pub fn is_admin_enabled() -> bool {
     #[cfg(target_os = "windows")]
     {
-        set_windows_enabled(enabled)
+        is_task_enabled()
     }
     #[cfg(not(target_os = "windows"))]
     {
+        false
+    }
+}
+
+/// Включает или выключает автозапуск приложения при старте системы, сохраняя текущий режим прав.
+pub fn set_enabled(enabled: bool) -> Result<(), String> {
+    set_enabled_with_admin(enabled, is_admin_enabled() || crate::utils::is_admin())
+}
+
+/// Включает или выключает автозапуск приложения при старте системы с явным выбором прав администратора.
+pub fn set_enabled_with_admin(enabled: bool, as_admin: bool) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        set_windows_enabled_with_admin(enabled, as_admin)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = as_admin;
         set_linux_enabled(enabled)
     }
 }
@@ -99,12 +117,7 @@ fn is_task_enabled() -> bool {
 
 #[cfg(target_os = "windows")]
 fn is_registry_run_enabled() -> bool {
-    let script = "Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -Name 'Open Antigravity' -ErrorAction SilentlyContinue";
-    if let Some(out) = crate::utils::powershell_within(script, std::time::Duration::from_secs(5)) {
-        out.status.success() && !out.stdout.is_empty()
-    } else {
-        false
-    }
+    crate::platform::fast_win::get_hkcu_run("Open Antigravity").is_some()
 }
 
 #[cfg(target_os = "windows")]
@@ -113,51 +126,69 @@ fn is_windows_enabled() -> bool {
 }
 
 #[cfg(target_os = "windows")]
-fn set_windows_enabled(enabled: bool) -> Result<(), String> {
+fn set_windows_enabled_with_admin(enabled: bool, as_admin: bool) -> Result<(), String> {
     if enabled {
         let exe = std::env::current_exe().map_err(|e| format!("Не удалось определить путь к exe: {e}"))?;
         let exe_str = exe.display().to_string();
 
-        // Если у процесса есть права администратора — регистрируем задачу в планировщике с RunLevel Highest.
-        // Это позволяет приложению запускаться при входе в систему СРАЗУ с правами администратора
-        // БЕЗ окна UAC, чего невозможно добиться через обычный HKCU\...\Run.
-        let mut task_created = false;
-        if crate::utils::is_admin() {
-            let task_script = format!(
-                "$a = New-ScheduledTaskAction -Execute '{exe}' -Argument '--minimized'; \
-                 $t = New-ScheduledTaskTrigger -AtLogOn; \
-                 $s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries \
-                      -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero); \
-                 $p = New-ScheduledTaskPrincipal -UserId \"$env:USERDOMAIN\\$env:USERNAME\" \
-                      -LogonType Interactive -RunLevel Highest; \
-                 Register-ScheduledTask -TaskName '{task}' -Action $a -Trigger $t -Settings $s \
-                      -Principal $p -Description 'Open Antigravity: автозапуск с повышенными правами' -Force -ErrorAction Stop",
-                exe = exe_str.replace('\'', "''"),
-                task = AUTOSTART_TASK_NAME,
-            );
-            if let Some(out) = crate::utils::powershell_within(&task_script, std::time::Duration::from_secs(10)) {
-                if out.status.success() {
-                    task_created = true;
-                    // Удаляем запись из HKCU\...\Run, чтобы исключить двойной запуск
-                    let clean_reg = "Remove-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -Name 'Open Antigravity' -ErrorAction SilentlyContinue";
-                    let _ = crate::utils::powershell_within(clean_reg, std::time::Duration::from_secs(5));
-                }
-            }
-        }
-
-        if !task_created {
-            // Фолбэк для работы без прав администратора — запись в реестр HKCU
-            let reg_script = format!(
-                "Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -Name 'Open Antigravity' -Value '\"{}\" --minimized'",
-                exe_str
-            );
-            if let Some(out) = crate::utils::powershell_within(&reg_script, std::time::Duration::from_secs(10)) {
-                if !out.status.success() {
-                    return Err(format!("PowerShell ошибка: {}", String::from_utf8_lossy(&out.stderr).trim()));
+        if as_admin {
+            // Регистрация в планировщике задач с RunLevel Highest для автозапуска от имени администратора без UAC
+            if crate::utils::is_admin() {
+                let task_script = format!(
+                    "$a = New-ScheduledTaskAction -Execute '{exe}' -Argument '--minimized'; \
+                     $t = New-ScheduledTaskTrigger -AtLogOn; \
+                     $s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries \
+                          -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero); \
+                     $p = New-ScheduledTaskPrincipal -UserId \"$env:USERDOMAIN\\$env:USERNAME\" \
+                          -LogonType Interactive -RunLevel Highest; \
+                     Register-ScheduledTask -TaskName '{task}' -Action $a -Trigger $t -Settings $s \
+                          -Principal $p -Description 'Open Antigravity: автозапуск с повышенными правами' -Force -ErrorAction Stop",
+                    exe = exe_str.replace('\'', "''"),
+                    task = AUTOSTART_TASK_NAME,
+                );
+                if let Some(out) = crate::utils::powershell_within(&task_script, std::time::Duration::from_secs(10)) {
+                    if !out.status.success() {
+                        let err = String::from_utf8_lossy(&out.stderr);
+                        return Err(format!("Ошибка создания задачи планировщика: {}", err.trim()));
+                    }
+                } else {
+                    return Err("Не удалось выполнить PowerShell для создания задачи планировщика".to_string());
                 }
             } else {
-                return Err("Не удалось настроить автозапуск через реестр".to_string());
+                // Если текущий процесс не админ, запрашиваем повышение привилегий один раз через UAC
+                let inner_cmd = format!(
+                    "$a = New-ScheduledTaskAction -Execute '{exe}' -Argument '--minimized'; \
+                     $t = New-ScheduledTaskTrigger -AtLogOn; \
+                     $s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries \
+                          -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero); \
+                     $p = New-ScheduledTaskPrincipal -UserId \"$env:USERDOMAIN\\$env:USERNAME\" \
+                          -LogonType Interactive -RunLevel Highest; \
+                     Register-ScheduledTask -TaskName '{task}' -Action $a -Trigger $t -Settings $s \
+                          -Principal $p -Description 'Open Antigravity: автозапуск с повышенными правами' -Force; \
+                     Remove-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -Name 'Open Antigravity' -ErrorAction SilentlyContinue",
+                    exe = exe_str.replace('\'', "''"),
+                    task = AUTOSTART_TASK_NAME,
+                );
+                let elevate_script = format!(
+                    "Start-Process powershell.exe -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', \"{}\"",
+                    inner_cmd.replace('"', "`\"")
+                );
+                crate::utils::powershell_within(&elevate_script, std::time::Duration::from_secs(30));
+                if !is_task_enabled() {
+                    return Err("Для автозапуска от администратора требуется подтверждение UAC".to_string());
+                }
             }
+
+            // Очищаем HKCU Run, чтобы исключить двойной запуск
+            let _ = crate::platform::fast_win::set_hkcu_run("Open Antigravity", None);
+        } else {
+            // Обычный автозапуск без прав администратора: удаляем задачу из планировщика и пишем в HKCU Run
+            let mut cmd = std::process::Command::new("schtasks");
+            cmd.args(["/Delete", "/TN", AUTOSTART_TASK_NAME, "/F"]);
+            crate::utils::bounded_output(crate::utils::no_window(&mut cmd), std::time::Duration::from_secs(5));
+
+            let run_val = format!("\"{}\" --minimized", exe_str);
+            crate::platform::fast_win::set_hkcu_run("Open Antigravity", Some(&run_val))?;
         }
         Ok(())
     } else {
@@ -166,8 +197,15 @@ fn set_windows_enabled(enabled: bool) -> Result<(), String> {
         cmd.args(["/Delete", "/TN", AUTOSTART_TASK_NAME, "/F"]);
         crate::utils::bounded_output(crate::utils::no_window(&mut cmd), std::time::Duration::from_secs(5));
 
-        let script = "Remove-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -Name 'Open Antigravity' -ErrorAction SilentlyContinue";
-        let _ = crate::utils::powershell_within(script, std::time::Duration::from_secs(10));
+        if is_task_enabled() && !crate::utils::is_admin() {
+            let elevate_del = format!(
+                "Start-Process powershell.exe -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '-NoProfile', '-Command', 'Unregister-ScheduledTask -TaskName \"{}\" -Confirm:$false -ErrorAction SilentlyContinue'",
+                AUTOSTART_TASK_NAME
+            );
+            crate::utils::powershell_within(&elevate_del, std::time::Duration::from_secs(20));
+        }
+
+        let _ = crate::platform::fast_win::set_hkcu_run("Open Antigravity", None);
         Ok(())
     }
 }
@@ -179,5 +217,6 @@ mod tests {
     #[test]
     fn test_autostart_query_does_not_panic() {
         let _ = is_enabled();
+        let _ = is_admin_enabled();
     }
 }

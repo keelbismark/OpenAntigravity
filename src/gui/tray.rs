@@ -21,6 +21,7 @@ use crate::gui::icon;
 pub(super) struct TrayItems {
     pub open: MenuItem,
     pub status: MenuItem,
+    pub launch_antigravity: MenuItem,
     pub terminal: MenuItem,
     pub restart_ls: MenuItem,
     pub diag: MenuItem,
@@ -39,6 +40,8 @@ pub(super) enum TrayAction {
     RunDiag,
     /// Launch interactive terminal pre-configured with proxy env vars.
     LaunchTerminal,
+    /// Launch Antigravity editor/IDE.
+    LaunchAntigravity,
     /// Soft restart language server background process.
     RestartLanguageServer,
 }
@@ -50,6 +53,7 @@ pub(super) fn build() -> Option<(TrayIcon, TrayItems)> {
     let items = TrayItems {
         open: MenuItem::new("Открыть", true, None),
         status: MenuItem::new("Статус: ожидание…", false, None),
+        launch_antigravity: MenuItem::new("Запустить Antigravity", true, None),
         terminal: MenuItem::new("Терминал с прокси", true, None),
         restart_ls: MenuItem::new("Перезапустить Language Server", true, None),
         diag: MenuItem::new("Тест сети", true, None),
@@ -59,6 +63,7 @@ pub(super) fn build() -> Option<(TrayIcon, TrayItems)> {
     let menu = Menu::new();
     menu.append(&items.open).ok()?;
     menu.append(&items.status).ok()?;
+    menu.append(&items.launch_antigravity).ok()?;
     menu.append(&items.terminal).ok()?;
     menu.append(&items.restart_ls).ok()?;
     menu.append(&items.diag).ok()?;
@@ -112,6 +117,9 @@ pub(super) fn drain(items: &TrayItems) -> TrayAction {
     while let Ok(ev) = MenuEvent::receiver().try_recv() {
         if ev.id == items.open.id() {
             return TrayAction::Show;
+        }
+        if ev.id == items.launch_antigravity.id() {
+            return TrayAction::LaunchAntigravity;
         }
         if ev.id == items.terminal.id() {
             return TrayAction::LaunchTerminal;

@@ -627,8 +627,9 @@ pub(super) fn components_section(app: &mut App, ui: &mut egui::Ui) {
                     );
                     ui.add_space(2.0);
 
-                    // Allocate left text column with room reserved for right button
-                    let text_w = (ui.available_width() - 84.0).max(100.0);
+                    // Allocate left text column with room reserved for right buttons
+                    let reserved_w = if has_path { 180.0 } else { 84.0 };
+                    let text_w = (ui.available_width() - reserved_w).max(100.0);
                     ui.allocate_ui_with_layout(
                         egui::vec2(text_w, 0.0),
                         egui::Layout::top_down(egui::Align::LEFT),
@@ -652,11 +653,19 @@ pub(super) fn components_section(app: &mut App, ui: &mut egui::Ui) {
                         },
                     );
 
-                    // Browse button strictly aligned right
+                    // Browse and Launch buttons strictly aligned right
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let browse_resp = widgets::btn(ui, Some(Icon::Folder), "Обзор", 12.0, None);
                         if browse_resp.clicked() {
                             app.path_dialog = Some(String::new());
+                        }
+
+                        if let Some(p) = &row.path {
+                            let launch_resp = widgets::btn(ui, Some(Icon::Bolt), "Запустить ▶", 12.0, None);
+                            if launch_resp.clicked() {
+                                let res = crate::platform::launcher::launch_install(p);
+                                app.shortcut_status = Some((std::time::Instant::now(), res));
+                            }
                         }
                     });
                 });
@@ -715,10 +724,99 @@ pub(super) fn system_section(app: &mut App, ui: &mut egui::Ui) {
                     .color(theme::MUTED),
             );
         }) {
-            let res = crate::platform::autostart::set_enabled(app.autostart_enabled)
-                .map(|_| "Настройки автозапуска сохранены".to_string());
+            let res = crate::platform::autostart::set_enabled_with_admin(app.autostart_enabled, app.autostart_as_admin)
+                .map(|_| if app.autostart_enabled {
+                    if app.autostart_as_admin {
+                        "Автозапуск от имени администратора включён".to_string()
+                    } else {
+                        "Автозапуск в обычном режиме включён".to_string()
+                    }
+                } else {
+                    "Автозапуск выключен".to_string()
+                });
+            app.autostart_enabled = crate::platform::autostart::is_enabled();
+            app.autostart_as_admin = crate::platform::autostart::is_admin_enabled();
             app.shortcut_status = Some((std::time::Instant::now(), res));
         }
+
+        if app.autostart_enabled {
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.add_space(16.0);
+                let mut as_admin = app.autostart_as_admin;
+                let chk = ui.checkbox(
+                    &mut as_admin,
+                    egui::RichText::new("Запуск от имени администратора")
+                        .size(12.5)
+                        .strong()
+                        .color(theme::TEXT),
+                );
+                if chk.changed() {
+                    let res = crate::platform::autostart::set_enabled_with_admin(true, as_admin)
+                        .map(|_| if as_admin {
+                            "Автозапуск от администратора (через Планировщик задач) включён".to_string()
+                        } else {
+                            "Автозапуск в обычном режиме (HKCU) включён".to_string()
+                        });
+                    app.autostart_enabled = crate::platform::autostart::is_enabled();
+                    app.autostart_as_admin = crate::platform::autostart::is_admin_enabled();
+                    app.shortcut_status = Some((std::time::Instant::now(), res));
+
+                    let mut s = crate::settings::Settings::load();
+                    s.autostart_as_admin = app.autostart_as_admin;
+                    s.save();
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.add_space(38.0);
+                ui.label(
+                    egui::RichText::new("Планировщик Windows (RunLevel Highest) — без запроса UAC при входе")
+                        .size(11.0)
+                        .color(theme::MUTED),
+                );
+            });
+        }
+
+        ui.add_space(8.0);
+        ui.separator();
+        ui.add_space(8.0);
+
+        // Auto-launch Antigravity target
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("Автозапуск Antigravity:")
+                    .size(12.5)
+                    .strong()
+                    .color(theme::TEXT),
+            );
+
+            let mut changed = false;
+            let current = app.auto_launch_target;
+            egui::ComboBox::from_id_salt("auto_launch_combo")
+                .selected_text(current.label())
+                .show_ui(ui, |ui| {
+                    for target in crate::platform::launcher::AutoLaunchTarget::all() {
+                        if ui.selectable_value(&mut app.auto_launch_target, *target, target.label()).clicked() {
+                            changed = true;
+                        }
+                    }
+                });
+
+            if changed {
+                let mut s = crate::settings::Settings::load();
+                s.auto_launch = app.auto_launch_target;
+                s.save();
+                let msg = format!("Действие при старте: {}", app.auto_launch_target.label());
+                app.shortcut_status = Some((std::time::Instant::now(), Ok(msg)));
+            }
+        });
+
+        ui.add_space(2.0);
+        ui.label(
+            egui::RichText::new("Автоматически открывать выбранный инструмент при запуске Open Antigravity")
+                .size(11.0)
+                .color(theme::MUTED),
+        );
 
         ui.add_space(8.0);
         ui.separator();

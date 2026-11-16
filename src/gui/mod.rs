@@ -41,6 +41,9 @@ const WIN_H: f32 = 680.0;
 /// Vec of every line a re-patch loop produced is a slow leak.
 const LOG_LIMIT: usize = 400;
 
+pub type ProxyTestOutcome = Result<(u128, Option<String>), String>;
+pub type ProxyTestRecord = (ProxyTestOutcome, std::time::Instant);
+
 pub struct App {
     /// Raised once the feed reports a newer version and never lowered — the
     /// banner has to survive across screens and updates.
@@ -95,10 +98,10 @@ pub struct App {
     diag_rx: Receiver<crate::diag::DiagReport>,
     diag_running: bool,
     diag_summary: Option<(std::time::Instant, crate::diag::DiagStatus, String)>,
-    proxy_test_tx: std::sync::mpsc::Sender<Result<(u128, Option<String>), String>>,
-    proxy_test_rx: Receiver<Result<(u128, Option<String>), String>>,
+    proxy_test_tx: std::sync::mpsc::Sender<ProxyTestOutcome>,
+    proxy_test_rx: Receiver<ProxyTestOutcome>,
     pub proxy_test_running: bool,
-    pub proxy_test_result: Option<(Result<(u128, Option<String>), String>, std::time::Instant)>,
+    pub proxy_test_result: Option<ProxyTestRecord>,
     /// The system-tray icon.  Dropping the value removes the icon from the OS
     /// notification area, so this field lives as long as the window.
     _tray_icon: Option<tray_icon::TrayIcon>,
@@ -108,6 +111,12 @@ pub struct App {
     tray_hidden: bool,
     /// Whether autostart with system is enabled.
     pub autostart_enabled: bool,
+    /// Whether autostart with system should be elevated (Administrator via Task Scheduler).
+    pub autostart_as_admin: bool,
+    /// Selected auto-launch target when Open Antigravity starts.
+    pub auto_launch_target: crate::platform::launcher::AutoLaunchTarget,
+    /// Flag indicating whether startup auto-launch has already fired this run.
+    pub auto_launch_done: bool,
     auto_update_tx: std::sync::mpsc::Sender<crate::update::UpdateProgress>,
     auto_update_rx: Receiver<crate::update::UpdateProgress>,
     pub auto_update_progress: Option<crate::update::UpdateProgress>,
@@ -181,6 +190,8 @@ impl App {
 
         let start_hidden = std::env::args().any(|a| a == "--minimized" || a == "-m" || a == "--tray");
         let autostart_enabled = crate::platform::autostart::is_enabled();
+        let autostart_as_admin = crate::platform::autostart::is_admin_enabled() || settings.autostart_as_admin;
+        let auto_launch_target = settings.auto_launch;
         let (auto_update_tx, auto_update_rx) = channel();
 
         Self {
@@ -218,6 +229,9 @@ impl App {
             tray_items,
             tray_hidden: start_hidden,
             autostart_enabled,
+            autostart_as_admin,
+            auto_launch_target,
+            auto_launch_done: false,
             auto_update_tx,
             auto_update_rx,
             auto_update_progress: None,
@@ -764,6 +778,13 @@ impl App {
             tray::TrayAction::LaunchTerminal => {
                 let _ = crate::utils::launch_terminal_with_proxy(crate::proxy::port());
             }
+            tray::TrayAction::LaunchAntigravity => {
+                let manual_paths = crate::settings::Settings::load().manual_paths;
+                let _ = crate::platform::launcher::launch_target(
+                    crate::platform::launcher::AutoLaunchTarget::Any,
+                    &manual_paths,
+                );
+            }
             tray::TrayAction::RestartLanguageServer => {
                 crate::patch_binary::kill_platform_processes();
                 crate::platform::notify::send("Open Antigravity", "Language Server перезапущен");
@@ -775,6 +796,23 @@ impl App {
 impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.drain_events();
+
+        // Automatic startup launch of selected Antigravity component
+        if !self.auto_launch_done {
+            self.auto_launch_done = true;
+            if self.auto_launch_target != crate::platform::launcher::AutoLaunchTarget::None {
+                let target = self.auto_launch_target;
+                let manual_paths = crate::settings::Settings::load().manual_paths;
+                std::thread::Builder::new()
+                    .name("startup-auto-launch".to_string())
+                    .spawn(move || {
+                        // Settle delay so local proxy/forwarder has time to bind
+                        std::thread::sleep(std::time::Duration::from_millis(600));
+                        let _ = crate::platform::launcher::launch_target(target, &manual_paths);
+                    })
+                    .ok();
+            }
+        }
 
         // --- System tray: hide on [_], restore from a click on the icon ---
         //
@@ -839,8 +877,8 @@ impl eframe::App for App {
             self.start_proxy_test(ctx);
         }
 
-        // Live IDE activity inspector polling: runs every 3 seconds
-        let need_activity = match self.last_activity_poll {
+        // Live IDE activity inspector polling: runs every 3 seconds when window is visible
+        let need_activity = !self.tray_hidden && match self.last_activity_poll {
             Some(t) => t.elapsed() > std::time::Duration::from_secs(3),
             None => true,
         };

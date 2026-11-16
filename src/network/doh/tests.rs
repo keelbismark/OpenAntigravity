@@ -93,7 +93,7 @@
         let long = "/dns-query?dns=".to_string() + &"A".repeat(400);
         let h = request_headers("dns.example", &long);
         // Length is 415 = 127 + 288 -> prefix octet then two continuation octets.
-        let idx = h.windows(3).position(|w| w == [127, 160, 2]).map(|i| i);
+        let idx = h.windows(3).position(|w| w == [127, 160, 2]);
         assert!(
             idx.is_some(),
             "РґР»РёРЅР° РїСѓС‚Рё Р·Р°РєРѕРґРёСЂРѕРІР°РЅР° РЅРµРІРµСЂРЅРѕ: {:?}",

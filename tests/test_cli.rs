@@ -80,7 +80,7 @@ fn test_cli_status_flag() {
 fn test_cli_status_json_flag() {
     let bin_path = env!("CARGO_BIN_EXE_open_antigravity");
     let output = Command::new(bin_path)
-        .args(&["--status", "--json"])
+        .args(["--status", "--json"])
         .output()
         .expect("Failed to execute open_antigravity binary with --status --json");
 
@@ -92,13 +92,15 @@ fn test_cli_status_json_flag() {
     assert!(parsed.get("platform").is_some());
     assert!(parsed.get("ready").is_some());
     assert!(parsed.get("installs").is_some());
+    assert!(parsed.get("autostart").is_some());
+    assert!(parsed.get("auto_launch").is_some());
 }
 
 #[test]
 fn test_cli_check_json_flag() {
     let bin_path = env!("CARGO_BIN_EXE_open_antigravity");
     let output = Command::new(bin_path)
-        .args(&["--check", "--json"])
+        .args(["--check", "--json"])
         .output()
         .expect("Failed to execute open_antigravity binary with --check --json");
 
@@ -129,4 +131,6 @@ fn test_cli_help_documents_headless_commands() {
     assert!(stdout.contains("--unpatch"));
     assert!(stdout.contains("--fix"));
     assert!(stdout.contains("--check"));
+    assert!(stdout.contains("--launch"));
+    assert!(stdout.contains("--autostart"));
 }

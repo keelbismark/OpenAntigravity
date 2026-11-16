@@ -492,7 +492,7 @@ mod tests {
         println!("  via ISP:     {:?}", isp);
         println!("  via default: {:?}", tunnelled);
         assert!(
-            isp.as_ref().map_or(false, |a| !a.is_empty()),
+            isp.as_ref().is_ok_and(|a| !a.is_empty()),
             "no answer over the ISP link"
         );
         if eg.vpn_active {
@@ -544,7 +544,7 @@ mod tests {
         let answer = dns_client::resolve_a_via("github.com", unrouted, eg.if_index);
         println!("via if{} to 1.1.1.1: {:?}", eg.if_index, answer);
         assert!(
-            answer.as_ref().map_or(false, |a| !a.is_empty()),
+            answer.as_ref().is_ok_and(|a| !a.is_empty()),
             "IP_UNICAST_IF needs a host route after all"
         );
     }

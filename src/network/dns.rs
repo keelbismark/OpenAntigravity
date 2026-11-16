@@ -917,7 +917,7 @@ mod tests {
             ..with(egress::ClientEgress::Unknown)
         };
         assert!(
-            outcome_note(&plain).map_or(true, |n| !n.contains("VPN")),
+            outcome_note(&plain).is_none_or(|n| !n.contains("VPN")),
             "{:?}",
             outcome_note(&plain)
         );
@@ -1078,7 +1078,7 @@ mod tests {
         // The outcome differs by design, so assert the right one instead of
         // passing silently either way.
         let pinned = after.contains("OPEN_ANTIGRAVITY_HOSTS_BEGIN");
-        if eg.map_or(false, |e| e.vpn_active) {
+        if eg.is_some_and(|e| e.vpn_active) {
             assert!(pinned, "a tunnel is up but nothing was pinned");
         } else {
             assert!(!pinned, "no tunnel, so the block should not be there");

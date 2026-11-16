@@ -299,7 +299,7 @@
         assert_eq!(parse_stamp("E0932 15:09:24.1 x"), None, "day 32");
         assert_eq!(parse_stamp("E0901 25:09:24.1 x"), None, "hour 25");
         // A Cyrillic first byte must not panic the slicing.
-        assert_eq!(parse_stamp("Р­0901 15:09:24.614939 x"), None);
+        assert_eq!(parse_stamp("Р\u{AD}0901 15:09:24.614939 x"), None);
     }
 
     /// The header carries no year, so only today and yesterday can be placed -

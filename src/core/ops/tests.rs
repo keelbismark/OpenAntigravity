@@ -81,10 +81,12 @@ use super::worker::*;
     /// neither could be turned off, while the log said they had been.
     #[test]
     fn a_switch_that_is_off_with_a_note_is_off() {
-        let mut s = Settings::default();
-        s.verify_tls = false;
-        s.rotate_providers = false;
-        s.builtin_exits = false;
+        let s = Settings {
+            verify_tls: false,
+            rotate_providers: false,
+            builtin_exits: false,
+            ..Default::default()
+        };
         let st = blank_status().with_settings_switches(&s);
 
         assert!(!st.verify_tls.is_on(), "off with a note is still off");
@@ -102,8 +104,10 @@ use super::worker::*;
     /// or a flip would answer differently depending on which path drew it.
     #[test]
     fn the_cheap_refresh_and_the_full_one_agree_about_the_settings_switches() {
-        let mut s = Settings::default();
-        s.verify_tls = false;
+        let s = Settings {
+            verify_tls: false,
+            ..Default::default()
+        };
         let a = blank_status().with_settings_switches(&s);
         let b = blank_status().with_settings_switches(&s);
         assert_eq!(a.verify_tls, b.verify_tls);
