@@ -32,6 +32,18 @@ extern "system" {
         cbData: u32,
     ) -> i32;
     fn RegDeleteValueW(hKey: isize, lpValueName: *const u16) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    fn RegCreateKeyExW(
+        hKey: isize,
+        lpSubKey: *const u16,
+        Reserved: u32,
+        lpClass: *const u16,
+        dwOptions: u32,
+        samDesired: u32,
+        lpSecurityAttributes: *mut std::ffi::c_void,
+        phkResult: *mut isize,
+        lpdwDisposition: *mut u32,
+    ) -> i32;
     fn RegEnumKeyExW(
         hKey: isize,
         dwIndex: u32,
@@ -229,12 +241,40 @@ pub fn get_hkcu_run(name: &str) -> Option<String> {
 
 /// Sets or deletes an autostart command in `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
 pub fn set_hkcu_run(name: &str, value: Option<&str>) -> Result<(), String> {
-    let subkey_w = to_wide(HKCU_RUN_SUBKEY);
+    set_reg_value(HKEY_CURRENT_USER, HKCU_RUN_SUBKEY, name, value)
+}
+
+/// Writes or deletes one value under `root\subkey`.
+///
+/// Writing creates the key when it is missing: an installed copy can be
+/// missing the Run key entirely, and tests use a throwaway key of their own
+/// rather than a system-managed one.
+fn set_reg_value(root: isize, subkey: &str, name: &str, value: Option<&str>) -> Result<(), String> {
+    let subkey_w = to_wide(subkey);
     let name_w = to_wide(name);
     let mut key: isize = 0;
     unsafe {
-        if RegOpenKeyExW(HKEY_CURRENT_USER, subkey_w.as_ptr(), 0, KEY_WRITE, &mut key) != 0 {
-            return Err("Не удалось открыть HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run для записи".to_string());
+        let opened = if value.is_some() {
+            RegCreateKeyExW(
+                root,
+                subkey_w.as_ptr(),
+                0,
+                std::ptr::null(),
+                0,
+                KEY_WRITE,
+                std::ptr::null_mut(),
+                &mut key,
+                std::ptr::null_mut(),
+            )
+        } else {
+            RegOpenKeyExW(root, subkey_w.as_ptr(), 0, KEY_WRITE, &mut key)
+        };
+        if opened != 0 {
+            // Deleting what does not exist is already done.
+            if value.is_none() && opened == 2 {
+                return Ok(());
+            }
+            return Err(format!("Не удалось открыть {subkey} для записи: {opened}"));
         }
         let res = match value {
             Some(v) => {
@@ -251,10 +291,10 @@ pub fn set_hkcu_run(name: &str, value: Option<&str>) -> Result<(), String> {
             None => RegDeleteValueW(key, name_w.as_ptr()),
         };
         RegCloseKey(key);
-        if res == 0 || (value.is_none() && (res == 2 || res == 0)) {
+        if res == 0 || (value.is_none() && res == 2) {
             Ok(())
         } else {
-            Err(format!("Ошибка реестра при сохранении автозапуска: {res}"))
+            Err(format!("Ошибка реестра при сохранении значения {subkey}: {res}"))
         }
     }
 }
@@ -570,21 +610,36 @@ pub fn has_conflicting_rules(namespaces: &[&str], our_tag: &str) -> Option<bool>
 mod tests {
     use super::*;
 
+    /// The registry helpers are tested against a throwaway subkey.
+    ///
+    /// Writing to the real `HKCU\...\Run` key is denied on managed machines
+    /// and on some GitHub runners — the test failed there for environmental
+    /// reasons while the production code was fine. A key under
+    /// `Software\OpenAntigravity` is always creatable by the current user.
     #[test]
-    fn test_hkcu_run_read_write_delete() {
-        let test_name = "OpenAntigravity_TestEntry";
-        let test_val = "\"C:\\Test\\App.exe\" --arg";
+    fn registry_value_read_write_delete() {
+        const TEST_SUBKEY: &str = r"Software\OpenAntigravity\RegistryTest";
+        const TEST_NAME: &str = "TestEntry";
+        const TEST_VAL: &str = "\"C:\\Test\\App.exe\" --arg";
 
-        // Cleanup before test
-        let _ = set_hkcu_run(test_name, None);
-        assert_eq!(get_hkcu_run(test_name), None);
+        // Cleanup before the test.
+        let _ = set_reg_value(HKEY_CURRENT_USER, TEST_SUBKEY, TEST_NAME, None);
+        assert_eq!(get_reg_env(HKEY_CURRENT_USER, TEST_SUBKEY, TEST_NAME), None);
 
-        // Write
-        assert!(set_hkcu_run(test_name, Some(test_val)).is_ok());
-        assert_eq!(get_hkcu_run(test_name).as_deref(), Some(test_val));
+        // Write and read back.
+        assert!(
+            set_reg_value(HKEY_CURRENT_USER, TEST_SUBKEY, TEST_NAME, Some(TEST_VAL)).is_ok()
+        );
+        assert_eq!(
+            get_reg_env(HKEY_CURRENT_USER, TEST_SUBKEY, TEST_NAME).as_deref(),
+            Some(TEST_VAL)
+        );
 
-        // Delete
-        assert!(set_hkcu_run(test_name, None).is_ok());
-        assert_eq!(get_hkcu_run(test_name), None);
+        // The real autostart key must be untouched by this test.
+        assert_eq!(get_hkcu_run(TEST_NAME), None);
+
+        // Delete.
+        assert!(set_reg_value(HKEY_CURRENT_USER, TEST_SUBKEY, TEST_NAME, None).is_ok());
+        assert_eq!(get_reg_env(HKEY_CURRENT_USER, TEST_SUBKEY, TEST_NAME), None);
     }
 }
