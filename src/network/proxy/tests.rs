@@ -82,11 +82,11 @@
     #[test]
     fn the_live_listener_is_found_even_when_the_recorded_port_names_a_dead_one() {
         let (live, _listener) = bind_a_fallback_port();
-        let dead = FALLBACK_PORTS
-            .iter()
-            .copied()
-            .find(|p| *p != live)
-            .expect("another fallback port");
+        // Port 1 is never listened on by any test here. It has to be: on Linux
+        // the scan has no image check, so another test's fallback listener
+        // would answer for "dead" and the result would depend on test order.
+        // The other test that uses port 1 only connects to it, never binds.
+        let dead = 1u16;
 
         // The recorded port first, the live one behind it - the order the old
         // code asked in, and the order that used to lose.
