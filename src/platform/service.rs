@@ -393,7 +393,14 @@ mod windows_impl {
         let dst = installed_exe();
 
         fs::create_dir_all(&dir).map_err(|e| format!("не создать {}: {}", dir.display(), e))?;
-        // The file cannot be replaced while the previous relay holds it open.
+        // The file cannot be replaced while the previous relay holds it open -
+        // and the standalone watchdog runs the very same image and is restarted
+        // by its task. Killing processes alone left that task free to start a
+        // new copy between `stop_process` and `copy_over`, so every upgrade
+        // failed with os error 32 and the window kept running a newer build
+        // than the service. `ensure_installed` already stopped the watchdog;
+        // this path did not. The caller re-enables it after the copy.
+        disable_watchdog();
         stop_process();
         if src != dst {
             copy_over(&src, &dst)?;

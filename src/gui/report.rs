@@ -184,6 +184,17 @@ fn relay_part(out: &mut String, r: &Report) {
     );
     let _ = writeln!(
         out,
+        "Сборка службы: {} (окно: {}){}",
+        if r.build.is_empty() { "неизвестна" } else { &r.build },
+        crate::update::current_version(),
+        if !r.build.is_empty() && r.build != crate::update::current_version() {
+            " — ВНИМАНИЕ: служба и окно разных версий, обновление не применилось"
+        } else {
+            ""
+        }
+    );
+    let _ = writeln!(
+        out,
         "Гейт-хосты через локальные адреса: {}",
         if r.loopback { "да" } else { "нет" }
     );

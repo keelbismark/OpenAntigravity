@@ -79,6 +79,11 @@ pub struct Report {
     pub routes: Vec<crate::routes::Row>,
     /// The relay generation that wrote this.
     pub version: u32,
+    /// The application build the relay was compiled as. `version` is the
+    /// record format, not the release: several field reports showed a window
+    /// on a new build with a service still running the old exe, and nothing in
+    /// the record could say so.
+    pub build: String,
     /// What keeps a listener of the relay from coming up (P53, `portcheck`).
     /// Empty when both bound. Written the moment a bind fails or succeeds,
     /// not at the next warm pass: the user is looking at the window then.
@@ -417,6 +422,7 @@ pub fn publish(now: Now<'_>) {
         r.vpn_exit = now.vpn_exit.to_string();
         r.routes = now.routes;
         r.version = crate::dns_forwarder::RELAY_VERSION;
+        r.build = env!("CARGO_PKG_VERSION").to_string();
         r.reached_at = crate::net::last_reached();
         if r.exe.is_empty() {
             r.exe = std::env::current_exe()
