@@ -90,11 +90,8 @@ fn run_worker(
         match cmd {
             Cmd::Stop => return,
             Cmd::Unlocked => {
-                if auto_patch_found(&mut ctx) {
-                    push_status(&mut ctx, Scan::Deep);
-                } else {
-                    push_status(&mut ctx, Scan::Deep);
-                }
+                auto_patch_found(&mut ctx);
+                push_status(&mut ctx, Scan::Deep);
                 ctx.busy(None);
             }
             Cmd::RemeasureVpn => {
@@ -225,12 +222,32 @@ fn run_worker(
             }
             Cmd::KillHolder => {
                 ctx.busy(Some("Освобождение порта"));
-                let target = crate::gate::read().and_then(|r| {
-                    r.blockers
-                        .into_iter()
-                        .find(|b| b.cause == "held" && b.ours && !b.by.is_empty())
-                });
+                let (target, owner_pid) = match crate::gate::read() {
+                    Some(r) => {
+                        let owner_pid = r.owner_pid;
+                        let blocker = r
+                            .blockers
+                            .into_iter()
+                            .find(|b| b.cause == "held" && b.ours && !b.by.is_empty());
+                        (blocker, owner_pid)
+                    }
+                    None => (None, 0),
+                };
                 match target {
+                    Some(b) if b.pid == owner_pid && owner_pid != 0 => {
+                        // The relay that is serving right now is holding the
+                        // address - that is what serving means. Ending it takes
+                        // the door away from a client that is dialling it, and
+                        // the client is told "connection refused".
+                        ctx.log(
+                            Level::Warn,
+                            format!(
+                                "Порт {} держит релей, который сейчас обслуживает обход \
+                                 (pid {}) — его завершать нельзя.",
+                                b.addr, b.pid
+                            ),
+                        );
+                    }
                     Some(b) => match crate::portcheck::kill_holding_process(b.pid, &b.by) {
                         Ok(pid) => ctx.log(
                             Level::Info,

@@ -4,9 +4,11 @@ pub mod elevate;
 #[cfg(target_os = "windows")]
 pub mod fast_win;
 pub mod health;
+pub mod launcher;
 pub mod legacy;
 pub mod notify;
 pub mod portcheck;
+pub mod relay_role;
 pub mod service;
 pub mod shortcut;
 pub mod single_instance;

@@ -143,6 +143,52 @@ mod windows_impl {
             .collect()
     }
 
+    /// The processes holding the addresses only our relay holds.
+    ///
+    /// Found by the ports rather than by the command line, because a relay's
+    /// command line is not readable on a modern Windows without elevation -
+    /// measured: it came back empty - and a relay that cannot be found cannot
+    /// be stopped. The ports are the ones the relay cannot serve without: the
+    /// gate hosts' door, the DNS relay and the local proxy.
+    ///
+    /// Only our own relays are named. A foreign program on one of these
+    /// addresses is not ours to kill - the blocker card names it instead.
+    fn relay_holders_by_port(me: u32) -> Vec<u32> {
+        use crate::platform::portcheck::Proto;
+        let mut pids = Vec::new();
+        let mut addrs: Vec<(std::net::SocketAddr, Proto)> = Vec::new();
+
+        if let Ok(dns_addr) = "127.0.0.53:53".parse() {
+            addrs.push((dns_addr, Proto::Udp));
+        }
+        for (_host, ip) in crate::network::loopback::HOSTS {
+            addrs.push((std::net::SocketAddr::from((ip, 443)), Proto::Tcp));
+        }
+        for port in crate::network::proxy::candidate_ports() {
+            addrs.push((
+                std::net::SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, port)),
+                Proto::Tcp,
+            ));
+        }
+
+        for (addr, proto) in addrs {
+            let ours = crate::platform::portcheck::listener_image(addr)
+                .map(|n| crate::platform::portcheck::is_our_relay_image(&n))
+                .unwrap_or(false);
+            if !ours {
+                continue;
+            }
+            for pid in crate::platform::portcheck::listener_pids(addr, proto) {
+                if pid != me {
+                    pids.push(pid);
+                }
+            }
+        }
+        pids.sort_unstable();
+        pids.dedup();
+        pids
+    }
+
     fn is_running_portable() -> bool {
         let name = relay_image_name();
         match read_relay_pid() {
@@ -192,13 +238,7 @@ mod windows_impl {
             pids.extend(relay_pids_by_cmdline());
         }
         // Also check if any other instance of ours is holding port 53 (127.0.0.53:53).
-        if let Ok(dns_addr) = "127.0.0.53:53".parse() {
-            for pid in crate::platform::portcheck::listener_pids(dns_addr, crate::platform::portcheck::Proto::Udp) {
-                if pid != me {
-                    pids.push(pid);
-                }
-            }
-        }
+        pids.extend(relay_holders_by_port(me));
         pids.sort_unstable();
         pids.dedup();
         let mut killed = false;
@@ -718,7 +758,7 @@ pub fn disable() -> Result<(), String> {
                      {{ 'yes' }} else {{ 'no' }}",
                     name
                 ))
-                .map_or(false, |o| {
+                .is_some_and(|o| {
                     String::from_utf8_lossy(&o.stdout).trim() == "yes"
                 });
                 let via_schtasks = task_exists(name);

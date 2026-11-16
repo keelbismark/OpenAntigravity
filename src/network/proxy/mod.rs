@@ -64,14 +64,57 @@ fn port_file() -> PathBuf {
 /// the variable, the door's hop, the egress probe - asks this.
 pub fn port() -> u16 {
     match PORT.load(std::sync::atomic::Ordering::Relaxed) {
-        0 => fs::read_to_string(port_file())
-            .ok()
-            .and_then(|s| s.trim().parse::<u16>().ok())
-            .filter(|p| *p != 0)
-            .unwrap_or(DEFAULT_PORT),
+        0 => recorded_port().unwrap_or(DEFAULT_PORT),
         p => p,
     }
 }
+
+/// The port a relay recorded on disk, if any.
+///
+/// Read from the file rather than from memory because this is machine state:
+/// the process that wrote it may have been a neighbour relay, and it may have
+/// gone since.
+fn recorded_port() -> Option<u16> {
+    fs::read_to_string(port_file())
+        .ok()
+        .and_then(|s| s.trim().parse::<u16>().ok())
+        .filter(|p| *p != 0)
+}
+
+/// Every port our relay may be on, given the port recorded on disk.
+///
+/// The default, the fallbacks, and the recorded one. `adopt` only ever picks
+/// from these, so the set is complete and bounded - and it is asked as a
+/// *set*, because the recorded port is the one piece of this that another
+/// process may have written. Asking only that port is how a healthy bypass
+/// was declared dead: the record named 43129, the live relay was on 53129,
+/// and the watchdog took the proxy variable off every ninety seconds.
+pub fn candidate_ports_from(recorded: Option<u16>) -> Vec<u16> {
+    let mut ports = vec![DEFAULT_PORT];
+    for p in FALLBACK_PORTS {
+        if !ports.contains(&p) {
+            ports.push(p);
+        }
+    }
+    if let Some(p) = recorded {
+        if p != 0 && !ports.contains(&p) {
+            ports.push(p);
+        }
+    }
+    ports
+}
+
+/// The ports this machine's relay may be on.
+pub fn candidate_ports() -> Vec<u16> {
+    candidate_ports_from(recorded_port())
+}
+
+/// How long the scan waits on one port.
+///
+/// A listener on the loopback accepts at once, so a short budget is enough.
+/// A longer one only matters for a port whose packets are being swallowed -
+/// and waiting there tells us nothing a refusal would not.
+const SCAN_BUDGET: Duration = Duration::from_millis(400);
 
 /// Takes `port` as this machine's, in this process and on disk.
 fn adopt(port: u16) {
@@ -241,11 +284,20 @@ pub fn wait_for_our_listener(budget: Duration) -> Option<u16> {
 }
 
 fn ours_answers(port: u16) -> bool {
+    ours_answers_within(port, Duration::from_secs(1))
+}
+
+/// The same question, with a budget of our own.
+///
+/// The image check is the point: a foreign program on one of these ports is
+/// not ours, and mistaking it for ours is what made the watchdog take the
+/// proxy variable off a healthy bypass.
+fn ours_answers_within(port: u16, budget: Duration) -> bool {
     if bound() {
         // The relay asking about itself: `PORT` is set before `PROXY_BOUND`.
         return PORT.load(std::sync::atomic::Ordering::Relaxed) == port;
     }
-    if !answers_at(addr_at(port)) {
+    if !answers_at_within(addr_at(port), budget) {
         return false;
     }
     #[cfg(windows)]
@@ -270,6 +322,23 @@ fn ours_answers(port: u16) -> bool {
     true
 }
 
+/// The port on which OUR relay's listener answers, among `ports`.
+///
+/// Our own image has to be the one holding it - see `ours_answers_within`.
+pub fn our_listener_port_in(ports: &[u16]) -> Option<u16> {
+    ports.iter().copied().find(|p| ours_answers_within(*p, SCAN_BUDGET))
+}
+
+/// The port on which our relay's listener answers right now, if any.
+///
+/// Every port the relay may be on is asked, not the one a file happens to
+/// name. The file is written by whichever relay was running and can name a
+/// port its neighbour left behind; asking only that port is how a working
+/// bypass was declared dead.
+pub fn our_listener_port() -> Option<u16> {
+    our_listener_port_in(&candidate_ports())
+}
+
 /// The address the listener holds, as a `SocketAddr`. The IP is a literal in
 /// this file, so it cannot fail.
 pub(crate) fn listen_addr() -> std::net::SocketAddr {
@@ -277,7 +346,7 @@ pub(crate) fn listen_addr() -> std::net::SocketAddr {
 }
 
 fn addr_at(port: u16) -> std::net::SocketAddr {
-    std::net::SocketAddr::from((LISTEN_IP.parse::<Ipv4Addr>().unwrap(), port))
+    std::net::SocketAddr::from((Ipv4Addr::LOCALHOST, port))
 }
 
 /// Whether something accepts connections on the proxy's address right now.
@@ -299,7 +368,12 @@ pub fn listener_answers() -> bool {
 /// because the version this replaces answered `true` on its own parse failure, so
 /// a mistake there would have hidden a dead proxy rather than reported one.
 fn answers_at(addr: std::net::SocketAddr) -> bool {
-    TcpStream::connect_timeout(&addr, Duration::from_secs(1)).is_ok()
+    answers_at_within(addr, Duration::from_secs(1))
+}
+
+/// The check above, with a budget of our own.
+fn answers_at_within(addr: std::net::SocketAddr, budget: Duration) -> bool {
+    TcpStream::connect_timeout(&addr, budget).is_ok()
 }
 
 #[cfg(test)]
@@ -1285,10 +1359,12 @@ const BIND_RETRY_WAIT: Duration = Duration::from_secs(3);
 /// unless the refusal is security software's (which follows this program to any
 /// port), the proxy moves to one outside the dynamic range and records it
 /// (`adopt`), so the variable written after it names the port that answers.
+#[allow(clippy::result_large_err)]
 fn bind_listener() -> Result<TcpListener, crate::gate::Blocker> {
     bind_from(port(), &FALLBACK_PORTS)
 }
 
+#[allow(clippy::result_large_err)]
 fn bind_from(first: u16, fallbacks: &[u16]) -> Result<TcpListener, crate::gate::Blocker> {
     let mut failed: Option<(std::io::Error, crate::portcheck::Cause)> = None;
     for attempt in 0..BIND_TRIES {

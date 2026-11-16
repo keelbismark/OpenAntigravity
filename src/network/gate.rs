@@ -91,6 +91,15 @@ pub struct Report {
     pub started_at: u64,
     /// The relay's own exe - the file an antivirus exception has to name.
     pub exe: String,
+    /// The process that owns the relay role - the one that serves.
+    ///
+    /// The window asks the operating system who holds an address, and a
+    /// holder that is one of our own images reads as "a leftover copy of
+    /// ours". That is true of a leftover and true of the relay that is
+    /// working right now, and the difference matters: the card offers to end
+    /// the holder, and ending the relay that is serving takes the door away
+    /// from a client that is dialling it.
+    pub owner_pid: u32,
 }
 
 /// Something on this machine that keeps part of the bypass from running, as the
@@ -220,16 +229,108 @@ pub fn now_unix() -> u64 {
 }
 
 fn path() -> Option<PathBuf> {
-    let dir = crate::dns_forwarder::log_dir();
+    let dir = record_dir()?;
     if dir.as_os_str().is_empty() {
         return None;
     }
     Some(dir.join(FILE_NAME))
 }
 
+/// Where the record is written and read from.
+///
+/// One place, whatever mode the relay runs in. The relay is one per machine,
+/// so its state is machine state: a portable build used to keep this beside
+/// its own executable, which meant a window in portable mode read a record
+/// the installed relay never wrote - and the other way round, each overwriting
+/// the other's.
+fn record_dir() -> Option<PathBuf> {
+    #[cfg(test)]
+    {
+        // A test writes to a directory of its own and never to the machine's
+        // record - the file the window reads while the user is looking at it.
+        TEST_DIR.lock().ok().and_then(|g| g.clone())
+    }
+    #[cfg(not(test))]
+    {
+        Some(state_dir())
+    }
+}
+
+#[cfg(not(test))]
+fn state_dir() -> PathBuf {
+    // One place for the system state, whatever mode the relay runs in. The
+    // portable build used to have its own copy of this path, and the two
+    // answers drifted apart.
+    crate::portable::system_data_dir()
+}
+
+/// The directory a test writes the record to. `None` means "do not write".
+#[cfg(test)]
+static TEST_DIR: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+/// Points the record at a directory of the caller's choosing, for tests.
+#[cfg(test)]
+pub fn set_test_dir(dir: Option<PathBuf>) {
+    if let Ok(mut guard) = TEST_DIR.lock() {
+        *guard = dir;
+    }
+}
+
+/// Whether this process is the relay that serves the bypass.
+///
+/// Only the owner publishes the record. A relay that stands by - waiting for
+/// the role, see `platform::relay_role` - must not overwrite the owner's
+/// state with its own: a different exe, `loopback: false`, a picture of a
+/// relay that serves nothing. The window reads this file to decide whether the
+/// bypass is alive, so the wrong writer is a wrong answer, not a wrong
+/// cosmetic.
+static OWNER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Says whether this process is the relay that serves.
+pub fn set_owner(on: bool) {
+    OWNER.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether this process is the relay that serves.
+pub fn is_owner() -> bool {
+    OWNER.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 pub fn read() -> Option<Report> {
-    let raw = std::fs::read_to_string(path()?).ok()?;
+    // The place the record lives now, and the place an older build kept it.
+    // The older one is read only until the current one appears: on the day of
+    // the upgrade the relay has not written yet, and a window that found
+    // nothing would call a working bypass dead.
+    let current = read_at(path());
+    let legacy = read_at(legacy_path());
+    match (current, legacy) {
+        (Some(c), Some(l)) => Some(if c.at >= l.at { c } else { l }),
+        (Some(c), None) => Some(c),
+        (None, Some(l)) => Some(l),
+        (None, None) => None,
+    }
+}
+
+fn read_at(path: Option<PathBuf>) -> Option<Report> {
+    let raw = std::fs::read_to_string(path?).ok()?;
     serde_json::from_str(&raw).ok()
+}
+
+/// Where an older build kept the record: beside the executable, which in
+/// portable mode is a different directory on every machine.
+#[cfg(not(test))]
+fn legacy_path() -> Option<PathBuf> {
+    let dir = crate::dns_forwarder::log_dir();
+    if dir.as_os_str().is_empty() {
+        return None;
+    }
+    let legacy = dir.join(FILE_NAME);
+    (legacy != path()?).then_some(legacy)
+}
+
+#[cfg(test)]
+fn legacy_path() -> Option<PathBuf> {
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -241,6 +342,11 @@ pub fn read() -> Option<Report> {
 static CURRENT: Mutex<Option<Report>> = Mutex::new(None);
 
 fn update(change: impl FnOnce(&mut Report)) {
+    // Only the owner publishes. A relay that stands by has nothing of its own
+    // to say, and what it would say would be about itself.
+    if !is_owner() {
+        return;
+    }
     let snapshot = {
         let Ok(mut guard) = CURRENT.lock() else {
             return;
@@ -253,6 +359,9 @@ fn update(change: impl FnOnce(&mut Report)) {
             // this relay's start.
             report.started_at = report.at;
         }
+        // Whoever writes the record is the one serving - there is only one
+        // writer, because only the owner writes at all.
+        report.owner_pid = std::process::id();
         report.clone()
     };
     // Outside the lock. Nothing here calls back into this module, but a file
@@ -635,6 +744,44 @@ fn worth_sending(fresh: &View, shown: &View) -> bool {
 mod tests {
     use super::*;
     use crate::ls_log::Sighting;
+
+    /// Only the owner writes the record.
+    ///
+    /// A relay that stands by - waiting for the role - has nothing of its own
+    /// to say, and what it would say would be about itself: a different exe,
+    /// `loopback: false`, a picture of a relay that serves nothing. The window
+    /// reads this file to decide whether the bypass is alive, so the wrong
+    /// writer is a wrong answer rather than a wrong cosmetic.
+    ///
+    /// Measured on a machine that had both an installed and a portable relay:
+    /// the installed one held nothing at all, and it was the one writing the
+    /// state the window read.
+    #[test]
+    fn only_the_owner_writes_the_record() {
+        let dir = std::env::temp_dir().join(format!("oag_gate_owner_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        set_test_dir(Some(dir.clone()));
+
+        let was_owner = is_owner();
+
+        set_owner(false);
+        note_started();
+        assert!(
+            !dir.join(FILE_NAME).exists(),
+            "a relay that does not own the role must not write the record"
+        );
+
+        set_owner(true);
+        note_started();
+        assert!(
+            dir.join(FILE_NAME).exists(),
+            "the owner writes the record"
+        );
+
+        set_owner(was_owner);
+        set_test_dir(None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     fn seen(ago: u64, count: usize) -> Option<Sighting> {
         Some(Sighting {

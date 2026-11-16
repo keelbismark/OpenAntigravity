@@ -1,6 +1,38 @@
     use super::*;
     use std::net::Ipv4Addr;
 
+    /// A relay that has stopped going round must be visible as not serving.
+    ///
+    /// Measured on a machine where a relay's log went silent for two hours
+    /// while its process stayed alive and held the machine's ports: the
+    /// machine had a relay, a record frozen at the moment it stalled, and no
+    /// bypass at all. The heartbeat is what tells the two apart.
+    #[test]
+    fn a_silent_warm_loop_reads_as_a_stalled_relay() {
+        let window = Duration::from_secs(300);
+        // A second past the window: a stall.
+        assert!(
+            heartbeat_is_stale(100, 401, window),
+            "a heartbeat older than the window is a stall"
+        );
+        // Exactly the window: still inside it.
+        assert!(
+            !heartbeat_is_stale(100, 400, window),
+            "a relay inside its window is still serving"
+        );
+        // Ten minutes, with a ten-minute window: not yet.
+        assert!(
+            !heartbeat_is_stale(100, 700, Duration::from_secs(600)),
+            "a relay inside its window is still serving"
+        );
+        // Never gone round: not a stall - a relay that has just started is
+        // given its chance before it is called dead.
+        assert!(
+            !heartbeat_is_stale(0, 400, window),
+            "a relay that has not gone round yet is not a stall"
+        );
+    }
+
     #[test]
     fn a_gate_hosts_aaaa_and_https_questions_get_an_empty_answer() {
         for qtype in [28u8, 64, 65] {

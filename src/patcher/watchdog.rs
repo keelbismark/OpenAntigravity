@@ -164,26 +164,60 @@ const ENV_RECHECK: Duration = Duration::from_secs(10 * 60);
 struct ListenerGuard {
     misses: u32,
     env_checked_at: Option<std::time::Instant>,
+    /// The port our relay's listener was last seen answering on.
+    ///
+    /// Kept because it is the port the variable names: the variable is written
+    /// for the port the listener was on, so that is the value to take off when
+    /// the listener goes. Without it the guard would fall back to the default
+    /// port, and a relay that had moved would keep a variable naming a port
+    /// nothing held.
+    last_port: Option<u16>,
 }
 
 impl ListenerGuard {
+    /// The URL the guard would take off: the port our listener was last seen
+    /// on.
+    ///
+    /// The port it was *seen* on, not the one a file names - the file is
+    /// written by whichever relay was running and can name a port its
+    /// neighbour left behind. The variable names the port the listener was
+    /// on, so that is the value to take off.
+    fn url_to_remove(&self) -> String {
+        match self.last_port {
+            Some(port) => crate::proxy::url_at(port),
+            None => crate::proxy::proxy_url(),
+        }
+    }
+
     fn check(&mut self) {
-        if crate::proxy::listener_answers() {
-            self.misses = 0;
-            return;
+        // The live relay's listener, wherever it is. Every port the relay may
+        // be on is asked, not the one a file happens to name: that file is
+        // machine state, written by whichever relay was running, and it can
+        // name a port its neighbour left behind. Asking only that port is how
+        // a working bypass was declared dead - measured on a machine where the
+        // record named 43129, the live relay was on 53129, and the variable
+        // came off every ninety seconds for as long as the bypass was in use.
+        match crate::proxy::our_listener_port() {
+            Some(port) => {
+                self.misses = 0;
+                self.last_port = Some(port);
+                return;
+            }
+            None => {
+                self.misses = self.misses.saturating_add(1);
+                if self.misses < LISTENER_DEAD_AFTER {
+                    return;
+                }
+                if self
+                    .env_checked_at
+                    .is_some_and(|at| at.elapsed() < ENV_RECHECK)
+                {
+                    return;
+                }
+                self.env_checked_at = Some(std::time::Instant::now());
+            }
         }
-        self.misses = self.misses.saturating_add(1);
-        if self.misses < LISTENER_DEAD_AFTER {
-            return;
-        }
-        if self
-            .env_checked_at
-            .is_some_and(|at| at.elapsed() < ENV_RECHECK)
-        {
-            return;
-        }
-        self.env_checked_at = Some(std::time::Instant::now());
-        let url = crate::proxy::proxy_url();
+        let url = self.url_to_remove();
         let ca = crate::proxy::ca_cert_path().to_string_lossy().to_string();
         match crate::endpoint::remove_proxy_if_ours(&url, &ca) {
             Ok(true) => log(&format!(
@@ -313,7 +347,15 @@ fn inspect(target: &Path, st: &mut FileState) {
 /// patch, everything else is a native binary.
 fn repatch(target: &Path) -> RepatchOutcome {
     if target.extension().and_then(|e| e.to_str()) == Some("js") {
-        patch_ide::repatch_ide_js(target)
+        // Two different JS patches. `main.js` carries the shell's auth code;
+        // `extension.js` carries the user-status shape the new build fixes.
+        // Sending one to the other's patcher writes a wrong signature or,
+        // worse, reports "already patched" for a file nobody patched.
+        if target.file_name().and_then(|n| n.to_str()) == Some("extension.js") {
+            patch_ide::repatch_extension_js(target)
+        } else {
+            patch_ide::repatch_ide_js(target)
+        }
     } else {
         patch_binary::repatch_if_needed(target)
     }
@@ -332,6 +374,19 @@ fn targets(inst: &Path) -> Vec<PathBuf> {
         .join("main.js");
     if ide_js.exists() {
         list.push(ide_js);
+    }
+    // The extension patch is a separate patch on a separate file. An
+    // Antigravity update restores the original bundle, so without this the
+    // first run patched it and every later update silently undid the work.
+    let ext_js = inst
+        .join("resources")
+        .join("app")
+        .join("extensions")
+        .join("antigravity")
+        .join("dist")
+        .join("extension.js");
+    if ext_js.exists() {
+        list.push(ext_js);
     }
     list
 }
@@ -410,6 +465,79 @@ fn log(line: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The watcher keeps the extension patch alive after an update, and uses
+    /// the extension patcher for it - not the `main.js` one.
+    ///
+    /// The two files carry different signatures, so sending one to the other's
+    /// patcher either writes garbage or reports "already patched" for a file
+    /// nobody patched.
+    #[test]
+    fn the_watcher_repatches_extension_js_with_its_own_patcher() {
+        let inst = std::env::temp_dir().join(format!("oag_wd_ext_{}", std::process::id()));
+        let ext = inst
+            .join("resources")
+            .join("app")
+            .join("extensions")
+            .join("antigravity")
+            .join("dist")
+            .join("extension.js");
+        let _ = std::fs::remove_dir_all(&inst);
+        std::fs::create_dir_all(ext.parent().unwrap()).unwrap();
+        std::fs::write(
+            &ext,
+            "const t=await a.UserStatus.getUserStatus();if(!t)return[];const n=(0,f)(t,d),{email:e,name:r}=n;return\"\"===z?[]:",
+        )
+        .unwrap();
+
+        assert!(
+            targets(&inst).contains(&ext),
+            "the watcher must know about the extension file"
+        );
+        assert!(
+            matches!(repatch(&ext), RepatchOutcome::Repatched(_)),
+            "the extension patcher must be used"
+        );
+        assert!(
+            matches!(repatch(&ext), RepatchOutcome::AlreadyPatched),
+            "a second pass is a no-op"
+        );
+
+        let _ = std::fs::remove_dir_all(&inst);
+    }
+
+    /// The guard takes off the value that names the port the listener was
+    /// actually on.
+    ///
+    /// The regression this pins: the guard asked about the port a file named -
+    /// which another relay may have written, for a port it has since left - and
+    /// so took off a variable naming a port that was answering perfectly well.
+    /// Measured: the record said 43129, the live relay was on 53129, and the
+    /// variable came off every ninety seconds.
+    #[test]
+    fn the_guard_takes_off_the_port_the_listener_was_seen_on() {
+        let mut guard = ListenerGuard::default();
+        // Nothing seen yet: the recorded port, which is all there is to go on.
+        assert_eq!(
+            guard.url_to_remove(),
+            crate::proxy::proxy_url(),
+            "with nothing seen, the recorded port is the only answer"
+        );
+
+        guard.last_port = Some(53129);
+        assert_eq!(
+            guard.url_to_remove(),
+            "http://127.0.0.1:53129",
+            "the port the listener was seen on is the one to take off"
+        );
+
+        guard.last_port = Some(43129);
+        assert_eq!(
+            guard.url_to_remove(),
+            "http://127.0.0.1:43129",
+            "a relay that had moved is taken off by the port it moved to"
+        );
+    }
 
     /// The settle rule: a change is acted on only after the same (len, mtime)
     /// is seen twice, so a file still being written is never touched.

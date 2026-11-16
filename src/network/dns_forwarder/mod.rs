@@ -218,7 +218,7 @@ pub fn log_dir() -> PathBuf {
     if let Some(dir) = crate::portable::data_dir() {
         return dir;
     }
-    PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default()).join("OpenAntigravity")
+    crate::portable::system_data_dir()
 }
 
 /// РџРѕСЂС‚Р°С‚РёРІРЅС‹Р№ СЂРµР¶РёРј РїСЂРёРѕСЂРёС‚РµС‚РµРЅ Рё РЅР° Linux: РІСЃС‘ СЃРѕСЃС‚РѕСЏРЅРёРµ вЂ” СЂСЏРґРѕРј СЃ exe,
@@ -228,14 +228,7 @@ pub fn log_dir() -> PathBuf {
     if let Some(dir) = crate::portable::data_dir() {
         return dir;
     }
-    let base = std::env::var("XDG_DATA_HOME")
-        .ok()
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| {
-            let home = std::env::var("HOME").unwrap_or_default();
-            format!("{}/.local/share", home)
-        });
-    PathBuf::from(base).join("openantigravity")
+    crate::portable::system_data_dir()
 }
 
 pub fn log_path() -> PathBuf {
@@ -528,6 +521,66 @@ fn network_fingerprint(isp: u32, best: Option<u32>, tunnel: bool) -> u64 {
     1 + ((isp as u64) << 33) + ((best.unwrap_or(0) as u64) << 1) + tunnel as u64
 }
 
+/// The relay's heartbeat: when the warm loop last went round.
+///
+/// A relay that stops going round is not serving. The route table freezes,
+/// the record goes stale, and the door keeps answering with a route that no
+/// longer works - measured on a machine where a relay's log went silent for
+/// two hours while the process stayed alive and held the machine's ports.
+///
+/// It also has to stop being the owner: the role is held until the process
+/// ends, and a process that serves nothing must not keep every other relay
+/// out.
+static HEARTBEAT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// How long the warm loop may be silent before the relay is considered not
+/// serving.
+///
+/// A pass is fifteen seconds of sleep plus its work, and that work opens with
+/// a PowerShell VPN check and runs probes with budgets of seconds each. Five
+/// minutes is a hundred times a pass - long enough that a slow machine is
+/// not mistaken for a dead one, short enough that a stalled relay gives the
+/// role up while the user is still looking at the problem.
+pub const HEARTBEAT_STALE_AFTER: Duration = Duration::from_secs(5 * 60);
+
+/// Stamps the heartbeat.
+pub fn heartbeat() {
+    HEARTBEAT.store(
+        crate::gate::now_unix(),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+}
+
+/// How long ago the warm loop last went round.
+pub fn heartbeat_age() -> Duration {
+    let last = HEARTBEAT.load(std::sync::atomic::Ordering::Relaxed);
+    if last == 0 {
+        return Duration::ZERO;
+    }
+    Duration::from_secs(crate::gate::now_unix().saturating_sub(last))
+}
+
+/// Whether the warm loop has been silent for too long.
+pub fn heartbeat_stalled() -> bool {
+    heartbeat_stalled_after(HEARTBEAT_STALE_AFTER)
+}
+
+/// The same question, with the window of our own choosing.
+fn heartbeat_stalled_after(stale_after: Duration) -> bool {
+    heartbeat_is_stale(
+        HEARTBEAT.load(std::sync::atomic::Ordering::Relaxed),
+        crate::gate::now_unix(),
+        stale_after,
+    )
+}
+
+/// Whether a heartbeat this old is a stall.
+///
+/// A heartbeat of zero is a relay that has not gone round yet - not a stall.
+fn heartbeat_is_stale(last: u64, now: u64, stale_after: Duration) -> bool {
+    last != 0 && Duration::from_secs(now.saturating_sub(last)) > stale_after
+}
+
 fn warm_forever() {
     let mut since_upstream = PROBE_HEALTHY_EVERY;
     let mut since_exits = PROBE_HEALTHY_EVERY;
@@ -536,6 +589,10 @@ fn warm_forever() {
     let mut since_exit_check = Duration::ZERO;
     let mut last_best: Option<u32> = None;
     loop {
+        // The relay's heartbeat: it goes round, so the relay is serving.
+        // Stamped first, so a pass that dies later still counts as one that
+        // happened.
+        heartbeat();
         // One small record per pass, for a window that is another process and
         // can otherwise only read the log meant for a person (P29). **First** in
         // the pass, not last: a pass opens with a PowerShell VPN check and runs

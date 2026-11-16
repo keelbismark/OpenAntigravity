@@ -61,6 +61,69 @@
         );
     }
 
+    /// Binds a port the relay may fall back to, and returns it with the
+    /// listener that holds it.
+    fn bind_a_fallback_port() -> (u16, TcpListener) {
+        for p in FALLBACK_PORTS {
+            if let Ok(l) = TcpListener::bind(("127.0.0.1", p)) {
+                return (p, l);
+            }
+        }
+        panic!("no fallback port could be bound");
+    }
+
+    /// The live listener is found even when the recorded port names a dead one.
+    ///
+    /// This is the case that had the watchdog taking the proxy variable off a
+    /// working bypass every ninety seconds: the file on disk named one port -
+    /// written by a neighbour relay that has since gone - and the relay was
+    /// actually listening on another. Asking only the recorded port found
+    /// nothing, and "nothing" was read as "the bypass is dead".
+    #[test]
+    fn the_live_listener_is_found_even_when_the_recorded_port_names_a_dead_one() {
+        let (live, _listener) = bind_a_fallback_port();
+        let dead = FALLBACK_PORTS
+            .iter()
+            .copied()
+            .find(|p| *p != live)
+            .expect("another fallback port");
+
+        // The recorded port first, the live one behind it - the order the old
+        // code asked in, and the order that used to lose.
+        let found = our_listener_port_in(&[dead, live]);
+        assert_eq!(
+            found,
+            Some(live),
+            "a dead recorded port must not hide the live listener"
+        );
+    }
+
+    /// Every port the relay may be on is asked - the default, the fallbacks
+    /// and the recorded one. The recorded port is the only piece of this that
+    /// another process may have written, and it is the one that cannot be
+    /// trusted on its own.
+    #[test]
+    fn every_port_the_relay_may_have_is_asked_not_just_the_recorded_one() {
+        let recorded = FALLBACK_PORTS.last().copied();
+        let ports = candidate_ports_from(recorded);
+        assert!(ports.contains(&DEFAULT_PORT), "the default is asked");
+        for p in FALLBACK_PORTS {
+            assert!(ports.contains(&p), "fallback {p} is asked");
+        }
+        if let Some(r) = recorded {
+            assert!(ports.contains(&r), "the recorded port is asked");
+        }
+        // The set is what the relay may occupy - bounded, so the scan cannot
+        // wander over the machine's ports. A recorded port that is already one
+        // of ours adds nothing.
+        let extra = usize::from(
+            recorded
+                .map(|r| !FALLBACK_PORTS.contains(&r) && r != DEFAULT_PORT)
+                .unwrap_or(false),
+        );
+        assert_eq!(ports.len(), 1 + FALLBACK_PORTS.len() + extra);
+    }
+
     /// A status line that lost its carriage returns is still valid Rust and
     /// still compiles - it just produces a response no HTTP client accepts.
     /// Written as raw byte values so no tool can normalise the test itself.
@@ -278,7 +341,7 @@
     fn a_held_port_with_nowhere_to_go_says_who_holds_it() {
         let holder = TcpListener::bind("127.0.0.1:0").unwrap();
         let held = holder.local_addr().unwrap().port();
-        let b = bind_from(held, &[]).err().expect("nothing to move to");
+        let b = bind_from(held, &[]).expect_err("nothing to move to");
         assert_eq!(b.what, "proxy");
         if cfg!(windows) {
             assert_eq!(b.cause, "held");

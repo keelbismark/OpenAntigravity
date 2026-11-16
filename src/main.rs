@@ -665,7 +665,7 @@ pub fn install_label(install: &Path) -> &'static str {
 
 pub fn print_help() {
     println!(
-        "Open Antigravity v{} (портативная сборка)
+        "Open Antigravity v{}{}\n\
 \
          Разблокировка и сетевая маршрутизация для Antigravity 2.0 (Google IDE).
 \
@@ -690,6 +690,10 @@ pub fn print_help() {
            --check [--json]           Комплексная сетевая и системная диагностика (self-test)
 \
            --shortcut                 Создать ярлыки на Рабочем столе и в главном меню
+\
+           --launch [ide|cli|any]     Запустить выбранный компонент Antigravity с прокси
+\
+           --autostart [on|off|admin] Настроить автозапуск при входе в систему (admin: без UAC)
 
 \
          Справка и информация:
@@ -704,8 +708,37 @@ pub fn print_help() {
 
 \
          По умолчанию открывается графический интерфейс (GUI), либо TUI, если дисплей недоступен.",
-        crate::update::current_version()
+        crate::update::current_version(),
+        if crate::portable::enabled() { " (портативная сборка)" } else { "" }
     );
+}
+
+/// Ends a relay that has stopped going round.
+///
+/// The role is held until the process ends, and a relay whose warm loop has
+/// stalled serves nothing - the route table freezes, the record goes stale,
+/// and every other relay is kept out of a machine that has no working bypass
+/// at all. Ending the process is what gives the role back: the operating
+/// system releases it when the process dies, and the relay that was waiting
+/// takes it.
+///
+/// Measured on a machine where a relay's log went silent for two hours while
+/// its process stayed alive and held the machine's ports.
+fn spawn_heartbeat_guard() {
+    std::thread::spawn(|| {
+        // A third of the stale window: the relay has to be given a chance to
+        // come round before it is called dead.
+        let every = dns_forwarder::HEARTBEAT_STALE_AFTER / 3;
+        loop {
+            std::thread::sleep(every);
+            if dns_forwarder::heartbeat_stalled() {
+                dns_forwarder::log_proxy(
+                    "релей: тёплый проход остановился — освобождаю роль, чтобы другой релей взял её",
+                );
+                std::process::exit(0);
+            }
+        }
+    });
 }
 
 fn main() {
@@ -760,11 +793,24 @@ fn main() {
 
     if env::args().any(|a| a == background::FORWARDER_FLAG) {
         dns_forwarder::detach_console();
+        // One relay serves the machine. A second one waits instead of fighting
+        // for the same addresses - and takes over the moment the first goes.
+        let role = crate::platform::relay_role::acquire_with_failover(
+            crate::platform::relay_role::RELAY_ROLE_NAME,
+        );
+        // Only the owner publishes the record the window reads.
+        crate::gate::set_owner(true);
         watchdog::start();
+        // The heartbeat, stamped before the guard watches it: the warm loop
+        // has not gone round yet, and a guard that started with a silent
+        // heartbeat would end the relay before it began.
+        dns_forwarder::heartbeat();
+        spawn_heartbeat_guard();
         if let Err(e) = dns_forwarder::run() {
             dns_forwarder::log_fatal(&e);
             std::process::exit(1);
         }
+        drop(role);
         return;
     }
 
@@ -774,12 +820,42 @@ fn main() {
         return;
     }
 
+    // The relay role, asked about directly: "taken" when this process could
+    // take it, "busy" when another relay holds it. Holding it until the
+    // process ends is what makes the question answerable from a shell while
+    // the relay is running - and it is what the cross-process test in
+    // `tests/test_cli.rs` uses to prove that two relays cannot both own the
+    // bypass.
+    if env::args().any(|a| a == "--relay-role") {
+        match crate::platform::relay_role::RelayRole::try_take(
+            crate::platform::relay_role::RELAY_ROLE_NAME,
+        ) {
+            Some(role) => {
+                println!("taken");
+                let _ = role;
+                // Held until the process ends.
+                loop {
+                    std::thread::sleep(std::time::Duration::from_secs(3600));
+                }
+            }
+            None => {
+                println!("busy");
+                std::process::exit(0);
+            }
+        }
+    }
+
     if env::args().any(|a| a == background::PROXY_FLAG) {
         dns_forwarder::detach_console();
+        let role = crate::platform::relay_role::acquire_with_failover(
+            crate::platform::relay_role::RELAY_ROLE_NAME,
+        );
+        crate::gate::set_owner(true);
         if let Err(e) = dns_forwarder::run_proxy_service() {
             dns_forwarder::log_fatal(&e);
             std::process::exit(1);
         }
+        drop(role);
         return;
     }
 
