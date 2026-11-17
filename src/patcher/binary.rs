@@ -466,6 +466,51 @@ pub fn kill_affected_processes() {
     thread::sleep(Duration::from_millis(1000));
 }
 
+/// Only the processes that carry the patched proxy variable. The editor shell
+/// is deliberately absent: unsaved work lives there, and killing it loses it.
+pub fn language_server_images() -> &'static [&'static str] {
+    #[cfg(target_os = "windows")]
+    {
+        &["language_server.exe", "language_server_windows_x64.exe"]
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        &[
+            "language_server",
+            "language_server_linux_x64",
+            "language_server_darwin_arm64",
+        ]
+    }
+}
+
+/// Restarts the Language Server so it inherits a newly written `OAG_GATEWAY`.
+/// The IDE respawns a crashed language server by itself; this only closes that
+/// child, never the editor. Returns the number of processes it asked to stop.
+pub fn restart_language_servers() -> usize {
+    let mut stopped = 0;
+    for name in language_server_images() {
+        #[cfg(target_os = "windows")]
+        let stopped_one = {
+            let mut cmd = Command::new("taskkill");
+            cmd.args(["/F", "/IM", name])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+            crate::utils::no_window(&mut cmd).status().is_ok_and(|s| s.success())
+        };
+        #[cfg(not(target_os = "windows"))]
+        let stopped_one = Command::new("pkill")
+            .args(["-f", name])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success());
+        if stopped_one {
+            stopped += 1;
+        }
+    }
+    stopped
+}
+
 /// Stops the language server / CLI so their files can be replaced. Never the
 /// editor shell itself - that would lose the user's unsaved work (D9).
 #[cfg(target_os = "windows")]
@@ -762,6 +807,19 @@ pub fn unpatch_all_binaries(inst: &Path) -> Vec<(String, Result<usize, String>)>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Restarting the in-process route must never close the editor itself.
+    #[test]
+    fn language_server_restart_never_targets_the_editor() {
+        let images = language_server_images();
+        assert!(!images.is_empty());
+        for name in images {
+            let low = name.to_ascii_lowercase();
+            assert!(low.contains("language_server"), "{name}");
+            assert!(!low.contains("antigravity"), "{name}");
+            assert!(!low.contains("code"), "{name}");
+        }
+    }
 
     /// What this machine's installs look like right now, read-only.
     ///

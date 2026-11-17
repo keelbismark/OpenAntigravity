@@ -752,7 +752,23 @@ fn enable_local_proxy(ctx: &mut Ctx) {
     let url = proxy::url_at(port);
 
     match endpoint::apply_proxy(&url, "") {
-        Ok(_) => ctx.log(Level::Ok, "Локальный прокси включён."),
+        Ok(outcome) => {
+            ctx.log(Level::Ok, "Локальный прокси включён.");
+            // A running Language Server inherited its environment at start and
+            // will never see the new variable. It is the primary in-process
+            // route, so restart only that child when the variable actually
+            // changed - the IDE brings it back, and the door carries the few
+            // requests in between. The editor shell is never touched.
+            if matches!(outcome, endpoint::Outcome::Applied) {
+                let stopped = patch_binary::restart_language_servers();
+                if stopped > 0 {
+                    ctx.log(
+                        Level::Ok,
+                        format!("Language Server перезапущен ({stopped}) — подхватит адрес шлюза."),
+                    );
+                }
+            }
+        }
         Err(e) => ctx.log(Level::Err, format!("Не удалось включить: {}", e)),
     }
 }
