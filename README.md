@@ -13,7 +13,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20SteamOS-ffffff?labelColor=18181b&style=flat-square)](#)
 [![Website](https://img.shields.io/badge/docs-GitHub%20Pages-ffffff?labelColor=18181b&style=flat-square)](https://keelbismark.github.io/OpenAntigravity/)
 
-[Сайт проекта](https://keelbismark.github.io/OpenAntigravity/) • [Скачать Antigravity](https://antigravity.google/download) • [Загрузка](#загрузка) • [Свой прокси (VPS)](PROXY_SETUP.md)
+[Сайт проекта](https://keelbismark.github.io/OpenAntigravity/) • [Скачать Antigravity](https://antigravity.google/download) • [Загрузка](#загрузка) • [Свой прокси (VPS)](PROXY_SETUP.md) • [Roadmap](ROADMAP.md) • [Postmortem v1.5.1–v1.5.9](docs/POSTMORTEM.md)
 
 </div>
 
