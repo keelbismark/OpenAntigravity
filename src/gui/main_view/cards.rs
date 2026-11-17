@@ -43,11 +43,17 @@ pub(super) fn quick_proxy_card(app: &mut App, ui: &mut egui::Ui) {
                 ("○", theme::MUTED)
             };
             ui.label(egui::RichText::new(dot).color(col).size(12.0));
-            ui.label(
-                egui::RichText::new(display_addr)
-                    .size(12.5)
-                    .strong()
-                    .color(theme::TEXT),
+            // A login:password@host:port can be far longer than the card. Truncate
+            // it instead of letting it push the latency chip off the row; egui
+            // shows the full (still masked) value on hover when elided.
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(display_addr)
+                        .size(12.5)
+                        .strong()
+                        .color(theme::TEXT),
+                )
+                .truncate(),
             );
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

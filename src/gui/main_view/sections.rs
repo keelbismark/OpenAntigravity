@@ -3,6 +3,7 @@
 use eframe::egui::{self, CornerRadius, Stroke};
 use std::time::Duration;
 
+use crate::gui::status::plural;
 use crate::gui::widgets::{self, Icon};
 use crate::gui::{theme, App};
 use crate::ops::{Cap, Cmd, Level};
@@ -863,10 +864,15 @@ pub(super) fn logs_screen(app: &mut App, ui: &mut egui::Ui, avail_h: f32) {
                 .strong()
                 .color(theme::TEXT),
         );
+        let lines = app.log.len();
         ui.label(
-            egui::RichText::new(format!("{} строк", app.log.len()))
-                .size(12.0)
-                .color(theme::MUTED),
+            egui::RichText::new(format!(
+                "{} {}",
+                lines,
+                plural(lines as u64, "строка", "строки", "строк")
+            ))
+            .size(12.0)
+            .color(theme::MUTED),
         );
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

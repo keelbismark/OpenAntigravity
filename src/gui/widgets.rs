@@ -24,6 +24,7 @@ pub fn switch(ui: &mut egui::Ui, on: &mut bool, enabled: bool) -> egui::Response
     }
 
     if ui.is_rect_visible(rect) {
+        let rect = pressed_rect(rect, press_amount(ui.ctx(), &resp));
         let how = ui.ctx().animate_bool_with_time(resp.id, *on, 0.15);
         let hover = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered() && enabled, 0.10);
 
@@ -304,6 +305,7 @@ pub fn btn(
 
     let (rect, resp) = ui.allocate_exact_size(desired, Sense::click());
     if ui.is_rect_visible(rect) {
+        let rect = pressed_rect(rect, press_amount(ui.ctx(), &resp));
         let painter = ui.painter();
         let hover_t = ui.ctx().animate_bool_with_time(resp.id.with("btn_h"), resp.hovered(), 0.12);
         let fill = lerp_color(theme::SUNKEN, theme::ACCENT_SUBTLE, hover_t);
@@ -364,6 +366,7 @@ pub fn metric_chip(ui: &mut egui::Ui, icon: Option<Icon>, text: &str) -> egui::R
     );
     let (rect, resp) = ui.allocate_exact_size(desired_size, Sense::click());
     if ui.is_rect_visible(rect) {
+        let rect = pressed_rect(rect, press_amount(ui.ctx(), &resp));
         let painter = ui.painter();
         let hover_t = ui.ctx().animate_bool_with_time(resp.id.with("chip_h"), resp.hovered(), 0.12);
         let fill = lerp_color(theme::SUNKEN, theme::ACCENT_SUBTLE, hover_t);
@@ -411,6 +414,7 @@ pub fn profile_pill(
     let (rect, resp) = ui.allocate_exact_size(size, if enabled { Sense::click() } else { Sense::hover() });
 
     if ui.is_rect_visible(rect) {
+        let rect = pressed_rect(rect, press_amount(ui.ctx(), &resp));
         let hover_t = ui.ctx().animate_bool_with_time(resp.id.with("pill_h"), resp.hovered() && enabled, 0.12);
         let active_t = ui.ctx().animate_bool_with_time(resp.id.with("pill_a"), is_selected, 0.15);
 
@@ -506,6 +510,24 @@ pub fn site_tabs<T: PartialEq + Copy>(
     }
 
     changed
+}
+
+/// How far a pressed control has been compressed, 0.0..=1.0. The same eased
+/// animation runs on release, so letting go is as snappy as pressing down.
+fn press_amount(ctx: &egui::Context, resp: &egui::Response) -> f32 {
+    ctx.animate_bool_with_time(
+        resp.id.with("press"),
+        resp.is_pointer_button_down_on(),
+        0.09,
+    )
+}
+
+/// Shrinks only the painted rect — never the hit area. A control whose bounds
+/// move under the cursor would make a fast second click miss; a still hit area
+/// with a 3% smaller drawing gives the eye the feedback without that risk.
+fn pressed_rect(rect: egui::Rect, press: f32) -> egui::Rect {
+    let scale = 1.0 - 0.03 * press.clamp(0.0, 1.0);
+    egui::Rect::from_center_size(rect.center(), rect.size() * scale)
 }
 
 /// Smoothly interpolates between two Color32 colors (t from 0.0 to 1.0).
@@ -768,5 +790,24 @@ pub fn dot(ui: &mut egui::Ui, color: egui::Color32) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(10.0, 10.0), Sense::hover());
     if ui.is_rect_visible(rect) {
         ui.painter().circle_filled(rect.center(), 4.0, color);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The press feedback is a 3% squeeze of the drawing only. The hit area is
+    /// the caller's rect and stays put — otherwise a fast second click misses.
+    #[test]
+    fn a_pressed_control_shrinks_only_its_drawing() {
+        let rect = egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(100.0, 40.0));
+        let rest = pressed_rect(rect, 0.0);
+        let down = pressed_rect(rect, 1.0);
+        assert_eq!(rest, rect, "at rest nothing moves");
+        assert!((down.width() - 97.0).abs() < 0.01, "{down:?}");
+        assert!((down.height() - 38.8).abs() < 0.01, "{down:?}");
+        assert_eq!(down.center(), rect.center(), "squeeze is centered");
+        assert_eq!(pressed_rect(rect, 2.0), down, "press is clamped to 1");
     }
 }

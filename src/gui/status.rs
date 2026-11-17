@@ -941,6 +941,16 @@ mod tests {
     }
 
     #[test]
+    fn a_log_count_reads_as_a_person_would_say_it() {
+        let lines = |n| plural(n, "строка", "строки", "строк");
+        assert_eq!(lines(0), "строк");
+        assert_eq!(lines(1), "строка");
+        assert_eq!(lines(2), "строки");
+        assert_eq!(lines(5), "строк");
+        assert_eq!(lines(21), "строка");
+    }
+
+    #[test]
     fn russian_counts_in_three_forms() {
         let minutes = |n| plural(n, "минуту", "минуты", "минут");
         assert_eq!(minutes(1), "минуту");

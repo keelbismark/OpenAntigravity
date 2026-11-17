@@ -144,9 +144,13 @@ pub fn apply(ctx: &egui::Context) {
     visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, ACCENT);
     visuals.widgets.hovered.corner_radius = r;
 
-    visuals.widgets.active.bg_fill = ACCENT;
-    visuals.widgets.active.weak_bg_fill = ACCENT;
-    visuals.widgets.active.bg_stroke = Stroke::new(1.0, ACCENT_HOVER);
+    // A pressed button must look different from a resting one: the primary CTA
+    // is white at rest, so an active fill of the same white gave no feedback at
+    // all. Use the slightly dimmed accent for the press (emil-design-eng:
+    // "buttons must feel responsive") and keep the stroke at full white.
+    visuals.widgets.active.bg_fill = ACCENT_HOVER;
+    visuals.widgets.active.weak_bg_fill = ACCENT_HOVER;
+    visuals.widgets.active.bg_stroke = Stroke::new(1.0, ACCENT);
     visuals.widgets.active.corner_radius = r;
 
     visuals.selection.bg_fill = ACCENT.gamma_multiply(0.4);
