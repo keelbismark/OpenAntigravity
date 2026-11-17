@@ -578,6 +578,24 @@ pub fn configured_and_enabled() -> bool {
     crate::settings::own_proxy_enabled() && configured().is_some()
 }
 
+/// Why the Own route is or is not being offered, in words the record can carry.
+///
+/// Field reports kept showing "свой прокси — сейчас не используется" while the
+/// window's own test of the same proxy was green. Without this the only way to
+/// tell which of the two guards said no was to guess.
+pub fn own_route_reason() -> String {
+    if !crate::settings::own_proxy_enabled() {
+        return "переключатель «Свой прокси» выключен в настройках релея".into();
+    }
+    match configured() {
+        Some(up) => format!("настроен ({})", up.host),
+        None => format!(
+            "адрес не прочитан из {} (файл отсутствует, пуст или не разбирается)",
+            config_path().display()
+        ),
+    }
+}
+
 /// Whether the route is currently answering and exits somewhere usable.
 /// Ordering uses `configured_and_enabled`; this one is for callers that want
 /// the route's health as well as its existence.

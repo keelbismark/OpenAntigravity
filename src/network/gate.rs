@@ -84,6 +84,8 @@ pub struct Report {
     /// on a new build with a service still running the old exe, and nothing in
     /// the record could say so.
     pub build: String,
+    /// Why the user's own proxy route is or is not being offered.
+    pub own_route_reason: String,
     /// What keeps a listener of the relay from coming up (P53, `portcheck`).
     /// Empty when both bound. Written the moment a bind fails or succeeds,
     /// not at the next warm pass: the user is looking at the window then.
@@ -423,6 +425,7 @@ pub fn publish(now: Now<'_>) {
         r.routes = now.routes;
         r.version = crate::dns_forwarder::RELAY_VERSION;
         r.build = env!("CARGO_PKG_VERSION").to_string();
+        r.own_route_reason = crate::upstream::own_route_reason();
         r.reached_at = crate::net::last_reached();
         if r.exe.is_empty() {
             r.exe = std::env::current_exe()

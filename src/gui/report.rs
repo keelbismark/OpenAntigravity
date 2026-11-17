@@ -269,6 +269,9 @@ fn relay_part(out: &mut String, r: &Report) {
             let _ = writeln!(out, "Что сделано: {}", e.acted);
         }
     }
+    if !r.own_route_reason.is_empty() {
+        let _ = writeln!(out, "Свой прокси: {}", r.own_route_reason);
+    }
     let _ = writeln!(out, "Маршруты (в порядке выбора):");
     for row in &r.routes {
         let mut parts: Vec<String> = Vec::new();
