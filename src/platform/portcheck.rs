@@ -54,8 +54,10 @@ pub enum Cause {
     Held(Holder),
     /// Inside a range Windows excluded from use.
     Reserved,
-    /// Access denied with no holder and no reservation: security software.
-    Denied,
+    /// Access denied with no holder and no reservation. The string is the
+    /// list of what was checked, so the user is not sent after "an antivirus"
+    /// when none was found.
+    DeniedWithHint(String),
     /// Anything else; the OS text says what.
     Other,
 }
@@ -65,7 +67,7 @@ impl Cause {
         match self {
             Cause::Held(_) => "held",
             Cause::Reserved => "reserved",
-            Cause::Denied => "denied",
+            Cause::DeniedWithHint(_) => "denied",
             Cause::Other => "other",
         }
     }
@@ -94,7 +96,10 @@ impl Cause {
                 .unwrap_or_default(),
             pid: holder.map_or(0, |h| h.pid),
             ours: holder.is_some_and(|h| h.ours),
-            error: err.to_string(),
+            error: match self {
+                Cause::DeniedWithHint(hint) => format!("{}{hint}", err),
+                _ => err.to_string(),
+            },
         }
     }
 
@@ -106,7 +111,7 @@ impl Cause {
     /// would leave the variable naming the old port; there the proxy keeps
     /// retrying its own port instead, which a borrowed ephemeral port frees.
     pub fn another_port_helps(&self) -> bool {
-        cfg!(windows) && !matches!(self, Cause::Denied)
+        cfg!(windows) && !matches!(self, Cause::DeniedWithHint(_))
     }
 }
 
@@ -128,11 +133,50 @@ pub fn diagnose_on(addr: SocketAddr, err: &std::io::Error, proto: Proto) -> Caus
     {
         return Cause::Reserved;
     }
-    // 10013 on Windows, EACCES elsewhere.
+    // 10013 on Windows, EACCES elsewhere. Keep what we checked: a bare
+    // "antivirus" told the user nothing and hid the fact that no holder and
+    // no reservation had actually been found.
     if err.kind() == std::io::ErrorKind::PermissionDenied {
-        return Cause::Denied;
+        let mut detail = String::new();
+        if let Some(reservation) = http_url_acl(addr.port()) {
+            detail.push_str(&format!(" Резервация HTTP.sys: {reservation}."));
+        }
+        if detail.is_empty() {
+            detail.push_str(
+                " Держатель и резервация не найдены: остаются WFP-фильтр, \
+                 эксклюзивная привязка или динамический порт.",
+            );
+        }
+        return Cause::DeniedWithHint(detail);
     }
     Cause::Other
+}
+
+/// The HTTP.sys URL reservation holding `port`, if any. One more thing to
+/// check before calling a failed bind "an antivirus": http.sys can reserve a
+/// port without appearing in any TCP listener table.
+#[cfg(windows)]
+fn http_url_acl(port: u16) -> Option<String> {
+    let mut cmd = std::process::Command::new("netsh");
+    cmd.args(["http", "show", "urlacl"]);
+    let out = crate::utils::bounded_output(
+        crate::utils::no_window(&mut cmd),
+        std::time::Duration::from_secs(5),
+    )?;
+    urlacl_for_port(&String::from_utf8_lossy(&out.stdout), port)
+}
+
+#[cfg(not(windows))]
+fn http_url_acl(_port: u16) -> Option<String> {
+    None
+}
+
+/// Pure parser of `netsh http show urlacl`, testable without the command.
+fn urlacl_for_port(text: &str, port: u16) -> Option<String> {
+    let needle = format!(":{port}/");
+    text.lines()
+        .find(|line| line.contains("Reserved URL") && line.contains(&needle))
+        .map(|line| line.trim().to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -595,6 +639,17 @@ pub fn kill_holding_process(_pid: u32, _expected: &str) -> Result<u32, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The hint must name an http.sys reservation when there is one, and say
+    /// what was checked when there is not - never just "antivirus".
+    #[test]
+    fn http_url_reservation_is_named_in_the_bind_hint() {
+        let text = "URL reservations\n  \
+                    Reserved URL            : https://+:443/sra_{BA195980-CD49}/ \n      \
+                    User: NT SERVICE\\SstpSvc\n";
+        assert!(urlacl_for_port(text, 443).is_some_and(|s| s.contains(":443/")));
+        assert!(urlacl_for_port(text, 53129).is_none());
+    }
 
     #[test]
     fn netsh_ranges_are_read_in_any_language_and_nothing_else_is() {
