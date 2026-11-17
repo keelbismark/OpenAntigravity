@@ -361,6 +361,9 @@ mod tests {
         assert!(door_claim_is_live(fresh, 1005, 15, |_| true));
         // A stale claim is closed whatever the owner's state.
         assert!(!door_claim_is_live(fresh, 1020, 15, |_| true));
+        // A timestamp from the future (clock corrected backwards) is not a
+        // live door either - it must not make the claim immune to expiry.
+        assert!(!door_claim_is_live(fresh, 999, 15, |_| true));
         // The live check must be called with the pid from the record.
         assert!(!door_claim_is_live(fresh, 1005, 15, |pid| pid != 4242));
     }
