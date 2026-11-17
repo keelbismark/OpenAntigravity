@@ -113,14 +113,41 @@ fn note_door() {
     }
 }
 
-/// Whether some process has said it owns the door recently.
-pub fn door_fresh() -> bool {
-    let raw = fs::read_to_string(door_path()).unwrap_or_default();
-    door_fresh_at(&raw, crate::gate::now_unix(), DOOR_FRESH)
+/// Whether the process named in a door claim is still alive. A claim outlives
+/// its writer, so freshness alone is not enough: the watchdog may have died
+/// while its `door.json` was still inside the freshness window, leaving DNS
+/// handing out an address nothing listens on (`connection refused`). Checking
+/// the PID makes a dead owner's claim invalid immediately, on every platform.
+fn owner_alive(pid: u64) -> bool {
+    if pid == 0 || pid > u32::MAX as u64 {
+        return false;
+    }
+    let pid = pid as u32;
+    #[cfg(target_os = "windows")]
+    {
+        crate::platform::fast_win::pid_alive(pid)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::path::Path::new(&format!("/proc/{pid}")).exists()
+    }
 }
 
-/// Pure check, so a broken or stale record can be tested without a file.
-fn door_fresh_at(json: &str, now: u64, window: u64) -> bool {
+/// Whether some process has a live, fresh claim on the door.
+pub fn door_fresh() -> bool {
+    let raw = fs::read_to_string(door_path()).unwrap_or_default();
+    door_claim_is_live(&raw, crate::gate::now_unix(), DOOR_FRESH, owner_alive)
+}
+
+/// Pure check: a claim counts only while fresh AND its owner is alive.
+/// `alive` is passed in as a function so the decision can be tested without a
+/// real process or filesystem (Q.E.D.: reproduction test before the fix).
+fn door_claim_is_live(
+    json: &str,
+    now: u64,
+    window: u64,
+    alive: impl Fn(u64) -> bool,
+) -> bool {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
         return false;
     };
@@ -130,7 +157,7 @@ fn door_fresh_at(json: &str, now: u64, window: u64) -> bool {
     ) else {
         return false;
     };
-    pid != 0 && now >= at && now - at < window
+    pid != 0 && now >= at && now - at < window && alive(pid)
 }
 
 /// Binds every listener, then serves them until the process ends. While they
@@ -185,6 +212,13 @@ pub fn run() -> Result<(), String> {
         let every = Duration::from_secs(DOOR_FRESH / 3);
         thread::spawn(move || loop {
             thread::sleep(every);
+            // Stop the moment the listeners go down. A claim kept warm after
+            // the door closed is worse than none: DNS keeps handing clients an
+            // address nothing listens on (`connection refused`) for as long as
+            // this thread runs, which with the old unbounded loop was forever.
+            if !BOUND.load(Ordering::Relaxed) {
+                break;
+            }
             note_door();
         });
     }
@@ -306,19 +340,44 @@ fn status_is_200(head: &[u8]) -> bool {
 mod tests {
     use super::*;
 
+    /// A fresh claim alone is not enough to call the door open: the process
+    /// that wrote it may have died, leaving the record fresh for up to 15 s
+    /// while nothing listens on :443. That window is exactly when the client
+    /// gets `connection refused` on the address DNS just handed it (G: v1.6.0
+    /// door race). The liveness check must reject a claim whose owner is gone.
+    #[test]
+    fn a_fresh_claim_without_a_live_owner_does_not_count_as_open() {
+        let fresh = r#"{"pid":4242,"at":1000}"#;
+        assert!(
+            door_claim_is_live(fresh, 1005, 15, |_| true),
+            "the record is fresh and its owner is alive"
+        );
+        // The owner is gone; freshness must not be read as an open door.
+        assert!(
+            !door_claim_is_live(fresh, 1005, 15, |_| false),
+            "a dead owner must close the door even while the record is fresh"
+        );
+        // A live owner with a fresh record is the real cross-process case.
+        assert!(door_claim_is_live(fresh, 1005, 15, |_| true));
+        // A stale claim is closed whatever the owner's state.
+        assert!(!door_claim_is_live(fresh, 1020, 15, |_| true));
+        // The live check must be called with the pid from the record.
+        assert!(!door_claim_is_live(fresh, 1005, 15, |pid| pid != 4242));
+    }
+
     /// The watchdog owns the door across a relay restart; the relay has to
     /// trust a fresh claim and distrust a stale or broken one.
     #[test]
     fn a_fresh_door_claim_from_another_process_counts_as_open() {
         let fresh = r#"{"pid":4242,"at":1000}"#;
-        assert!(door_fresh_at(fresh, 1005, 15));
+        assert!(door_claim_is_live(fresh, 1005, 15, |_| true));
         // The claim is about another process, not this one - that is the point.
         assert_ne!(std::process::id(), 4242);
-        assert!(!door_fresh_at(fresh, 1020, 15), "15 s is the window");
-        assert!(!door_fresh_at("{}", 1005, 15));
-        assert!(!door_fresh_at("not json", 1005, 15));
-        assert!(!door_fresh_at("{\"pid\":0,\"at\":1005}", 1005, 15));
-        assert!(!door_fresh_at("{\"pid\":42,\"at\":2000}", 1005, 15));
+        assert!(!door_claim_is_live(fresh, 1020, 15, |_| true), "15 s is the window");
+        assert!(!door_claim_is_live("{}", 1005, 15, |_| true));
+        assert!(!door_claim_is_live("not json", 1005, 15, |_| true));
+        assert!(!door_claim_is_live("{\"pid\":0,\"at\":1005}", 1005, 15, |_| true));
+        assert!(!door_claim_is_live("{\"pid\":42,\"at\":2000}", 1005, 15, |_| true));
     }
 
     #[test]
