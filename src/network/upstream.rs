@@ -575,7 +575,13 @@ pub fn race_all_upstreams(budget: Duration) -> Vec<UpstreamRaceResult> {
 /// the window's own test showed the proxy reaching Google. Measured in the
 /// field on v1.5.2.
 pub fn configured_and_enabled() -> bool {
-    crate::settings::own_proxy_enabled() && configured().is_some()
+    // The address *is* the state. Turning the switch off calls `upstream::clear`
+    // (apply.rs), so "an address is configured but the flag says off" cannot be
+    // a user's choice - it is a stale settings cache in the relay. Field v1.5.7:
+    // the window had the switch on, the proxy was verified reaching Google via
+    // FI, yet every request went to the region-blocked DE VPN route because
+    // the relay kept reading own_proxy_enabled = false.
+    configured().is_some()
 }
 
 /// Why the Own route is or is not being offered, in words the record can carry.
@@ -584,9 +590,6 @@ pub fn configured_and_enabled() -> bool {
 /// window's own test of the same proxy was green. Without this the only way to
 /// tell which of the two guards said no was to guess.
 pub fn own_route_reason() -> String {
-    if !crate::settings::own_proxy_enabled() {
-        return "переключатель «Свой прокси» выключен в настройках релея".into();
-    }
     match configured() {
         Some(up) => format!("настроен ({})", up.host),
         None => format!(
