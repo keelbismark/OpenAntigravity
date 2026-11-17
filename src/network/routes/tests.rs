@@ -292,6 +292,21 @@
         }
     }
 
+    /// A good probe must lift the table's bench, not only the route's own
+    /// Health timer. The two disagreeing was what kept a verified proxy
+    /// benched in the table while a never-proven direct tunnel led sign-in.
+    #[test]
+    fn a_successful_probe_lifts_the_tables_bench() {
+        let _turn = turn();
+        blame(Kind::Own);
+        assert!(is_penalised(Kind::Own), "a refusal benches the route");
+        note_recovered(Kind::Own);
+        assert!(
+            !is_penalised(Kind::Own),
+            "a good probe must lift the table's bench"
+        );
+    }
+
     /// The static half, in one test because it shares process-wide state:
     /// timings blend and expire, a refusal benches for a growing time, an
     /// answer lifts the bench and proves the route, and a new network forgets

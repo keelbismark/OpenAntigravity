@@ -338,6 +338,22 @@ fn fresh(samples: &[Option<Sample>; N], kind: Kind) -> Option<Duration> {
 /// module consults it now - a bench moves a route to the back, it does not take
 /// it out of the table (`proxy::route_usable`).
 #[cfg_attr(not(test), allow(dead_code))]
+/// Lifts every bench the table holds against `kind`.
+///
+/// A route's `Health` and this table keep separate timers. `Health::revive`
+/// clears only the first, so a proxy that had just answered a successful
+/// probe stayed benched here, and a never-proven direct tunnel was ordered
+/// ahead of it. One good probe is evidence the route works *now* - the same
+/// rule `revive` follows - so it clears all three of this table's marks.
+pub fn note_recovered(kind: Kind) {
+    if let Ok(mut table) = TABLE.lock() {
+        let i = kind.index();
+        table.penalised[i] = None;
+        table.stumbled[i] = None;
+        table.silent[i] = None;
+    }
+}
+
 pub fn is_penalised(kind: Kind) -> bool {
     TABLE
         .lock()

@@ -214,6 +214,10 @@ impl Route {
             Ok(()) => {
                 crate::routes::record(self.kind, started.elapsed());
                 self.health.revive("проверка прошла");
+                // `revive` clears only the route's own timer; the table keeps
+                // its own bench and would still rank a working proxy behind
+                // a never-proven direct tunnel. Both have to hear the good news.
+                crate::routes::note_recovered(self.kind);
             }
             Err(why) => {
                 crate::dns_forwarder::log_proxy(&format!("{} не отвечает: {}", self.label, why));
