@@ -265,7 +265,7 @@ static NEXT_ADDR: AtomicUsize = AtomicUsize::new(0);
 ///
 /// Split out from `query` because `query` does network I/O and this does not:
 /// the property worth pinning is that the walk is still a PERMUTATION of every
-/// index вЂ” rotating the start must never cost an address its turn, or a rotation
+/// index — rotating the start must never cost an address its turn, or a rotation
 /// would trade one failure mode for a worse one.
 fn walk(n: usize, start: usize) -> impl Iterator<Item = usize> {
     (0..n).map(move |step| start.wrapping_add(step) % n)
@@ -274,7 +274,7 @@ fn walk(n: usize, start: usize) -> impl Iterator<Item = usize> {
 /// Asks `ep` for `wire`, an RFC 1035 query, and returns the raw reply bytes.
 ///
 /// Every address is tried, within the budget, and the first that answers speaks
-/// for the endpoint вЂ” exactly as `ask_provider` treats a UDP provider's address
+/// for the endpoint — exactly as `ask_provider` treats a UDP provider's address
 /// list. What differs is WHERE the walk starts: each call begins one further
 /// along, round-robin.
 ///
@@ -282,7 +282,7 @@ fn walk(n: usize, start: usize) -> impl Iterator<Item = usize> {
 /// an assumption this function used to make. An `Endpoint`'s addresses are
 /// **peer machines of one service**, not a primary and a backup. Walking them
 /// from index 0 every time means the first one that works takes 100 % of the
-/// queries and the rest are touched only when it breaks вЂ” which is what
+/// queries and the rest are touched only when it breaks — which is what
 /// happened: measured 2026-09-12, this tool was the entire reason one of
 /// dns-ai.ru's two nodes ran at 48 % of a core while the other sat at 15 %
 /// (G43). A counter costs nothing, spreads exactly, needs no RNG or new crate,
@@ -302,7 +302,7 @@ pub fn query(ep: &Endpoint, wire: &[u8], budget: Duration) -> Result<Vec<u8>, St
 /// opened without the rest of the process sharing it.
 fn query_via(pool: &Pool, ep: &Endpoint, wire: &[u8], budget: Duration) -> Result<Vec<u8>, String> {
     let deadline = Instant::now() + budget;
-    let mut last = "РЅРµС‚ Р°РґСЂРµСЃРѕРІ".to_string();
+    let mut last = "нет адресов".to_string();
     let n = ep.addrs.len();
     if n == 0 {
         return Err(last);
@@ -611,7 +611,7 @@ impl Conn {
         let ip = self.ip;
         let left = deadline.saturating_duration_since(Instant::now());
         if left.is_zero() {
-            return Err(Fail::Broken(format!("{}: Р±СЋРґР¶РµС‚ РёСЃС‚С‘Рє РґРѕ Р·Р°РїСЂРѕСЃР°", ip)));
+            return Err(Fail::Broken(format!("{}: бюджет истёк до запроса", ip)));
         }
         // A kept socket still carries the deadline of the query before it.
         self.sock.deadline = deadline;
@@ -635,7 +635,7 @@ impl Conn {
             std::io::Write::write_all(&mut tls, &out).and_then(|_| std::io::Write::flush(&mut tls));
         let answer = match sent {
             Ok(()) => read_reply(&mut tls, &mut self.buf, stream, ip, deadline),
-            Err(_) => Err(Fail::Gone(format!("{}: Р·Р°РїСЂРѕСЃ РЅРµ СѓС€С‘Р»", ip))),
+            Err(_) => Err(Fail::Gone(format!("{}: запрос не ушёл", ip))),
         };
         self.last_used = Instant::now();
         answer
@@ -660,7 +660,7 @@ fn handshake(
     let remaining = |d: Instant| d.saturating_duration_since(Instant::now());
     let budget = remaining(deadline);
     if budget.is_zero() {
-        return Err(format!("{}: Р±СЋРґР¶РµС‚ РёСЃС‚С‘Рє РґРѕ СЃРѕРµРґРёРЅРµРЅРёСЏ", ip));
+        return Err(format!("{}: бюджет истёк до соединения", ip));
     }
     // Pinned to the ISP link while a tunnel holds the default route (P13): a
     // provider that substitutes only for Russian addresses answers a query that
@@ -670,13 +670,13 @@ fn handshake(
         budget,
         crate::net::pin_interface(),
     )
-    .map_err(|_| format!("{}: РЅРµС‚ СЃРѕРµРґРёРЅРµРЅРёСЏ", ip))?;
+    .map_err(|_| format!("{}: нет соединения", ip))?;
     sock.set_nodelay(true).ok();
 
     let server = ServerName::try_from(ep.host.to_string())
-        .map_err(|_| "РЅРµРІРµСЂРЅРѕРµ РёРјСЏ DoH-СЃРµСЂРІРµСЂР°".to_string())?;
+        .map_err(|_| "неверное имя DoH-сервера".to_string())?;
     let mut conn = ClientConnection::new(tls_config(ip), server)
-        .map_err(|e| format!("TLS РЅРµ РЅР°СЃС‚СЂРѕРµРЅ: {}", e))?;
+        .map_err(|e| format!("TLS не настроен: {}", e))?;
 
     // Driven by hand so the budget covers the whole handshake rather than each
     // syscall inside it - the same shape `resolvers::reachable` uses, and for
@@ -685,27 +685,27 @@ fn handshake(
     while conn.is_handshaking() {
         let left = remaining(deadline);
         if left.is_zero() {
-            return Err(format!("{}: TLS РЅРµ СѓР»РѕР¶РёР»СЃСЏ РІ Р±СЋРґР¶РµС‚", ip));
+            return Err(format!("{}: TLS не уложился в бюджет", ip));
         }
         sock.set_read_timeout(Some(left)).ok();
         sock.set_write_timeout(Some(left)).ok();
         if conn.wants_write() {
             conn.write_tls(&mut sock)
-                .map_err(|_| format!("{}: РѕР±СЂС‹РІ РїСЂРё handshake", ip))?;
+                .map_err(|_| format!("{}: обрыв при handshake", ip))?;
         }
         if conn.is_handshaking() && conn.wants_read() {
             match conn.read_tls(&mut sock) {
-                Ok(0) => return Err(format!("{}: СЃРµСЂРІРµСЂ Р·Р°РєСЂС‹Р» handshake", ip)),
+                Ok(0) => return Err(format!("{}: сервер закрыл handshake", ip)),
                 Ok(_) => conn
                     .process_new_packets()
                     .map(|_| ())
-                    .map_err(|e| format!("{}: TLS РѕС‚РєР»РѕРЅС‘РЅ: {}", ip, e))?,
-                Err(_) => return Err(format!("{}: РѕР±СЂС‹РІ РїСЂРё handshake", ip)),
+                    .map_err(|e| format!("{}: TLS отклонён: {}", ip, e))?,
+                Err(_) => return Err(format!("{}: обрыв при handshake", ip)),
             }
         }
     }
     if conn.alpn_protocol() != Some(b"h2") {
-        return Err(format!("{}: СЃРµСЂРІРµСЂ РЅРµ СЃРѕРіР»Р°СЃРѕРІР°Р» h2", ip));
+        return Err(format!("{}: сервер не согласовал h2", ip));
     }
     Ok((sock, conn))
 }
@@ -744,7 +744,7 @@ fn read_reply(
             let len = u32::from_be_bytes([0, buf[0], buf[1], buf[2]]) as usize;
             if len > MAX_BODY {
                 return Err(Fail::Broken(format!(
-                    "{}: РєР°РґСЂ РґР»РёРЅРѕР№ {} вЂ” РЅРµ РѕС‚РІРµС‚ DNS",
+                    "{}: кадр длиной {} — не ответ DNS",
                     ip, len
                 )));
             }
@@ -777,7 +777,7 @@ fn read_reply(
                     started = true;
                     body.extend_from_slice(&payload);
                     if body.len() > MAX_BODY {
-                        return Err(Fail::Broken(format!("{}: РѕС‚РІРµС‚ СЃР»РёС€РєРѕРј РІРµР»РёРє", ip)));
+                        return Err(Fail::Broken(format!("{}: ответ слишком велик", ip)));
                     }
                     if flags & FLAG_END_STREAM != 0 {
                         return Ok(Answer { body, last: goaway });
@@ -789,7 +789,7 @@ fn read_reply(
                     // so beats returning bytes that will fail to parse as DNS.
                     if flags & FLAG_END_STREAM != 0 {
                         return if body.is_empty() {
-                            Err(Fail::Broken(format!("{}: РѕС‚РІРµС‚ Р±РµР· С‚РµР»Р°", ip)))
+                            Err(Fail::Broken(format!("{}: ответ без тела", ip)))
                         } else {
                             Ok(Answer { body, last: goaway })
                         };
@@ -797,7 +797,7 @@ fn read_reply(
                 }
                 FRAME_RST_STREAM if id == stream => {
                     return Err(Fail::Broken(format!(
-                        "{}: РїРѕС‚РѕРє СЃР±СЂРѕС€РµРЅ, РєРѕРґ {}",
+                        "{}: поток сброшен, код {}",
                         ip,
                         word(0)
                     )));
@@ -805,7 +805,7 @@ fn read_reply(
                 FRAME_GOAWAY => {
                     let last_id = word(0) & 0x7fff_ffff;
                     if last_id < stream {
-                        return Err(Fail::Gone(format!("{}: GOAWAY, РєРѕРґ {}", ip, word(4))));
+                        return Err(Fail::Gone(format!("{}: GOAWAY, код {}", ip, word(4))));
                     }
                     // Our stream is still answered; nothing after it will be.
                     goaway = true;
@@ -816,19 +816,19 @@ fn read_reply(
 
         let left = deadline.saturating_duration_since(Instant::now());
         if left.is_zero() {
-            return Err(Fail::Broken(format!("{}: DoH РЅРµ РѕС‚РІРµС‚РёР» РІ СЃСЂРѕРє", ip)));
+            return Err(Fail::Broken(format!("{}: DoH не ответил в срок", ip)));
         }
         let n = match tls.read(&mut chunk) {
             Ok(n) => n,
             Err(e) if matches!(e.kind(), ErrorKind::TimedOut | ErrorKind::WouldBlock) => {
-                return Err(Fail::Broken(format!("{}: DoH РЅРµ РѕС‚РІРµС‚РёР» РІ СЃСЂРѕРє", ip)));
+                return Err(Fail::Broken(format!("{}: DoH не ответил в срок", ip)));
             }
-            Err(_) => return Err(lost(started, format!("{}: РѕР±СЂС‹РІ РѕС‚РІРµС‚Р°", ip))),
+            Err(_) => return Err(lost(started, format!("{}: обрыв ответа", ip))),
         };
         // An end before END_STREAM is a cut, not an answer - even with some
         // DATA in hand, those bytes are a truncated DNS message.
         if n == 0 {
-            return Err(lost(started, format!("{}: СЃРµСЂРІРµСЂ Р·Р°РєСЂС‹Р» СЃРѕРµРґРёРЅРµРЅРёРµ", ip)));
+            return Err(lost(started, format!("{}: сервер закрыл соединение", ip)));
         }
         buf.extend_from_slice(&chunk[..n]);
     }

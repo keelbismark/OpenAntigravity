@@ -11,11 +11,11 @@
 //! written down in plain text, so the relay tails it.
 //!
 //! The other half is the one thing that proves the bypass works: a model answer
-//! logs `вЂ¦/v1internal:streamGenerateContent?alt=sse Trace: 0xвЂ¦ ResponseID: вЂ¦`
+//! logs `…/v1internal:streamGenerateContent?alt=sse Trace: 0x… ResponseID: …`
 //! when it starts streaming, and a refused turn logs no such line (measured on
-//! the IDE log of 2026-09-12: refusals 14:58вЂ“15:00, first `ResponseID` 15:16).
+//! the IDE log of 2026-09-12: refusals 14:58–15:00, first `ResponseID` 15:16).
 //! Silence proves nothing - a user who gave up is silent too (G50) - so the
-//! window says "СЂР°Р±РѕС‚Р°РµС‚" only on this line, and the route table ranks routes by
+//! window says "работает" only on this line, and the route table ranks routes by
 //! it (`routes`).
 //!
 //! Tailing, not reading: each pass looks at the lines appended since the last
@@ -90,7 +90,7 @@ pub struct Tally {
     pub answers: usize,
     pub answered_ago: Option<Duration>,
     /// Which gate host the newest refusal was about: the host of the last
-    /// `URL: https://вЂ¦` line before it in this file. The client keeps a
+    /// `URL: https://…` line before it in this file. The client keeps a
     /// connection pool per host, and the two can sit on different routes.
     pub refused_host: Option<String>,
     /// The host the newest answer's own line names.
@@ -256,7 +256,7 @@ fn tally(
     out
 }
 
-/// The host of a `URL: https://<host>/вЂ¦` line, lower-cased; `None` for any
+/// The host of a `URL: https://<host>/…` line, lower-cased; `None` for any
 /// other line or a host that is not one of ours.
 fn url_host(line: &[u8]) -> Option<String> {
     const MARK: &[u8] = b"URL: https://";
@@ -854,9 +854,9 @@ fn has_reason(window: &[u8]) -> bool {
 }
 
 /// The link at `at`, in whichever of the three shapes it was logged: a JSON
-/// string (`"https:вЂ¦&вЂ¦"`), that string escaped once more because the whole
-/// body was logged as a quoted string (`\"https:вЂ¦\\u0026вЂ¦\"`), or bare, as Go
-/// prints a struct (`ValidationURL:https://вЂ¦ `). JSON escapes are decoded - a
+/// string (`"https:…&…"`), that string escaped once more because the whole
+/// body was logged as a quoted string (`\"https:…\\u0026…\"`), or bare, as Go
+/// prints a struct (`ValidationURL:https://… `). JSON escapes are decoded - a
 /// link with `&` left in it opens a page with its parameters broken.
 fn read_value(bytes: &[u8], at: usize) -> Option<String> {
     let rest = bytes.get(at..)?;
@@ -956,15 +956,15 @@ fn tail(path: &Path, max: u64) -> Option<String> {
     Some(String::from_utf8_lossy(&buf).into_owned())
 }
 
-/// glog's header вЂ” a level letter, `MMDD`, a space, then local `HH:MM:SS.ffffff`
-/// вЂ” wherever in the line it sits.
+/// glog's header — a level letter, `MMDD`, a space, then local `HH:MM:SS.ffffff`
+/// — wherever in the line it sits.
 ///
 /// Searched for rather than sliced off the front, and that is not defensive
 /// programming: measured on both real logs, it is never at the front. The
 /// Desktop server prefixes *every* line with `ERROR: logging before
 /// google.Init: `, and the IDE wraps that same text again in its own
 /// `2026-09-12 03:57:46.735 [error] [LS Main stderr] `. Anchoring at byte 0
-/// found a stamp in neither file, so the window would have shown "С‚РёС…Рѕ" while
+/// found a stamp in neither file, so the window would have shown "тихо" while
 /// the user was staring at the error.
 ///
 /// Returns `(month, day, second of day)`; there is no year in it, which is why
@@ -979,7 +979,7 @@ fn parse_stamp(line: &str) -> Option<(u16, u16, u32)> {
 /// fit in well under a hundred bytes; the bound is what keeps a stamp-shaped
 /// run of text deep inside a message from being read as one.
 const HEADER_SEARCH: usize = 200;
-/// `E0901 15:09:24` вЂ” the part that has to be there.
+/// `E0901 15:09:24` — the part that has to be there.
 const STAMP_LEN: usize = 14;
 
 /// The header if it starts exactly at `at`, and nothing otherwise. A slice that

@@ -22,7 +22,7 @@
         }
     }
 
-    /// Consecutive calls start one further along вЂ” that is the whole point, and
+    /// Consecutive calls start one further along — that is the whole point, and
     /// it is what splits the load across a service's peer machines instead of
     /// pinning every query to whichever one happens to be first in the list.
     #[test]
@@ -96,7 +96,7 @@
         let idx = h.windows(3).position(|w| w == [127, 160, 2]);
         assert!(
             idx.is_some(),
-            "РґР»РёРЅР° РїСѓС‚Рё Р·Р°РєРѕРґРёСЂРѕРІР°РЅР° РЅРµРІРµСЂРЅРѕ: {:?}",
+            "длина пути закодирована неверно: {:?}",
             &h[..24]
         );
         assert!(h.ends_with(b"application/dns-message"));
@@ -122,7 +122,7 @@
         assert_eq!(h[2], 0x01, ":authority, literal without indexing");
         assert_eq!(h[path_at], 0x04, ":path, literal without indexing");
         for at in [2, path_at] {
-            assert_ne!(h[at] & 0xc0, 0x40, "РѕРєС‚РµС‚ {}: incremental indexing", at);
+            assert_ne!(h[at] & 0xc0, 0x40, "октет {}: incremental indexing", at);
         }
     }
 
@@ -248,7 +248,7 @@
         assert!(out.unwrap_err().contains("GOAWAY"));
 
         let (out, _) = run(frame(FRAME_RST_STREAM, 0, 1, &[0, 0, 0, 8]));
-        assert!(out.unwrap_err().contains("СЃР±СЂРѕС€РµРЅ"));
+        assert!(out.unwrap_err().contains("сброшен"));
     }
 
     #[test]
@@ -260,7 +260,7 @@
             &[0x88],
         );
         let (out, _) = run(script);
-        assert!(out.unwrap_err().contains("Р±РµР· С‚РµР»Р°"));
+        assert!(out.unwrap_err().contains("без тела"));
     }
 
     /// A length field larger than any DNS reply must be refused outright rather
@@ -268,7 +268,7 @@
     #[test]
     fn an_absurd_frame_length_is_refused() {
         let (out, _) = run(vec![0xff, 0xff, 0xff, FRAME_DATA, 0, 0, 0, 0, 1]);
-        assert!(out.unwrap_err().contains("РЅРµ РѕС‚РІРµС‚ DNS"));
+        assert!(out.unwrap_err().contains("не ответ DNS"));
     }
 
     /// The second query on a connection is stream 3: DATA for any other stream
@@ -291,7 +291,7 @@
         let answer = read_stream(&mut s, &mut buf, 3).unwrap();
         assert_eq!(answer.body, b"mine");
         assert!(!answer.last);
-        assert_eq!(buf, expected_tail, "С…РІРѕСЃС‚ РїРѕСЃР»Рµ END_STREAM РїРѕС‚РµСЂСЏРЅ");
+        assert_eq!(buf, expected_tail, "хвост после END_STREAM потерян");
         assert!(s.written.is_empty(), "the PING belongs to the next call");
     }
 
@@ -336,7 +336,7 @@
         script.extend_from_slice(&frame(FRAME_DATA, FLAG_END_STREAM, 3, b"ok"));
         let answer = read_stream(&mut scripted(script), &mut Vec::new(), 3).unwrap();
         assert_eq!(answer.body, b"ok");
-        assert!(answer.last, "РїРѕСЃР»Рµ GOAWAY СЃРѕРµРґРёРЅРµРЅРёРµ РЅРµ РІРѕР·РІСЂР°С‰Р°СЋС‚ РІ РїСѓР»");
+        assert!(answer.last, "после GOAWAY соединение не возвращают в пул");
     }
 
     /// GOAWAY below our stream: the server says it will not process it. That is
@@ -370,7 +370,7 @@
     #[test]
     fn a_short_rst_stream_is_an_error_not_a_panic() {
         let (out, _) = run(frame(FRAME_RST_STREAM, 0, 1, &[0]));
-        assert!(out.unwrap_err().contains("СЃР±СЂРѕС€РµРЅ"));
+        assert!(out.unwrap_err().contains("сброшен"));
     }
 
     #[test]
@@ -379,7 +379,7 @@
         let s = Duration::from_secs;
         assert!(takeable(t0, 0, t0));
         assert!(takeable(t0, 1, t0 + s(19)));
-        assert!(!takeable(t0, 1, t0 + IDLE_LIMIT), "РїСЂРѕСЃС‚РѕР№ 20 СЃ вЂ” СѓР¶Рµ РЅРµС‚");
+        assert!(!takeable(t0, 1, t0 + IDLE_LIMIT), "простой 20 с — уже нет");
         assert!(!takeable(t0, 1, t0 + s(29)));
         assert!(takeable(t0, MAX_REQUESTS - 1, t0 + s(1)));
         assert!(!takeable(t0, MAX_REQUESTS, t0 + s(1)));
@@ -402,7 +402,7 @@
         assert!(keep_after(&answer(false), MAX_REQUESTS - 1));
         assert!(
             !keep_after(&answer(false), MAX_REQUESTS),
-            "РёСЃС‡РµСЂРїР°РЅ Р»РёРјРёС‚ Р·Р°РїСЂРѕСЃРѕРІ"
+            "исчерпан лимит запросов"
         );
     }
 
@@ -439,7 +439,7 @@
 
             assert_eq!(&reply[0..2], &q[0..2], "id must come back");
             let got = dns_client::answer_addrs(&reply);
-            assert!(!got.is_empty(), "{}: РїСѓСЃС‚РѕР№ РѕС‚РІРµС‚", name);
+            assert!(!got.is_empty(), "{}: пустой ответ", name);
 
             let reference = dns_client::resolve_a_via(name, "8.8.8.8".parse().unwrap(), 0)
                 .expect("reference resolver");
@@ -453,11 +453,11 @@
             });
             assert!(
                 !passthrough,
-                "{}: РѕС‚РІРµС‚ {:?} Р»РµР¶РёС‚ РІ С‚РѕР№ Р¶Рµ /16, С‡С‚Рѕ Рё СЌС‚Р°Р»РѕРЅ {:?} - СЌС‚Рѕ passthrough, \
-                 Р° РЅРµ РїРѕРґРјРµРЅР°",
+                "{}: ответ {:?} лежит в той же /16, что и эталон {:?} - это passthrough, \
+                 а не подмена",
                 name, got, reference
             );
-            println!("{} -> {:?} (СЌС‚Р°Р»РѕРЅ {:?})", name, got, reference);
+            println!("{} -> {:?} (эталон {:?})", name, got, reference);
         }
     }
 
@@ -496,16 +496,16 @@
                     IpAddr::V6(_) => false,
                 });
                 println!(
-                    "{:<15} {:<34} {:>4} РјСЃ  {:?}",
+                    "{:<15} {:<34} {:>4} мс  {:?}",
                     addr,
                     name,
                     started.elapsed().as_millis(),
                     got
                 );
-                assert!(!got.is_empty(), "{} {}: РїСѓСЃС‚РѕР№ РѕС‚РІРµС‚", addr, name);
+                assert!(!got.is_empty(), "{} {}: пустой ответ", addr, name);
                 assert!(
                     !passthrough,
-                    "{} {}: {:?} вЂ” РїРѕРґР»РёРЅРЅС‹Р№ Google, СѓР·РµР» РЅРµ РїРѕРґРјРµРЅСЏРµС‚",
+                    "{} {}: {:?} — подлинный Google, узел не подменяет",
                     addr, name, got
                 );
             }
@@ -540,9 +540,9 @@
             .filter(|&ip| node_resumes(ep, ip))
             .collect();
         for ip in ips.iter().filter(|ip| !resuming.contains(ip)) {
-            println!("{}: СѓР·РµР» РЅРµ РїСЂРёРЅРёРјР°РµС‚ РґР°Р¶Рµ СЃРІРѕРё Р±РёР»РµС‚С‹ вЂ” РїСЂРѕРїСѓС‰РµРЅ", ip);
+            println!("{}: узел не принимает даже свои билеты — пропущен", ip);
         }
-        assert!(!resuming.is_empty(), "РЅРё РѕРґРёРЅ СѓР·РµР» РЅРµ РІРѕР·РѕР±РЅРѕРІР»СЏРµС‚ СЃРµСЃСЃРёРё");
+        assert!(!resuming.is_empty(), "ни один узел не возобновляет сессии");
         let q = dns_client::build_query("cloudcode-pa.googleapis.com", 0x5151);
 
         // One exchange per node, in walk order, each on a connection that was
@@ -567,7 +567,7 @@
             assert_eq!(
                 conn.handshake_kind(),
                 Some(HandshakeKind::Resumed),
-                "{}: РїРѕР»РЅРѕРµ СЂСѓРєРѕРїРѕР¶Р°С‚РёРµ вЂ” РїСЂРµРґСЉСЏРІР»РµРЅ С‡СѓР¶РѕР№ Р±РёР»РµС‚",
+                "{}: полное рукопожатие — предъявлен чужой билет",
                 ip
             );
         }
@@ -628,13 +628,13 @@
     /// least one address. "Valid DNS" and not just "bytes came back" - an
     /// error page or a frame from the wrong stream fails here.
     fn assert_answers(q: &[u8], reply: &[u8]) {
-        assert!(reply.len() >= 12, "РєРѕСЂРѕС‚РєРёР№ РѕС‚РІРµС‚: {:?}", reply);
+        assert!(reply.len() >= 12, "короткий ответ: {:?}", reply);
         assert_eq!(&reply[0..2], &q[0..2], "id must come back");
-        assert_ne!(reply[2] & 0x80, 0, "QR: СЌС‚Рѕ РЅРµ РѕС‚РІРµС‚");
+        assert_ne!(reply[2] & 0x80, 0, "QR: это не ответ");
         assert_eq!(reply[3] & 0x0f, 0, "RCODE {}", reply[3] & 0x0f);
         assert!(
             !crate::dns_client::answer_addrs(reply).is_empty(),
-            "РЅРё РѕРґРЅРѕРіРѕ Р°РґСЂРµСЃР°"
+            "ни одного адреса"
         );
     }
 
@@ -671,19 +671,19 @@
         for i in 0..50u16 {
             let q = dns_client::build_query(names[i as usize % 2], 0x1000 + i);
             let reply = query_via(&pool, ep, &q, Duration::from_secs(8))
-                .unwrap_or_else(|e| panic!("Р·Р°РїСЂРѕСЃ {}: {}", i, e));
+                .unwrap_or_else(|e| panic!("запрос {}: {}", i, e));
             assert_answers(&q, &reply);
         }
         let opened = pool.opened.load(Relaxed);
         let dropped = pool.dropped.load(Relaxed);
         let retried = pool.retried.load(Relaxed);
         println!(
-            "50 Р·Р°РїСЂРѕСЃРѕРІ: {} СЃРѕРµРґРёРЅРµРЅРёР№; РІС‹Р±СЂРѕС€РµРЅРѕ РїРѕСЃР»Рµ Р·Р°РїСЂРѕСЃР° {}, РёР· РЅРёС… {} Р·Р°РєСЂС‹Р» СЃРµСЂРІРµСЂ",
+            "50 запросов: {} соединений; выброшено после запроса {}, из них {} закрыл сервер",
             opened, dropped, retried
         );
         assert!(
             opened <= ep.addrs.len() + dropped,
-            "{} СЃРѕРµРґРёРЅРµРЅРёР№ РЅР° {} Р°РґСЂРµСЃР° РїСЂРё {} РІС‹Р±СЂРѕС€РµРЅРЅС‹С… - РєР»РёРµРЅС‚ РѕС‚РєСЂС‹РІР°РµС‚ Р»РёС€РЅРёРµ",
+            "{} соединений на {} адреса при {} выброшенных - клиент открывает лишние",
             opened,
             ep.addrs.len(),
             dropped
@@ -692,7 +692,7 @@
         for (i, addr) in ep.addrs.iter().enumerate() {
             let ip: IpAddr = addr.parse().unwrap();
             if !node_resumes(ep, ip) {
-                println!("{}: СѓР·РµР» РЅРµ РїСЂРёРЅРёРјР°РµС‚ РґР°Р¶Рµ СЃРІРѕРё Р±РёР»РµС‚С‹ вЂ” РїСЂРѕРїСѓС‰РµРЅ", ip);
+                println!("{}: узел не принимает даже свои билеты — пропущен", ip);
                 continue;
             }
             let mut kinds = String::new();
@@ -709,8 +709,8 @@
                     'F'
                 });
             }
-            println!("{}: РїРѕСЃР»Рµ СЃР±СЂРѕСЃР° РїСѓР»Р° {}", ip, kinds);
-            assert_ne!(kinds, "FF", "{}: РґРІР° РїРѕР»РЅС‹С… СЂСѓРєРѕРїРѕР¶Р°С‚РёСЏ РїРѕРґСЂСЏРґ", ip);
+            println!("{}: после сброса пула {}", ip, kinds);
+            assert_ne!(kinds, "FF", "{}: два полных рукопожатия подряд", ip);
         }
         pool.clear();
     }
@@ -749,12 +749,12 @@
         while carried <= 70_000 {
             assert!(
                 sent < 300,
-                "Р·Р° 300 Р·Р°РїСЂРѕСЃРѕРІ РЅРё РѕРґРЅРѕ СЃРѕРµРґРёРЅРµРЅРёРµ РЅРµ РЅР°Р±СЂР°Р»Рѕ 70 РљР‘"
+                "за 300 запросов ни одно соединение не набрало 70 КБ"
             );
             let name = ["microsoft.com", "amazon.com"][sent as usize % 2];
             let q = txt_query(name, 0x3000 + sent);
             let reply = query_one(&pool, ep, ip, &q, Duration::from_secs(8))
-                .unwrap_or_else(|e| panic!("РїРѕСЃР»Рµ {} Р±Р°Р№С‚ РїРѕ СЃРѕРµРґРёРЅРµРЅРёСЋ: {}", carried, e));
+                .unwrap_or_else(|e| panic!("после {} байт по соединению: {}", carried, e));
             assert_eq!(&reply[0..2], &q[0..2]);
             let now_on = pool.opened.load(Relaxed);
             if now_on != on {
@@ -765,7 +765,7 @@
             sent += 1;
         }
         println!(
-            "{} Р±Р°Р№С‚ РїРѕ РѕРґРЅРѕРјСѓ СЃРѕРµРґРёРЅРµРЅРёСЋ; {} Р·Р°РїСЂРѕСЃРѕРІ, {} СЃРѕРµРґРёРЅРµРЅРёР№",
+            "{} байт по одному соединению; {} запросов, {} соединений",
             carried,
             sent,
             pool.opened.load(Relaxed)

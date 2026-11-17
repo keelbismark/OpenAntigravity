@@ -522,9 +522,9 @@ fn try_own_proxy(mut client: TcpStream, host: &str, port: u16) -> Result<(), Tcp
                 }
                 routes::note_used(routes::Kind::Own);
                 let proxy_label = if is_primary {
-                    "СЃРІРѕР№ РїСЂРѕРєСЃРё"
+                    "свой прокси"
                 } else {
-                    "СЂРµР·РµСЂРІРЅС‹Р№ РїСЂРѕРєСЃРё (Р°РІС‚РѕРІС‹Р±РѕСЂ)"
+                    "резервный прокси (автовыбор)"
                 };
                 crate::dns_forwarder::log_proxy(&format!("{} -> {}", proxy_label, host));
                 splice(client, upstream_sock);
@@ -533,14 +533,14 @@ fn try_own_proxy(mut client: TcpStream, host: &str, port: u16) -> Result<(), Tcp
             Err(why) => {
                 upstream::record_upstream_result(up, Err(why.clone()));
                 let proxy_label = if is_primary {
-                    "РѕСЃРЅРѕРІРЅРѕР№ РїСЂРѕРєСЃРё"
+                    "основной прокси"
                 } else {
-                    "СЂРµР·РµСЂРІРЅС‹Р№ РїСЂРѕРєСЃРё"
+                    "резервный прокси"
                 };
                 let next_hint = if is_last {
                     ""
                 } else {
-                    " (Р°РІС‚Рѕ-РїРµСЂРµРєР»СЋС‡РµРЅРёРµ РЅР° СЃР»РµРґСѓСЋС‰РёР№ СѓР·РµР»)"
+                    " (авто-переключение на следующий узел)"
                 };
                 crate::dns_forwarder::log_proxy(&format!(
                     "{}: {}{}",
@@ -581,7 +581,7 @@ fn try_direct(mut client: TcpStream, host: &str, port: u16) -> Result<(), TcpStr
     let upstream = match connect_gate_direct(host, port, DIRECT_OPEN_BUDGET) {
         Ok(sock) => sock,
         Err(why) => {
-            crate::dns_forwarder::log_proxy(&format!("РЅР°РїСЂСЏРјСѓСЋ {}: {}", host, why));
+            crate::dns_forwarder::log_proxy(&format!("напрямую {}: {}", host, why));
             return Err(client);
         }
     };
@@ -599,18 +599,18 @@ fn try_direct(mut client: TcpStream, host: &str, port: u16) -> Result<(), TcpStr
 /// Linux too, although it has no DNS layer: the pool is this process's own
 /// code, not the relay's. It used to take the system resolver there, which on
 /// most machines answers with Google itself - the region gate, from a Russian
-/// address - so once the exits and the relay were benched, "РЅР°РїСЂСЏРјСѓСЋ" was a
+/// address - so once the exits and the relay were benched, "напрямую" was a
 /// route to 400s that the log called В«the DNS routeВ».
 fn gate_direct_addrs(host: &str, port: u16) -> Result<(Vec<std::net::SocketAddr>, u32), String> {
     let if_index = crate::net::pin_interface();
     let (addrs, _, verdict) = crate::resolvers::resolve_a_best(host, if_index)
-        .ok_or_else(|| "РёРјСЏ РЅРµ СЂР°Р·СЂРµС€РёР»РѕСЃСЊ".to_string())?;
+        .ok_or_else(|| "имя не разрешилось".to_string())?;
     // With no relay to stand down for a tunnel (D13) and no VPN route of ours,
     // Google's own address is the gate and nothing else: the next route in the
     // table takes the connection instead.
     if !cfg!(target_os = "windows") && verdict != crate::resolvers::Verdict::Substituted {
         return Err(
-            "СЃРµСЂРІРёСЃС‹ СЂР°Р·Р±Р»РѕРєРёСЂРѕРІРєРё РЅРµ РїРѕРґРјРµРЅРёР»Рё Р°РґСЂРµСЃ вЂ” РЅР°РїСЂСЏРјСѓСЋ Р±СѓРґРµС‚ РѕС€РёР±РєР° 400".to_string(),
+            "сервисы разблокировки не подменили адрес — напрямую будет ошибка 400".to_string(),
         );
     }
     // While the relay stands down for a tunnel the answer is genuine Google,
@@ -639,7 +639,7 @@ fn connect_gate_direct(host: &str, port: u16, budget: Duration) -> Result<TcpStr
 fn connect_bounded(host: &str, port: u16, budget: Duration) -> Result<TcpStream, String> {
     let addrs: Vec<_> = (host, port)
         .to_socket_addrs()
-        .map_err(|e| format!("РёРјСЏ РЅРµ СЂР°Р·СЂРµС€Р°РµС‚СЃСЏ: {}", e))?
+        .map_err(|e| format!("имя не разрешается: {}", e))?
         .collect();
     connect_addrs(addrs, budget, 0)
 }
@@ -653,7 +653,7 @@ fn connect_addrs(
 ) -> Result<TcpStream, String> {
     let deadline = Instant::now() + budget;
     if addrs.is_empty() {
-        return Err("РёРјСЏ РЅРµ СЂР°Р·СЂРµС€Р°РµС‚СЃСЏ".to_string());
+        return Err("имя не разрешается".to_string());
     }
     // IPv4 first. Every substituted address is IPv4 - the providers' proxies
     // are - while an AAAA answer for the same name is genuine Google, and on a
@@ -663,7 +663,7 @@ fn connect_addrs(
     // A slice per address, at least a second each, so three addresses get a
     // real attempt inside a four-second budget.
     let slice = (budget / addrs.len().max(1) as u32).max(Duration::from_secs(1));
-    let mut last = "РІСЂРµРјСЏ РІС‹С€Р»Рѕ".to_string();
+    let mut last = "время вышло".to_string();
     for addr in addrs {
         let left = deadline.saturating_duration_since(Instant::now());
         if left.is_zero() {
@@ -674,7 +674,7 @@ fn connect_addrs(
             Err(e) => last = e.to_string(),
         }
     }
-    Err(format!("РЅРµ РїРѕРґРєР»СЋС‡РёС‚СЊСЃСЏ: {}", last))
+    Err(format!("не подключиться: {}", last))
 }
 
 /// The user's own VPN as a route: genuine Google, through whatever the routing
@@ -693,7 +693,7 @@ fn try_vpn(mut client: TcpStream, host: &str, port: u16) -> Result<(), TcpStream
     let upstream = match connect_addrs(addrs, DIRECT_OPEN_BUDGET, 0) {
         Ok(sock) => sock,
         Err(why) => {
-            crate::dns_forwarder::log_proxy(&format!("С‡РµСЂРµР· VPN {}: {}", host, why));
+            crate::dns_forwarder::log_proxy(&format!("через VPN {}: {}", host, why));
             return Err(client);
         }
     };
@@ -848,7 +848,7 @@ pub fn probe_direct(if_index: u32) {
         Ok(()) => routes::record(routes::Kind::Direct, started.elapsed()),
         Err(why) => {
             routes::probe_failed(routes::Kind::Direct);
-            crate::dns_forwarder::log_proxy(&format!("РЅР°РїСЂСЏРјСѓСЋ РЅРµ РѕС‚РІРµС‡Р°РµС‚: {}", why));
+            crate::dns_forwarder::log_proxy(&format!("напрямую не отвечает: {}", why));
         }
     }
 }
@@ -876,7 +876,7 @@ pub fn probe_vpn() {
         Ok(()) => routes::record(routes::Kind::Vpn, started.elapsed()),
         Err(why) => {
             routes::probe_failed(routes::Kind::Vpn);
-            crate::dns_forwarder::log_proxy(&format!("С‡РµСЂРµР· VPN РЅРµ РѕС‚РІРµС‡Р°РµС‚: {}", why));
+            crate::dns_forwarder::log_proxy(&format!("через VPN не отвечает: {}", why));
         }
     }
 }
@@ -896,15 +896,15 @@ fn probe_request(mut sock: TcpStream) -> Result<(), String> {
     );
     stream
         .write_all(req.as_bytes())
-        .map_err(|e| format!("СЂСѓРєРѕРїРѕР¶Р°С‚РёРµ: {}", e))?;
+        .map_err(|e| format!("рукопожатие: {}", e))?;
     let mut buf = [0u8; 64];
     let n = stream
         .read(&mut buf)
-        .map_err(|e| format!("РѕС‚РІРµС‚Р° РЅРµС‚: {}", e))?;
+        .map_err(|e| format!("ответа нет: {}", e))?;
     if n > 0 && buf.starts_with(b"HTTP/") {
         Ok(())
     } else {
-        Err("РѕС‚РІРµС‚ РЅРµ РїРѕС…РѕР¶ РЅР° HTTP".to_string())
+        Err("ответ не похож на HTTP".to_string())
     }
 }
 
@@ -1168,7 +1168,7 @@ fn handshake(
 ) -> Result<(), String> {
     let left = deadline.saturating_duration_since(Instant::now());
     if left.is_zero() {
-        return Err("С‚Р°Р№РјР°СѓС‚".to_string());
+        return Err("таймаут".to_string());
     }
     sock.set_nonblocking(false).ok();
     // The socket timeouts come from the caller's deadline, not from a constant of
@@ -1180,14 +1180,14 @@ fn handshake(
     sock.set_write_timeout(Some(left)).ok();
     while conn.is_handshaking() {
         if Instant::now() >= deadline {
-            return Err("С‚Р°Р№РјР°СѓС‚".to_string());
+            return Err("таймаут".to_string());
         }
         if conn.wants_write() {
             conn.write_tls(sock).map_err(|e| e.to_string())?;
         }
         if conn.wants_read() {
             match conn.read_tls(sock) {
-                Ok(0) => return Err("Р°РїСЃС‚СЂРёРј Р·Р°РєСЂС‹Р» СЃРѕРµРґРёРЅРµРЅРёРµ".to_string()),
+                Ok(0) => return Err("апстрим закрыл соединение".to_string()),
                 Ok(_) => conn.process_new_packets().map_err(|e| e.to_string())?,
                 Err(e) => return Err(e.to_string()),
             };
@@ -1375,7 +1375,7 @@ fn bind_from(first: u16, fallbacks: &[u16]) -> Result<TcpListener, crate::gate::
             Ok(listener) => {
                 if attempt > 0 {
                     crate::dns_forwarder::log_proxy(&format!(
-                        "РїРѕСЂС‚ {} РѕСЃРІРѕР±РѕРґРёР»СЃСЏ СЃ {}-Р№ РїРѕРїС‹С‚РєРё",
+                        "порт {} освободился с {}-й попытки",
                         first,
                         attempt + 1
                     ));
@@ -1413,7 +1413,7 @@ fn bind_from(first: u16, fallbacks: &[u16]) -> Result<TcpListener, crate::gate::
         for other in fallbacks.iter().copied().filter(|p| *p != first) {
             if let Ok(listener) = TcpListener::bind(addr_at(other)) {
                 crate::dns_forwarder::log_proxy(&format!(
-                    "РїРѕСЂС‚ {} РЅРµРґРѕСЃС‚СѓРїРµРЅ ({}) вЂ” Р»РѕРєР°Р»СЊРЅС‹Р№ РїСЂРѕРєСЃРё РїРµСЂРµРЅРµСЃС‘РЅ РЅР° {}",
+                    "порт {} недоступен ({}) — локальный прокси перенесён на {}",
                     first, err, other
                 ));
                 adopt(other);
@@ -1438,7 +1438,7 @@ pub fn run(if_index: u32) -> Result<(), String> {
             Ok(listener) => {
                 if said.is_some() {
                     crate::dns_forwarder::log_proxy(&format!(
-                        "Р»РѕРєР°Р»СЊРЅС‹Р№ РїСЂРѕРєСЃРё РїРѕРґРЅСЏР»СЃСЏ РЅР° РїРѕСЂС‚Сѓ {}",
+                        "локальный прокси поднялся на порту {}",
                         port()
                     ));
                     crate::gate::set_blocker("proxy", None);
@@ -1449,16 +1449,16 @@ pub fn run(if_index: u32) -> Result<(), String> {
                 // Logged when the reason changes, not every minute.
                 if said.as_ref() != Some(&blocker) {
                     crate::dns_forwarder::log_proxy(&format!(
-                        "not started: РЅРµ Р·Р°РЅСЏС‚СЊ {} вЂ” {} ({})",
+                        "not started: не занять {} — {} ({})",
                         blocker.addr,
                         blocker.error,
                         match blocker.cause.as_str() {
                             "held" if !blocker.by.is_empty() =>
-                                format!("РїРѕСЂС‚ Р·Р°РЅСЏС‚ РїСЂРѕРіСЂР°РјРјРѕР№ {}", blocker.by),
-                            "held" => "РїРѕСЂС‚ Р·Р°РЅСЏС‚ РґСЂСѓРіРѕР№ РїСЂРѕРіСЂР°РјРјРѕР№".to_string(),
-                            "reserved" => "РїРѕСЂС‚ Р·Р°СЂРµР·РµСЂРІРёСЂРѕРІР°РЅ Windows".to_string(),
-                            "denied" => "РґРѕСЃС‚СѓРї Р·Р°РїСЂРµС‰С‘РЅ вЂ” Р°РЅС‚РёРІРёСЂСѓСЃ РёР»Рё С„Р°Р№СЂРІРѕР»".to_string(),
-                            _ => "РїСЂРёС‡РёРЅР° РЅРµ РѕРїСЂРµРґРµР»РµРЅР°".to_string(),
+                                format!("порт занят программой {}", blocker.by),
+                            "held" => "порт занят другой программой".to_string(),
+                            "reserved" => "порт зарезервирован Windows".to_string(),
+                            "denied" => "доступ запрещён — антивирус или файрвол".to_string(),
+                            _ => "причина не определена".to_string(),
                         }
                     ));
                     said = Some(blocker.clone());

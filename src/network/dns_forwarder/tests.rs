@@ -78,10 +78,10 @@
 
     #[test]
     fn a_penalty_reads_in_minutes_or_hours() {
-        assert_eq!(human_minutes(Duration::from_secs(600)), "10 РјРёРЅ");
-        assert_eq!(human_minutes(Duration::from_secs(3600)), "1 С‡");
-        assert_eq!(human_minutes(Duration::from_secs(6 * 3600)), "6 С‡");
-        assert_eq!(human_minutes(Duration::from_secs(90 * 60)), "90 РјРёРЅ");
+        assert_eq!(human_minutes(Duration::from_secs(600)), "10 мин");
+        assert_eq!(human_minutes(Duration::from_secs(3600)), "1 ч");
+        assert_eq!(human_minutes(Duration::from_secs(6 * 3600)), "6 ч");
+        assert_eq!(human_minutes(Duration::from_secs(90 * 60)), "90 мин");
     }
 
     /// Everything the version check does hangs off this: a relay that predates
@@ -91,7 +91,7 @@
     fn an_unreadable_version_is_the_oldest_one() {
         assert_eq!(parse_version(None), 0);
         assert_eq!(parse_version(Some("")), 0);
-        assert_eq!(parse_version(Some("РЅРµ С‡РёСЃР»Рѕ")), 0);
+        assert_eq!(parse_version(Some("не число")), 0);
         assert_eq!(parse_version(Some(" 7 \r\n")), 7);
         assert!(parse_version(None) < RELAY_VERSION);
     }
@@ -109,36 +109,36 @@
     /// is written the moment anything else is logged.
     #[test]
     fn a_run_of_one_line_is_collapsed_into_a_count() {
-        let line = "РЅР°РїСЂСЏРјСѓСЋ X: РёРјСЏ РЅРµ СЂР°Р·СЂРµС€Р°РµС‚СЃСЏ";
+        let line = "напрямую X: имя не разрешается";
         // The first is written, with nothing held back before it.
         assert_eq!(collapse_repeat(line), (None, true));
         for _ in 0..14 {
             assert_eq!(collapse_repeat(line), (None, false), "a repeat was written");
         }
         // Something else ends the run and carries the tally.
-        let (note, write) = collapse_repeat("С‡С‚Рѕ-С‚Рѕ РґСЂСѓРіРѕРµ");
+        let (note, write) = collapse_repeat("что-то другое");
         assert!(write);
-        assert_eq!(note.as_deref(), Some("в†‘ С‚Рѕ Р¶Рµ СЃР°РјРѕРµ РµС‰С‘ 14 СЂР°Р·"));
-        // вЂ¦and the next line after that has nothing to report.
-        assert_eq!(collapse_repeat("С‚СЂРµС‚СЊСЏ"), (None, true));
+        assert_eq!(note.as_deref(), Some("↑ то же самое ещё 14 раз"));
+        // …and the next line after that has nothing to report.
+        assert_eq!(collapse_repeat("третья"), (None, true));
 
         // And a run that never ends is never silent: the tally is written every
         // `REPEAT_RUN`, so a problem repeating for an hour is still visible.
         // One test and not two: `collapse_repeat` keeps one run per process,
         // and two tests would race for it.
-        let line = "Р±РµСЃРєРѕРЅРµС‡РЅРѕРµ";
+        let line = "бесконечное";
         assert_eq!(collapse_repeat(line), (None, true));
         for _ in 0..(REPEAT_RUN - 1) {
             assert_eq!(collapse_repeat(line), (None, false));
         }
         let (note, write) = collapse_repeat(line);
         assert!(!write, "the repeat itself is still not written");
-        assert_eq!(note.as_deref(), Some("в†‘ С‚Рѕ Р¶Рµ СЃР°РјРѕРµ РµС‰С‘ 50 СЂР°Р·"));
+        assert_eq!(note.as_deref(), Some("↑ то же самое ещё 50 раз"));
         // The counter restarted, so the next line ends a fresh run.
         assert_eq!(collapse_repeat(line), (None, false));
         assert_eq!(
-            collapse_repeat("РёРЅРѕРµ").0.as_deref(),
-            Some("в†‘ С‚Рѕ Р¶Рµ СЃР°РјРѕРµ РµС‰С‘ 1 СЂР°Р·")
+            collapse_repeat("иное").0.as_deref(),
+            Some("↑ то же самое ещё 1 раз")
         );
     }
 

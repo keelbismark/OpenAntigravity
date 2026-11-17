@@ -25,7 +25,7 @@ use std::fs;
     fn test_update_info_json_deserialization() {
         let sample = r#"{
             "version": "1.1.2",
-            "notes": "Р С•РЎвЂљРЎвЂЎРЎвЂРЎвЂљ Р Р† data/, Р С”Р Р…Р С•Р С—Р С”Р В° Р’В«Р вЂ”Р В°Р Р†Р ВµРЎР‚РЎв‚¬Р С‘РЎвЂљРЎРЉ Р С—РЎР‚Р С•РЎвЂ Р ВµРЎРѓРЎРѓР’В»",
+            "notes": "отчёт в data/, кнопка «Завершить процесс»",
             "page": "https://github.com/keelbismark/OpenAntigravity",
             "url_windows": "https://example.com/OpenAntigravity_windows_v1.1.2.zip",
             "url_linux": "https://example.com/OpenAntigravity_linux_v1.1.2.tar.gz"
@@ -190,7 +190,7 @@ use std::fs;
                 assert!(!info.version.is_empty(), "feed returned an empty version");
             }
             Err(e) => {
-                // The default target deliberately listens on nothing РІР‚вЂќ the
+                // The default target deliberately listens on nothing — the
                 // point is that the whole path runs and fails honestly.
                 assert!(
                     url.contains("localhost:1"),

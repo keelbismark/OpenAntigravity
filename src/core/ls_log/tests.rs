@@ -259,12 +259,12 @@
     #[ignore = "reads the real Antigravity logs on this machine; run with --ignored"]
     fn reads_what_the_client_actually_logged() {
         let logs = candidate_logs();
-        println!("Р»РѕРіРѕРІ: {}, Р±Р°Р№С‚: {}", logs.len(), bytes_of(&logs));
+        println!("логов: {}, байт: {}", logs.len(), bytes_of(&logs));
         for path in &logs {
             println!("  {}", path.display());
         }
         println!(
-            "РїРѕСЃР»РµРґРЅСЏСЏ region-400 Р·Р° СЃСѓС‚РєРё: {:?}",
+            "последняя region-400 за сутки: {:?}",
             newest_refusal(&logs, Duration::from_secs(24 * 3600))
         );
     }
