@@ -581,6 +581,36 @@ fn heartbeat_is_stale(last: u64, now: u64, stale_after: Duration) -> bool {
     last != 0 && Duration::from_secs(now.saturating_sub(last)) > stale_after
 }
 
+/// Which step the warm pass is in, so a stall can be named instead of guessed.
+///
+/// The heartbeat only says "the loop stopped"; the step says *where*. Five
+/// minutes later the process is ended and the role freed either way, but the
+/// log now carries the answer to what hung.
+static WARM_STEP: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+const WARM_STEPS: [&str; 10] = [
+    "старт",
+    "VPN и запись состояния",
+    "выбор интерфейса",
+    "резолверы",
+    "проба релея",
+    "проба своего прокси",
+    "пробы выходов",
+    "прямой маршрут и VPN",
+    "обновление лидера",
+    "ожидание следующего прохода",
+];
+
+fn warm_step(id: u8) {
+    WARM_STEP.store(id, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The step the loop was last seen in.
+pub fn warm_step_name() -> &'static str {
+    let i = WARM_STEP.load(std::sync::atomic::Ordering::Relaxed) as usize;
+    WARM_STEPS.get(i).copied().unwrap_or("неизвестно")
+}
+
 fn warm_forever() {
     let mut since_upstream = PROBE_HEALTHY_EVERY;
     let mut since_exits = PROBE_HEALTHY_EVERY;
@@ -593,6 +623,7 @@ fn warm_forever() {
         // Stamped first, so a pass that dies later still counts as one that
         // happened.
         heartbeat();
+        warm_step(1);
         // One small record per pass, for a window that is another process and
         // can otherwise only read the log meant for a person (P29). **First** in
         // the pass, not last: a pass opens with a PowerShell VPN check and runs
@@ -686,6 +717,7 @@ fn warm_forever() {
             measure_vpn_exit();
             since_exit_check = Duration::ZERO;
         }
+        warm_step(2);
         let egress = isp_interface();
         // Not while the ISP interface is unknown: `isp_interface` answers 0 for
         // half a minute after a failed detection, and taking that for a new
@@ -698,6 +730,7 @@ fn warm_forever() {
         // seconds (`watch_client_logs`), not here: a refusal costs the user
         // every request until it is answered, and a warm pass is fifteen
         // seconds plus its probes.
+        warm_step(3);
         resolvers::warm(dns::core_namespaces(), egress);
         // The relay is somebody else's server, so it is the one route we never
         // probe on a timer. A health check every two minutes, from every machine
@@ -708,6 +741,7 @@ fn warm_forever() {
         // treats it as a last resort (an unmeasured route sorts after every
         // measured one); it is touched unbidden only to lift a bench a real
         // failure set, so a transient fault is not made permanent.
+        warm_step(4);
         if proxy::relay_is_benched() {
             proxy::probe_relay();
         }
@@ -715,6 +749,7 @@ fn warm_forever() {
         // it must be stood down before a request meets it, and picked back up
         // the moment it works again - which is what they asked for when they
         // gave us one.
+        warm_step(5);
         if upstream::OWN.health.is_benched() || since_upstream >= PROBE_HEALTHY_EVERY {
             upstream::probe_health();
             since_upstream = Duration::ZERO;
@@ -727,6 +762,7 @@ fn warm_forever() {
         // connection every fifteen seconds, from every machine running this tool,
         // to somebody's free proxy. Being a considerate guest is what keeps the
         // route working at all.
+        warm_step(6);
         if since_exits >= PROBE_HEALTHY_EVERY {
             proxy::probe_exits();
             since_exits = Duration::ZERO;
@@ -734,12 +770,15 @@ fn warm_forever() {
         // The direct route is timed on the same clock as the others, so the
         // route table compares like with like. Not more often while penalised:
         // a region penalty is a clock, and no measurement shortens it.
+        warm_step(7);
         if since_direct >= PROBE_HEALTHY_EVERY {
             proxy::probe_direct(egress);
             proxy::probe_vpn();
             since_direct = Duration::ZERO;
         }
+        warm_step(8);
         routes::refresh_leader(|k| proxy::route_usable(k, ROUTE_PROBE_HOST));
+        warm_step(9);
         thread::sleep(WARM_EVERY);
         since_upstream += WARM_EVERY;
         since_exits += WARM_EVERY;

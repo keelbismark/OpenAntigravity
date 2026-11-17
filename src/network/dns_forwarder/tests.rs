@@ -7,6 +7,20 @@
     /// while its process stayed alive and held the machine's ports: the
     /// machine had a relay, a record frozen at the moment it stalled, and no
     /// bypass at all. The heartbeat is what tells the two apart.
+    /// The heartbeat says the loop stopped; the step says where. Without this
+    /// the five-minute kill left no clue which probe had hung.
+    #[test]
+    fn every_warm_step_has_a_name() {
+        for i in 0..WARM_STEPS.len() {
+            let saved = WARM_STEP.load(std::sync::atomic::Ordering::Relaxed);
+            warm_step(i as u8);
+            let name = warm_step_name();
+            warm_step(saved);
+            assert_ne!(name, "неизвестно", "step {i} has no name");
+            assert!(!name.is_empty(), "step {i} has an empty name");
+        }
+    }
+
     #[test]
     fn a_silent_warm_loop_reads_as_a_stalled_relay() {
         let window = Duration::from_secs(300);

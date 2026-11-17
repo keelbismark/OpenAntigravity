@@ -732,9 +732,11 @@ fn spawn_heartbeat_guard() {
         loop {
             std::thread::sleep(every);
             if dns_forwarder::heartbeat_stalled() {
-                dns_forwarder::log_proxy(
-                    "релей: тёплый проход остановился — освобождаю роль, чтобы другой релей взял её",
-                );
+                dns_forwarder::log_proxy(&format!(
+                    "релей: тёплый проход остановился на шаге «{}» — \
+                     освобождаю роль, чтобы другой релей взял её",
+                    dns_forwarder::warm_step_name()
+                ));
                 std::process::exit(0);
             }
         }
