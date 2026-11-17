@@ -45,6 +45,13 @@ pub const HOSTS: [(&str, Ipv4Addr); 2] = [
 
 const PORT: u16 = 443;
 
+/// How long to wait before retrying the bind while another live process owns
+/// the door. Short enough that a client still holding a cached answer (see
+/// `ANSWER_TTL`) does not hit `connection refused` across a relay restart:
+/// the moment the old owner dies, `door_fresh()` goes false and the next try
+/// takes the port.
+const DOOR_TAKEOVER_POLL: Duration = Duration::from_millis(200);
+
 /// How long a client's loopback answer may live in its cache. Short, because it
 /// is also how long a client keeps dialling a dead listener if the relay stops:
 /// after that Windows asks the rule's next nameserver and gets the substituted
@@ -177,12 +184,23 @@ pub fn run() -> Result<(), String> {
                 break listeners;
             }
             Err(blocker) => {
-                // Another process may already own the door - the watchdog task
-                // holds it across relay restarts. That is success, not a
-                // blocker: saying "occupied" here would put a false card in
-                // the window and retry a bind that can never succeed.
+                // Another process owns the door - the watchdog task, or the
+                // previous relay that has not let go of the port yet. That is
+                // not a blocker, so no false "occupied" card. But it is not
+                // "done" either: the caller sleeps 5 s between runs, and if
+                // the owner dies in that window nothing listens on :443 while
+                // clients still hold the DNS answer we handed them. Wait
+                // briefly and retry instead - the instant the owner is gone,
+                // `door_fresh()` goes false and this bind succeeds. This is
+                // the gap that produced `connection refused` on v1.6.1/1.6.2
+                // right after a `start: 127.0.0.53:53` line in the log.
                 if door_fresh() {
-                    return Ok(());
+                    if said.take().is_some() {
+                        crate::dns_forwarder::log_proxy("локальные адреса гейт-хостов заняты");
+                        crate::gate::set_blocker("door", None);
+                    }
+                    thread::sleep(DOOR_TAKEOVER_POLL);
+                    continue;
                 }
                 if said.as_ref() != Some(&blocker) {
                     crate::dns_forwarder::log_proxy(&format!(
@@ -381,6 +399,22 @@ mod tests {
         assert!(!door_claim_is_live("not json", 1005, 15, |_| true));
         assert!(!door_claim_is_live("{\"pid\":0,\"at\":1005}", 1005, 15, |_| true));
         assert!(!door_claim_is_live("{\"pid\":42,\"at\":2000}", 1005, 15, |_| true));
+    }
+
+    /// The takeover poll must be far shorter than a cached DNS answer lives.
+    /// Otherwise a client keeps dialing 127.65.71.x while the relay sleeps
+    /// between bind attempts after its owner died — the `connection refused`
+    /// window seen live right after a relay restart on v1.6.2.
+    #[test]
+    fn takeover_is_faster_than_a_cached_answer_expires() {
+        assert!(
+            DOOR_TAKEOVER_POLL < Duration::from_secs(ANSWER_TTL as u64),
+            "the door must be retaken before a client's cached answer expires"
+        );
+        assert!(
+            DOOR_TAKEOVER_POLL < crate::proxy::REBIND_EVERY,
+            "a live owner must not be left waiting on the slow blocker clock"
+        );
     }
 
     #[test]

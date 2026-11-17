@@ -36,6 +36,7 @@ pub fn is_cli_flag(arg: &str) -> bool {
             | "licence"
             | "version"
             | "v"
+            | "relay-status"
     )
 }
 
@@ -477,6 +478,10 @@ mod tests {
         assert!(is_cli_flag("--patch"));
         assert!(is_cli_flag("--launch"));
         assert!(is_cli_flag("--autostart"));
+        // --relay-status prints a report from a windows-subsystem binary; it
+        // must attach the parent console like the other printing flags or its
+        // output goes nowhere (found live on v1.6.2).
+        assert!(is_cli_flag("--relay-status"));
         assert!(!is_cli_flag("--json"));
         assert!(!is_cli_flag("--unknown"));
     }
