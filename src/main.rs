@@ -818,6 +818,14 @@ fn main() {
 
     if env::args().any(|a| a == background::WATCHDOG_FLAG) {
         dns_forwarder::detach_console();
+        // The watchdog is a separate task that outlives the relay. It owns the
+        // gate hosts' door so a relay restart cannot close it under a client:
+        // the relay's own door thread yields when it sees a fresh claim.
+        std::thread::spawn(|| {
+            if let Err(e) = crate::loopback::run() {
+                dns_forwarder::log_proxy(&format!("дверь в задаче сторожа остановилась: {e}"));
+            }
+        });
         watchdog::run_forever();
         return;
     }

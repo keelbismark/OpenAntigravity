@@ -25,11 +25,13 @@
 //! addresses - the relay simply keeps answering with the substituted addresses
 //! it always did.
 
+use std::fs;
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// One loopback address per gate host. `127.65.71.x` - "A", "G" - to stay clear
 /// of `127.0.0.1` and of the relay's own `127.0.0.53`.
@@ -78,7 +80,57 @@ pub fn answer_for(host: &str) -> Option<Ipv4Addr> {
 /// asked for Antigravity not to go through it, and this is the same proxy by a
 /// different door.
 pub fn active() -> bool {
-    BOUND.load(Ordering::Relaxed) && crate::proxy::bound() && crate::settings::local_proxy_wanted()
+    (BOUND.load(Ordering::Relaxed) || door_fresh())
+        && crate::proxy::bound()
+        && crate::settings::local_proxy_wanted()
+}
+
+/// Where the process holding the door publishes its liveness. The watchdog
+/// task is a separate process that outlives the relay; the relay has to know
+/// the door stayed open when the listeners belong to that process.
+const DOOR_FILE: &str = "door.json";
+/// A record older than this is not a live door.
+const DOOR_FRESH: u64 = 15;
+
+fn door_path() -> PathBuf {
+    crate::portable::system_data_dir().join(DOOR_FILE)
+}
+
+/// Publishes this process as the door's owner.
+fn note_door() {
+    let path = door_path();
+    if let Some(dir) = path.parent() {
+        let _ = fs::create_dir_all(dir);
+    }
+    let body = format!(
+        "{{\"pid\":{},\"at\":{}}}",
+        std::process::id(),
+        crate::gate::now_unix()
+    );
+    let tmp = path.with_extension("tmp");
+    if fs::write(&tmp, body).is_ok() {
+        let _ = fs::rename(&tmp, &path);
+    }
+}
+
+/// Whether some process has said it owns the door recently.
+pub fn door_fresh() -> bool {
+    let raw = fs::read_to_string(door_path()).unwrap_or_default();
+    door_fresh_at(&raw, crate::gate::now_unix(), DOOR_FRESH)
+}
+
+/// Pure check, so a broken or stale record can be tested without a file.
+fn door_fresh_at(json: &str, now: u64, window: u64) -> bool {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
+        return false;
+    };
+    let (Some(pid), Some(at)) = (
+        value.get("pid").and_then(|v| v.as_u64()),
+        value.get("at").and_then(|v| v.as_u64()),
+    ) else {
+        return false;
+    };
+    pid != 0 && now >= at && now - at < window
 }
 
 /// Binds every listener, then serves them until the process ends. While they
@@ -98,6 +150,13 @@ pub fn run() -> Result<(), String> {
                 break listeners;
             }
             Err(blocker) => {
+                // Another process may already own the door - the watchdog task
+                // holds it across relay restarts. That is success, not a
+                // blocker: saying "occupied" here would put a false card in
+                // the window and retry a bind that can never succeed.
+                if door_fresh() {
+                    return Ok(());
+                }
                 if said.as_ref() != Some(&blocker) {
                     crate::dns_forwarder::log_proxy(&format!(
                         "локальные адреса гейт-хостов не заняты: не занять {}: {} ({}{})",
@@ -119,6 +178,16 @@ pub fn run() -> Result<(), String> {
         }
     };
     BOUND.store(true, Ordering::Relaxed);
+    note_door();
+    // Refresh the claim while this process serves, so the relay can keep
+    // answering gate hosts with these addresses.
+    {
+        let every = Duration::from_secs(DOOR_FRESH / 3);
+        thread::spawn(move || loop {
+            thread::sleep(every);
+            note_door();
+        });
+    }
     let mut handles = Vec::new();
     for (host, listener) in listeners {
         handles.push(thread::spawn(move || {
@@ -171,6 +240,10 @@ fn bind(ip: Ipv4Addr) -> Result<TcpListener, crate::gate::Blocker> {
 /// them in the worst case is what this has to cover.
 const ROUTE_BUDGET: Duration = Duration::from_secs(30);
 
+/// How long a door keeps trying to reach the proxy while the relay restarts.
+/// Bounded: a relay that is never coming back must not hold clients forever.
+const HOP_RETRY_FOR: Duration = Duration::from_secs(30);
+
 /// Carries one client connection: asks the local proxy for a tunnel to `host`,
 /// then moves bytes. The client's first bytes - its TLS ClientHello - wait in
 /// the socket buffer meanwhile and go through with everything else.
@@ -179,7 +252,19 @@ fn hop(client: TcpStream, host: &'static str) {
         OPENING.fetch_sub(1, Ordering::SeqCst);
         return;
     }
-    let up = open_hop(host);
+    // The door can be held by the watchdog across a relay restart. Keeping
+    // the accepted client here while the proxy comes back is what makes the
+    // restart invisible: its TLS ClientHello waits in the socket buffer and
+    // goes out on the first tunnel rather than getting an RST.
+    let deadline = Instant::now() + HOP_RETRY_FOR;
+    let mut up;
+    loop {
+        up = open_hop(host);
+        if up.is_some() || Instant::now() >= deadline {
+            break;
+        }
+        thread::sleep(Duration::from_millis(500));
+    }
     OPENING.fetch_sub(1, Ordering::SeqCst);
     if let Some(up) = up {
         crate::proxy::splice(client, up);
@@ -220,6 +305,21 @@ fn status_is_200(head: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The watchdog owns the door across a relay restart; the relay has to
+    /// trust a fresh claim and distrust a stale or broken one.
+    #[test]
+    fn a_fresh_door_claim_from_another_process_counts_as_open() {
+        let fresh = r#"{"pid":4242,"at":1000}"#;
+        assert!(door_fresh_at(fresh, 1005, 15));
+        // The claim is about another process, not this one - that is the point.
+        assert_ne!(std::process::id(), 4242);
+        assert!(!door_fresh_at(fresh, 1020, 15), "15 s is the window");
+        assert!(!door_fresh_at("{}", 1005, 15));
+        assert!(!door_fresh_at("not json", 1005, 15));
+        assert!(!door_fresh_at("{\"pid\":0,\"at\":1005}", 1005, 15));
+        assert!(!door_fresh_at("{\"pid\":42,\"at\":2000}", 1005, 15));
+    }
 
     #[test]
     fn each_gate_host_has_its_own_loopback_address() {
