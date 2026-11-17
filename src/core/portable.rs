@@ -160,6 +160,19 @@ pub fn is_installed_location() -> bool {
     // Признак 2: Стандартные системные папки установки Windows
     #[cfg(target_os = "windows")]
     {
+        // setup.exe кладёт релей именно сюда. Проверки LOCALAPPDATA\Programs и
+        // Program Files его не покрывают: релей видел рядом data\, решал, что
+        // он портативный, и читал настройки из ProgramData\data, пока окно
+        // писало их в LOCALAPPDATA. Отчего рабочий upstream-прокси выглядел
+        // «не настроенным» и все запросы уходили в заблокированный регион.
+        if let (Some(exe_path), Ok(program_data)) =
+            (std::env::current_exe().ok(), std::env::var("PROGRAMDATA"))
+        {
+            let install_dir = PathBuf::from(program_data).join("OpenAntigravity");
+            if under(&exe_path, &install_dir) {
+                return true;
+            }
+        }
         if let (Some(exe_path), Ok(local_app_data)) = (std::env::current_exe().ok(), std::env::var("LOCALAPPDATA")) {
             let install_dir = PathBuf::from(local_app_data).join("Programs").join("OpenAntigravity");
             let exe_lower = exe_path.to_string_lossy().to_ascii_lowercase();
@@ -194,6 +207,14 @@ pub fn is_installed_location() -> bool {
     }
 
     false
+}
+
+/// Case-insensitive prefix check for Windows paths.
+#[cfg(target_os = "windows")]
+fn under(path: &Path, root: &Path) -> bool {
+    path.to_string_lossy()
+        .to_ascii_lowercase()
+        .starts_with(&root.to_string_lossy().to_ascii_lowercase())
 }
 
 /// Для установленной версии: если при обновлении из zip была ошибочно создана папка data/,
@@ -413,6 +434,23 @@ mod tests {
     #[test]
     fn without_a_directory_there_is_no_marker() {
         assert!(!marker_present(None));
+    }
+
+    /// The installed relay lives in %ProgramData%\OpenAntigravity - the same
+    /// exe the setup puts there and the watchdog task runs. Without this the
+    /// relay saw data\ beside it and took the portable branch.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn programdata_relay_is_an_installed_location() {
+        let root = Path::new(r"C:\ProgramData\OpenAntigravity");
+        assert!(under(
+            &root.join("OpenAntigravityRelay.exe"),
+            root
+        ));
+        assert!(!under(
+            Path::new(r"C:\Users\me\AppData\Local\Programs\OpenAntigravity\OpenAntigravity.exe"),
+            root
+        ));
     }
 
     #[test]
