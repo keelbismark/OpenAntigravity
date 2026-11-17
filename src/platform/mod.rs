@@ -9,6 +9,7 @@ pub mod legacy;
 pub mod notify;
 pub mod portcheck;
 pub mod relay_role;
+pub mod relay_status;
 pub mod service;
 pub mod shortcut;
 pub mod single_instance;

@@ -820,6 +820,14 @@ fn main() {
         return;
     }
 
+    // Read-only view of the running bypass. It must come before --relay-role:
+    // that one holds the role until the process ends, and a support question
+    // must never block the relay.
+    if env::args().any(|a| a == "--relay-status") {
+        print!("{}", crate::platform::relay_status::collect().text());
+        return;
+    }
+
     // The relay role, asked about directly: "taken" when this process could
     // take it, "busy" when another relay holds it. Holding it until the
     // process ends is what makes the question answerable from a shell while
