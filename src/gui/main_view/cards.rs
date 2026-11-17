@@ -161,7 +161,7 @@ pub(super) fn hero_status_card(app: &mut App, ui: &mut egui::Ui) {
 
             // Top row: Emblem + Title & Detail
             ui.horizontal(|ui| {
-                let active_t = ui.ctx().animate_bool_with_time(ui.id().with("hero_act"), is_active, 0.22);
+                let active_t = theme::ease(ui.ctx(), ui.id().with("hero_act"), is_active, 0.22);
                 let emblem_bg = widgets::lerp_color(
                     theme::SUNKEN,
                     egui::Color32::from_rgba_unmultiplied(34, 197, 94, 25),

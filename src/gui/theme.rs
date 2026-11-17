@@ -42,6 +42,19 @@ pub const RADIUS: u8 = 12;
 pub const RADIUS_SMALL: u8 = 7;
 pub const RADIUS_PILL: u8 = 99;
 
+/// The one easing curve for every state change in the window. `cubic_out`
+/// answers fast and settles slow — the strong ease-out the animation recipes
+/// ask for, instead of egui's default linear, which reads flat.
+pub fn ease(ctx: &egui::Context, id: egui::Id, target: bool, seconds: f32) -> f32 {
+    // `animation_time == 0` is egui's own reduced-motion switch. Honour it by
+    // snapping to the target: colour and opacity still change (they carry the
+    // state), only the movement between them is dropped.
+    if ctx.global_style().animation_time <= 0.0 {
+        return if target { 1.0 } else { 0.0 };
+    }
+    ctx.animate_bool_with_time_and_easing(id, target, seconds, egui::emath::easing::cubic_out)
+}
+
 /// Installs a clean system UI font when available.
 fn install_font(ctx: &egui::Context) {
     #[cfg(target_os = "windows")]
@@ -185,4 +198,32 @@ pub fn apply(ctx: &egui::Context) {
         style.spacing.scroll.bar_inner_margin = 2.0;
         style.spacing.scroll.bar_outer_margin = 0.0;
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Reduced motion is egui's own `animation_time == 0`. The window must keep
+    /// the state (colour/opacity snap to the target) and drop only the movement.
+    #[test]
+    fn reduced_motion_snaps_instead_of_animating() {
+        egui::__run_test_ctx(|ctx| {
+            ctx.all_styles_mut(|s| s.animation_time = 0.0);
+            let id = egui::Id::new("reduced_motion_probe");
+            assert_eq!(ease(ctx, id, true, 0.3), 1.0);
+            assert_eq!(ease(ctx, id, false, 0.3), 0.0);
+        });
+    }
+
+    /// The chosen curve accelerates away from the start and settles: a strong
+    /// ease-out, never ease-in. Guards against swapping in a flat/wrong curve.
+    #[test]
+    fn the_ease_curve_is_strong_ease_out() {
+        let c = egui::emath::easing::cubic_out;
+        assert!((c(0.0) - 0.0).abs() < 1e-6);
+        assert!((c(1.0) - 1.0).abs() < 1e-6);
+        assert!(c(0.1) > 0.1, "ease-out must move quickly at the start");
+        assert!(c(0.9) > 0.9, "ease-out must settle near the end");
+    }
 }

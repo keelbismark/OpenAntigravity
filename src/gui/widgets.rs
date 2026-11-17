@@ -25,8 +25,8 @@ pub fn switch(ui: &mut egui::Ui, on: &mut bool, enabled: bool) -> egui::Response
 
     if ui.is_rect_visible(rect) {
         let rect = pressed_rect(rect, press_amount(ui.ctx(), &resp));
-        let how = ui.ctx().animate_bool_with_time(resp.id, *on, 0.15);
-        let hover = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered() && enabled, 0.10);
+        let how = theme::ease(ui.ctx(), resp.id, *on, 0.15);
+        let hover = theme::ease(ui.ctx(), resp.id.with("h"), resp.hovered() && enabled, 0.10);
 
         let track_off = theme::SUNKEN;
         let track_on = if enabled {
@@ -307,7 +307,7 @@ pub fn btn(
     if ui.is_rect_visible(rect) {
         let rect = pressed_rect(rect, press_amount(ui.ctx(), &resp));
         let painter = ui.painter();
-        let hover_t = ui.ctx().animate_bool_with_time(resp.id.with("btn_h"), resp.hovered(), 0.12);
+        let hover_t = theme::ease(ui.ctx(), resp.id.with("btn_h"), resp.hovered(), 0.12);
         let fill = lerp_color(theme::SUNKEN, theme::ACCENT_SUBTLE, hover_t);
         let stroke_color = lerp_color(theme::LINE, theme::LINE.gamma_multiply(1.4), hover_t);
 
@@ -368,7 +368,7 @@ pub fn metric_chip(ui: &mut egui::Ui, icon: Option<Icon>, text: &str) -> egui::R
     if ui.is_rect_visible(rect) {
         let rect = pressed_rect(rect, press_amount(ui.ctx(), &resp));
         let painter = ui.painter();
-        let hover_t = ui.ctx().animate_bool_with_time(resp.id.with("chip_h"), resp.hovered(), 0.12);
+        let hover_t = theme::ease(ui.ctx(), resp.id.with("chip_h"), resp.hovered(), 0.12);
         let fill = lerp_color(theme::SUNKEN, theme::ACCENT_SUBTLE, hover_t);
         let stroke_color = lerp_color(theme::LINE, theme::LINE.gamma_multiply(1.3), hover_t);
 
@@ -415,8 +415,8 @@ pub fn profile_pill(
 
     if ui.is_rect_visible(rect) {
         let rect = pressed_rect(rect, press_amount(ui.ctx(), &resp));
-        let hover_t = ui.ctx().animate_bool_with_time(resp.id.with("pill_h"), resp.hovered() && enabled, 0.12);
-        let active_t = ui.ctx().animate_bool_with_time(resp.id.with("pill_a"), is_selected, 0.15);
+        let hover_t = theme::ease(ui.ctx(), resp.id.with("pill_h"), resp.hovered() && enabled, 0.12);
+        let active_t = theme::ease(ui.ctx(), resp.id.with("pill_a"), is_selected, 0.15);
 
         let unselected_fill = lerp_color(theme::SUNKEN, theme::ACCENT_SUBTLE, hover_t);
         let fill = lerp_color(unselected_fill, egui::Color32::WHITE, active_t);
@@ -476,8 +476,8 @@ pub fn site_tabs<T: PartialEq + Copy>(
                 target_rect = Some((rect.left(), rect.right()));
             }
 
-            let hover_t = ui.ctx().animate_bool_with_time(resp.id.with("tab_h"), resp.hovered(), 0.12);
-            let active_t = ui.ctx().animate_bool_with_time(resp.id.with("tab_a"), is_active, 0.15);
+            let hover_t = theme::ease(ui.ctx(), resp.id.with("tab_h"), resp.hovered(), 0.12);
+            let active_t = theme::ease(ui.ctx(), resp.id.with("tab_a"), is_active, 0.15);
 
             if ui.is_rect_visible(rect) {
                 let painter = ui.painter();
@@ -515,11 +515,7 @@ pub fn site_tabs<T: PartialEq + Copy>(
 /// How far a pressed control has been compressed, 0.0..=1.0. The same eased
 /// animation runs on release, so letting go is as snappy as pressing down.
 fn press_amount(ctx: &egui::Context, resp: &egui::Response) -> f32 {
-    ctx.animate_bool_with_time(
-        resp.id.with("press"),
-        resp.is_pointer_button_down_on(),
-        0.09,
-    )
+    theme::ease(ctx, resp.id.with("press"), resp.is_pointer_button_down_on(), 0.09)
 }
 
 /// Shrinks only the painted rect — never the hit area. A control whose bounds
