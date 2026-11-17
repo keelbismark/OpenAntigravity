@@ -1037,6 +1037,14 @@ pub fn restart_with_new_binary(new_exe: &std::path::Path) -> Result<(), String> 
 
     #[cfg(target_os = "windows")]
     {
+        // Whether the relay was installed before the update. It must be
+        // re-installed from the NEW exe below: the relay lives in %ProgramData%,
+        // and replacing only the window's exe used to leave the old relay
+        // running with the old build (including old bug fixes) until the user
+        // happened to press «Активировать». Remember the wish before stopping
+        // anything, so an update never silently switches the bypass on.
+        let relay_wanted = crate::portable::enabled() || crate::platform::service::is_enabled();
+
         // 1. Terminate all background processes holding current_exe
         crate::platform::service::stop_all_background();
 
@@ -1091,6 +1099,18 @@ pub fn restart_with_new_binary(new_exe: &std::path::Path) -> Result<(), String> 
         }
 
         if in_place_ok {
+            // Reinstall the relay from the new exe before restarting the window,
+            // but only if it was wanted. `enable()` copies current_exe() (now the
+            // new build) into %ProgramData%, re-registers the task and starts it.
+            // Failure is non-fatal: the window still updates and the relay's own
+            // next enable/repair will bring it current.
+            if relay_wanted {
+                if let Err(e) = crate::platform::service::ensure_running() {
+                    crate::dns_forwarder::log_proxy(&format!(
+                        "после обновления не удалось переустановить службу: {e}"
+                    ));
+                }
+            }
             crate::platform::single_instance::release_active_lock();
             let mut cmd = std::process::Command::new(&current_exe);
             cmd.args(&clean_args);
@@ -1175,6 +1195,10 @@ pub fn run_apply_update_helper(new_exe_str: &str) {
 
     #[cfg(target_os = "windows")]
     {
+        // Remember the relay's state before replacing the exe; reinstall it
+        // from the new build below only if it was already wanted.
+        let relay_wanted = crate::portable::enabled() || crate::platform::service::is_enabled();
+
         // 1. Terminate all background relays and watchdogs that might still hold current_exe
         crate::platform::service::stop_all_background();
 
@@ -1253,6 +1277,17 @@ pub fn run_apply_update_helper(new_exe_str: &str) {
 
         // Clean up old_exe
         let _ = fs::remove_file(&old_exe);
+
+        // Reinstall the relay from the new exe (now at current_exe) if it was
+        // wanted, so a button-driven update carries the fix into %ProgramData%
+        // instead of leaving the old relay running. Non-fatal on failure.
+        if relay_wanted {
+            if let Err(e) = crate::platform::service::ensure_running() {
+                crate::dns_forwarder::log_proxy(&format!(
+                    "после обновления не удалось переустановить службу: {e}"
+                ));
+            }
+        }
 
         // Clean up temporary extraction folder if it sits in temp
         if let Some(parent) = new_exe.parent() {
