@@ -7,20 +7,36 @@
 //! the Linux server never read OAG_GATEWAY, sent `aicode.googleapis.com` direct,
 //! and Google answered 403 `LOCATION_NOT_ELIGIBLE / detected RU`.
 //!
-//! WSL2 exposes its filesystem to Windows at `\\wsl$\<distro>\...`, so the same
-//! byte-exact rewrite used on Windows binaries works here without running any
-//! code inside the distro. This module only discovers those files and hands them
-//! to the existing patcher; it is best-effort — no WSL, no folder, or a locked
-//! file must never fail the Windows patch flow.
+//! The WSL filesystem is read-only through the `\\wsl$` share from Windows, so
+//! patching runs inside the distro via `wsl.exe -d <distro> -- python3 -` with a
+//! byte-exact rewrite identical to the Windows patcher. Discovery uses the same
+//! share (reading works). Best-effort: no WSL, no folder, no python must never
+//! fail the Windows patch flow.
 
 use std::path::{Path, PathBuf};
 
-/// Finds every language server Antigravity installed in a running WSL distro.
-///
-/// Queries `wsl.exe -l -q` for distro names, then looks for
-/// `<drive>\\wsl$\<distro>\home\<user>\.antigravity-server\bin\*\language_server`
-/// via a shallow walk of the distro's `home` tree (the user name varies).
-pub fn wsl_language_servers() -> Vec<PathBuf> {
+/// The byte-exact rewrites, identical to `patcher::binary`: the eligibility
+/// rename and the private proxy variable, both same-length so the PE/ELF layout
+/// is preserved.
+const PATCH_SCRIPT: &str = r#"
+import sys
+p = sys.argv[1]
+with open(p, "rb") as f:
+    d = f.read()
+orig = d
+# Same two renames the Windows patcher applies.
+d = d.replace("ineligible".encode(), "inexigible".encode())
+d = d.replace("https_proxy".encode(), "OAG_GATEWAY".encode())
+d = d.replace("oag_prev_gateway".encode(), "OAG_GATEWAY".encode())
+if d != orig:
+    with open(p, "wb") as f:
+        f.write(d)
+print("changed" if d != orig else "noop")
+"#;
+
+/// Finds (distro, Linux path) for every Antigravity language server in a
+/// running WSL distro. Discovery reads through `\\wsl$`, which is readable.
+pub fn wsl_language_servers() -> Vec<(String, String)> {
     let distros = match list_distros() {
         Some(d) => d,
         None => return Vec::new(),
@@ -28,14 +44,24 @@ pub fn wsl_language_servers() -> Vec<PathBuf> {
     let mut found = Vec::new();
     for distro in distros {
         let root = PathBuf::from(format!(r"\\wsl$\{distro}\home"));
-        // Depth-limited walk: language servers live a few levels under any
-        // user's home, and we must not traverse the whole distro filesystem.
         for user in read_dirs(&root) {
             let base = user.join(".antigravity-server").join("bin");
             for ver in read_dirs(&base) {
                 let candidate = ver.join("language_server");
                 if candidate.is_file() {
-                    found.push(candidate);
+                    // The Windows UNC path maps back to a POSIX path inside WSL.
+                    let tail = user
+                        .strip_prefix(&root)
+                        .ok()
+                        .and_then(|p| p.to_str())
+                        .unwrap_or("");
+                    let rel = ver
+                        .strip_prefix(&base)
+                        .ok()
+                        .and_then(|p| p.to_str())
+                        .unwrap_or("");
+                    let home_rel = format!("/home/{}/.antigravity-server/bin/{}/language_server", tail.replace('\\', "/"), rel.replace('\\', "/"));
+                    found.push((distro.clone(), home_rel));
                 }
             }
         }
@@ -43,21 +69,34 @@ pub fn wsl_language_servers() -> Vec<PathBuf> {
     found
 }
 
-/// Patches every WSL language server with the same two rewrites used on the
-/// Windows binaries: the eligibility rename and the private proxy variable.
-/// Returns how many files were actually changed.
+/// Patches every WSL language server in place with the same rewrites used on
+/// Windows binaries. Returns how many files were actually changed.
 pub fn patch_all_wsl() -> usize {
     let mut changed = 0;
-    for path in wsl_language_servers() {
-        let gate = crate::patch_binary::patch_binary(Path::new(""), &path);
-        let proxy = crate::patch_binary::patch_proxy_var(&path);
-        // A signature miss on an already-patched file is Ok(0); a real I/O
-        // error is skipped rather than aborting the other files.
-        if gate.map(|n| n > 0).unwrap_or(false) || proxy.map(|n| n > 0).unwrap_or(false) {
+    for (distro, path) in wsl_language_servers() {
+        let mut child = match std::process::Command::new("wsl.exe")
+            .args(["-d", &distro, "--", "python3", "-", &path])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+        {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        if let Some(stdin) = child.stdin.as_mut() {
+            use std::io::Write;
+            let _ = stdin.write_all(PATCH_SCRIPT.as_bytes());
+        }
+        let out = child.wait_with_output().ok();
+        let said_changed = out
+            .as_ref()
+            .map(|o| String::from_utf8_lossy(&o.stdout).contains("changed"))
+            .unwrap_or(false);
+        if said_changed {
             changed += 1;
             crate::dns_forwarder::log_proxy(&format!(
-                "WSL: language_server пропатчен: {}",
-                path.display()
+                "WSL: language_server пропатчен: {distro}:{path}"
             ));
         }
     }
@@ -75,7 +114,6 @@ fn list_distros() -> Option<Vec<String>> {
     if !out.status.success() {
         return None;
     }
-    // UTF-16LE with NULs from wsl.exe; lossy is fine for names used in a path.
     let text = String::from_utf16_lossy(&to_u16(&out.stdout));
     Some(
         text.lines()
@@ -86,7 +124,6 @@ fn list_distros() -> Option<Vec<String>> {
 }
 
 fn to_u16(bytes: &[u8]) -> Vec<u16> {
-    // wsl.exe emits UTF-16LE; pair consecutive bytes explicitly.
     let mut out = Vec::with_capacity(bytes.len() / 2);
     let mut i = 0;
     while i + 1 < bytes.len() {
@@ -127,8 +164,11 @@ mod tests {
     }
 
     #[test]
-    fn unc_root_is_built_from_distro_name() {
-        let root = PathBuf::from(format!(r"\\wsl$\{}\home", "Ubuntu-26.04"));
-        assert!(root.to_string_lossy().contains("Ubuntu-26.04"));
+    fn patch_script_renames_both_signatures() {
+        // The script is data; assert it carries the exact three rewrites.
+        assert!(PATCH_SCRIPT.contains("ineligible"));
+        assert!(PATCH_SCRIPT.contains("inexigible"));
+        assert!(PATCH_SCRIPT.contains("https_proxy"));
+        assert!(PATCH_SCRIPT.contains("OAG_GATEWAY"));
     }
 }
