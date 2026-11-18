@@ -33,14 +33,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-/// One loopback address per gate host. `127.65.71.x` - "A", "G" - to stay clear
-/// of `127.0.0.1` and of the relay's own `127.0.0.53`.
+/// Both gate hosts are answered with `127.0.0.1`, the one loopback address WSL
+/// shares with Windows in `networkingMode=mirrored`. The old `127.65.71.x`
+/// addresses were invisible to a Language Server running inside WSL, so its
+/// `loadCodeAssist` dial got `connection refused` while the Windows side worked.
+/// A single listener serves both hosts: the client's TLS ClientHello carries the
+/// real SNI end-to-end (the door never terminates TLS), so the upstream proxy
+/// reaches the correct Google endpoint regardless of which name we CONNECT with.
 pub const HOSTS: [(&str, Ipv4Addr); 2] = [
-    ("cloudcode-pa.googleapis.com", Ipv4Addr::new(127, 65, 71, 1)),
-    (
-        "daily-cloudcode-pa.googleapis.com",
-        Ipv4Addr::new(127, 65, 71, 2),
-    ),
+    ("cloudcode-pa.googleapis.com", Ipv4Addr::LOCALHOST),
+    ("daily-cloudcode-pa.googleapis.com", Ipv4Addr::LOCALHOST),
 ];
 
 const PORT: u16 = 443;
@@ -304,12 +306,18 @@ pub fn run() -> Result<(), String> {
     Err("слушатели остановились".to_string())
 }
 
-/// Every listener or none: a door open for one gate host and shut for the other
-/// would send half of Antigravity's calls somewhere else.
+/// One listener on the shared loopback address serves both gate hosts. They
+/// now share `127.0.0.1`, so binding each entry of HOSTS would try the same
+/// address twice; bind the distinct addresses only.
 #[allow(clippy::result_large_err)]
 fn bind_all() -> Result<Vec<(&'static str, TcpListener)>, crate::gate::Blocker> {
-    let mut listeners = Vec::with_capacity(HOSTS.len());
+    let mut listeners = Vec::new();
+    let mut bound: Vec<Ipv4Addr> = Vec::new();
     for (host, ip) in HOSTS {
+        if bound.contains(&ip) {
+            continue;
+        }
+        bound.push(ip);
         listeners.push((host, bind(ip)?));
     }
     Ok(listeners)
@@ -484,17 +492,29 @@ mod tests {
     }
 
     #[test]
-    fn each_gate_host_has_its_own_loopback_address() {
+    fn both_gate_hosts_use_the_shared_loopback_address() {
         for (host, ip) in HOSTS {
             assert!(ip.is_loopback(), "{host}");
             assert!(
                 crate::proxy::is_gate_host(host),
                 "{host} is not a gate host"
             );
-            assert_ne!(ip, Ipv4Addr::LOCALHOST);
+            // WSL mirrored mode shares only 127.0.0.1, so that is the address
+            // both gate hosts must be answered with.
+            assert_eq!(ip, Ipv4Addr::LOCALHOST);
             assert_ne!(ip, Ipv4Addr::new(127, 0, 0, 53), "the relay's own");
         }
-        assert_ne!(HOSTS[0].1, HOSTS[1].1);
+        assert_eq!(HOSTS[0].1, HOSTS[1].1);
+    }
+
+    /// bind_all must bind the shared address once, not try it twice.
+    #[test]
+    fn gate_hosts_share_one_bind_address() {
+        let mut distinct = std::collections::HashSet::new();
+        for (_, ip) in HOSTS {
+            distinct.insert(ip);
+        }
+        assert_eq!(distinct.len(), 1, "one listener serves both gate hosts");
     }
 
     #[test]
