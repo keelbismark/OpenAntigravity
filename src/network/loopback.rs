@@ -205,6 +205,24 @@ pub fn run() -> Result<(), String> {
                         crate::dns_forwarder::log_proxy("локальные адреса гейт-хостов заняты");
                         crate::gate::set_blocker("door", None);
                     }
+                    // Diagnostic (throttled to once per 10 s): showing that we
+                    // yielded to a live owner and who it is pinpoints a takeover
+                    // race against the client's refused timestamp.
+                    {
+                        static LAST_YIELD: std::sync::atomic::AtomicU64 =
+                            std::sync::atomic::AtomicU64::new(0);
+                        let now = crate::gate::now_unix();
+                        let last = LAST_YIELD.load(Ordering::Relaxed);
+                        if now.saturating_sub(last) >= 10 {
+                            LAST_YIELD.store(now, Ordering::Relaxed);
+                            let owner = fs::read_to_string(door_path()).unwrap_or_default();
+                            crate::dns_forwarder::log_proxy(&format!(
+                                "ДВЕРЬ: уступаю bind живой записи pid={} (я={}), claim={owner}",
+                                std::process::id(),
+                                std::process::id()
+                            ));
+                        }
+                    }
                     thread::sleep(DOOR_TAKEOVER_POLL);
                     continue;
                 }
@@ -246,11 +264,30 @@ pub fn run() -> Result<(), String> {
             note_door();
         });
     }
+    // Diagnostic: a refused connect means the client dialled while no listener
+    // was bound. Stamp every bind/unbind so the window in the relay log can be
+    // matched against the client's error timestamp.
+    crate::dns_forwarder::log_proxy(&format!(
+        "ДВЕРЬ: слушатели подняты pid={} at={}",
+        std::process::id(),
+        crate::gate::now_unix()
+    ));
     let mut handles = Vec::new();
     for (host, listener) in listeners {
         handles.push(thread::spawn(move || {
             for stream in listener.incoming() {
-                let Ok(stream) = stream else { continue };
+                let Ok(stream) = stream else {
+                    crate::dns_forwarder::log_proxy("ДВЕРЬ: accept завершился ошибкой");
+                    continue;
+                };
+                let peer = stream
+                    .peer_addr()
+                    .map(|a| a.to_string())
+                    .unwrap_or_else(|_| "?".into());
+                crate::dns_forwarder::log_proxy(&format!(
+                    "ДВЕРЬ: accept {host} от {peer} pid={}",
+                    std::process::id()
+                ));
                 thread::spawn(move || hop(stream, host));
             }
         }));
@@ -259,6 +296,11 @@ pub fn run() -> Result<(), String> {
         h.join().ok();
     }
     BOUND.store(false, Ordering::Relaxed);
+    crate::dns_forwarder::log_proxy(&format!(
+        "ДВЕРЬ: слушатели ОСТАНОВИЛИСЬ pid={} at={}",
+        std::process::id(),
+        crate::gate::now_unix()
+    ));
     Err("слушатели остановились".to_string())
 }
 
@@ -290,6 +332,10 @@ fn bind(ip: Ipv4Addr) -> Result<TcpListener, crate::gate::Blocker> {
         }
     }
     let err = last.expect("three attempts were made");
+    crate::dns_forwarder::log_proxy(&format!(
+        "ДВЕРЬ: BIND НЕ УДАЛСЯ {addr} pid={}: {err}",
+        std::process::id()
+    ));
     Err(crate::portcheck::diagnose(addr, &err).blocker("door", addr, &err))
 }
 
@@ -308,13 +354,17 @@ const HOP_RETRY_FOR: Duration = Duration::from_secs(30);
 fn hop(client: TcpStream, host: &'static str) {
     if OPENING.fetch_add(1, Ordering::SeqCst) >= MAX_OPENING {
         OPENING.fetch_sub(1, Ordering::SeqCst);
+        crate::dns_forwarder::log_proxy(&format!(
+            "ДВЕРЬ: ОТКАЗ {host} — лимит открытых соединений"
+        ));
         return;
     }
     // The door can be held by the watchdog across a relay restart. Keeping
     // the accepted client here while the proxy comes back is what makes the
     // restart invisible: its TLS ClientHello waits in the socket buffer and
     // goes out on the first tunnel rather than getting an RST.
-    let deadline = Instant::now() + HOP_RETRY_FOR;
+    let started = Instant::now();
+    let deadline = started + HOP_RETRY_FOR;
     let mut up;
     loop {
         up = open_hop(host);
@@ -324,8 +374,18 @@ fn hop(client: TcpStream, host: &'static str) {
         thread::sleep(Duration::from_millis(500));
     }
     OPENING.fetch_sub(1, Ordering::SeqCst);
-    if let Some(up) = up {
-        crate::proxy::splice(client, up);
+    match up {
+        Some(up) => {
+            crate::dns_forwarder::log_proxy(&format!(
+                "ДВЕРЬ: туннель {host} УСПЕШНО за {} мс",
+                started.elapsed().as_millis()
+            ));
+            crate::proxy::splice(client, up);
+        }
+        None => crate::dns_forwarder::log_proxy(&format!(
+            "ДВЕРЬ: туннель {host} НЕ ОТКРЫЛСЯ за {} мс — клиент закрыт",
+            started.elapsed().as_millis()
+        )),
     }
 }
 
