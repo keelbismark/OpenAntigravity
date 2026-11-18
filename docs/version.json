@@ -1,13 +1,13 @@
 {
-  "version": "1.6.7",
-  "notes": "Open Antigravity v1.6.7",
-  "page": "https://github.com/keelbismark/OpenAntigravity/releases/tag/v1.6.7",
-  "url_windows": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.6.7/OpenAntigravity_windows_v1.6.7_portable.zip",
-  "url_windows_setup": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.6.7/OpenAntigravity_windows_v1.6.7_setup.exe",
-  "url_windows_portable": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.6.7/OpenAntigravity_windows_v1.6.7_portable.zip",
-  "url_linux": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.6.7/OpenAntigravity_linux_v1.6.7.tar.gz",
-  "url_appimage": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.6.7/OpenAntigravity-x86_64.AppImage",
-  "sha256_windows": "392dd2d53a8853ae04307035329c27cdc7f189766c875bf4a625366891fb2be4",
-  "sha256_linux": "00cc0007ee3a2ef07cd835da4bd07e01aa445722a91bc2148bec94412653ba94",
-  "sha256_appimage": "6bdc29d6ed876271a78de4b95e131badd4ac4ec218c54ab1b1164d9b91bfd023"
+  "version": "1.6.8",
+  "notes": "Open Antigravity v1.6.8",
+  "page": "https://github.com/keelbismark/OpenAntigravity/releases/tag/v1.6.8",
+  "url_windows": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.6.8/OpenAntigravity_windows_v1.6.8_portable.zip",
+  "url_windows_setup": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.6.8/OpenAntigravity_windows_v1.6.8_setup.exe",
+  "url_windows_portable": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.6.8/OpenAntigravity_windows_v1.6.8_portable.zip",
+  "url_linux": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.6.8/OpenAntigravity_linux_v1.6.8.tar.gz",
+  "url_appimage": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.6.8/OpenAntigravity-x86_64.AppImage",
+  "sha256_windows": "39b4c4e09a29c79113d353ecd530a7466f9c32c308c833989972a3a07f4e1978",
+  "sha256_linux": "b191e52f44f7acb2f6d9bba437a9c308b8e854a9906ccdded0c037e4b727fd72",
+  "sha256_appimage": "56c049dd5789b92664e079b5245a365438cd915f9d90263d79d21694f7dbc737"
 }
