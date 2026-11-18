@@ -87,7 +87,13 @@ pub fn answer_for(host: &str) -> Option<Ipv4Addr> {
 /// asked for Antigravity not to go through it, and this is the same proxy by a
 /// different door.
 pub fn active() -> bool {
-    (BOUND.load(Ordering::Relaxed) || door_fresh())
+    // v1.5.9 rule, restored: the door is active only while THIS relay holds the
+    // listeners (BOUND). v1.6.0 added `|| door_fresh()` so a separate watchdog
+    // could own it, but a fresh claim is not proof a listener answers — DNS then
+    // handed out 127.65.71.x for a dead door and the client got `connection
+    // refused` on sign-in. The watchdog still takes the bind across a restart;
+    // it is just no longer trusted as proof the door is open.
+    BOUND.load(Ordering::Relaxed)
         && crate::proxy::bound()
         && crate::settings::local_proxy_wanted()
 }

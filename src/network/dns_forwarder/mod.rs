@@ -1423,18 +1423,44 @@ fn own_answer(query: &[u8], name: &str) -> Option<Vec<u8>> {
         return None;
     }
     match dns_client::question_type(query)? {
-        // The loopback door (v1.6.0) answered A queries with 127.65.71.x and
-        // carried the connection itself. It broke account sign-in on the field
-        // machine: the client got `connection refused` on that address and could
-        // not log in, while the same build without the door (v1.5.9) answered
-        // fine. Fall back to the substituted real address for A queries — the
-        // proven v1.5.9 path. The door keeps listening as a fallback but no
-        // longer intercepts the client.
-        1 => None,
-        // Keep the empty answer for AAAA/SVCB/HTTPS: an IPv6 answer would let
-        // the client dial the gate from the blocked region (P40).
+        // Restore the v1.5.9 behaviour: answer from the in-memory cache through
+        // the loopback door, which `active()` now gates on `BOUND`. The door gave
+        // an instant synthetic answer, which is what let Windows answer inside
+        // its ~1 s budget. Removing it (v1.6.5) left every A query in the slow
+        // resolver race, which overran the budget — `fail` + DNS i/o timeout.
+        // With `active()` tied back to a live listener, the address is only
+        // handed out when something actually answers on it.
+        1 => {
+            let ip = loopback::answer_for(name)?;
+            note_loopback(name);
+            dns_client::synth_reply(query, Some(ip), loopback::ANSWER_TTL)
+        }
         28 | 64 | 65 => dns_client::synth_reply(query, None, loopback::ANSWER_TTL),
         _ => None,
+    }
+}
+
+/// Logs that a gate host is being answered with our own address - once, and
+/// again only after it has not been for a while, so a client re-asking every
+/// thirty seconds does not fill the 64 KB log.
+fn note_loopback(name: &str) {
+    static LAST: Mutex<Option<std::collections::HashMap<String, Instant>>> = Mutex::new(None);
+    let due = LAST
+        .lock()
+        .map(|mut g| {
+            let map = g.get_or_insert_with(std::collections::HashMap::new);
+            let key = name.to_ascii_lowercase();
+            let due = map
+                .get(&key)
+                .is_none_or(|t| t.elapsed() >= Duration::from_secs(30 * 60));
+            if due {
+                map.insert(key, Instant::now());
+            }
+            due
+        })
+        .unwrap_or(false);
+    if due {
+        log(&format!("loopback     {} [наш маршрут]", name));
     }
 }
 

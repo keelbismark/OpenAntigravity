@@ -47,18 +47,6 @@
         );
     }
 
-    /// The loopback door broke account sign-in on the field machine. A queries
-    /// for gate hosts must fall through to the substituted real address again —
-    /// the v1.5.9 path that worked — instead of being answered with 127.65.71.x.
-    #[test]
-    fn a_gate_hosts_a_question_is_relayed_not_answered_by_the_door() {
-        let q = dns_client::build_query("daily-cloudcode-pa.googleapis.com", 9);
-        assert!(
-            own_answer(&q, "daily-cloudcode-pa.googleapis.com").is_none(),
-            "A queries must use the substituted address, not the loopback door"
-        );
-    }
-
     #[test]
     fn a_gate_hosts_aaaa_and_https_questions_get_an_empty_answer() {
         for qtype in [28u8, 64, 65] {
