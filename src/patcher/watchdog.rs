@@ -401,7 +401,7 @@ fn targets(inst: &Path) -> Vec<PathBuf> {
 /// which a user without admin rights never installed and which may still be an
 /// older build after an upgrade; the window is running either way.
 pub fn patch_now(inst: &Path) -> Vec<(PathBuf, RepatchOutcome)> {
-    targets(inst)
+    let out: Vec<(PathBuf, RepatchOutcome)> = targets(inst)
         .into_iter()
         .map(|target| {
             let outcome = repatch(&target);
@@ -414,7 +414,13 @@ pub fn patch_now(inst: &Path) -> Vec<(PathBuf, RepatchOutcome)> {
             }
             (target, outcome)
         })
-        .collect()
+        .collect();
+    // Antigravity 2.32+ runs its language server inside WSL. Those binaries are
+    // outside this Windows install root, so patch them through the \\wsl$ share
+    // with the same rewrites. Best-effort: no WSL is a normal case.
+    #[cfg(target_os = "windows")]
+    crate::platform::wsl_patch::patch_all_wsl();
+    out
 }
 
 /// The standard locations plus every path the user pointed the window at: an

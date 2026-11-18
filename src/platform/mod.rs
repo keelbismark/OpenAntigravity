@@ -13,3 +13,5 @@ pub mod relay_status;
 pub mod service;
 pub mod shortcut;
 pub mod single_instance;
+#[cfg(target_os = "windows")]
+pub mod wsl_patch;
