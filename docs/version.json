@@ -1,13 +1,13 @@
 {
-  "version": "1.6.10",
-  "notes": "Open Antigravity v1.6.10",
-  "page": "https://github.com/keelbismark/OpenAntigravity/releases/tag/v1.6.10",
-  "url_windows": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.6.10/OpenAntigravity_windows_v1.6.10_portable.zip",
-  "url_windows_setup": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.6.10/OpenAntigravity_windows_v1.6.10_setup.exe",
-  "url_windows_portable": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.6.10/OpenAntigravity_windows_v1.6.10_portable.zip",
-  "url_linux": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.6.10/OpenAntigravity_linux_v1.6.10.tar.gz",
-  "url_appimage": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.6.10/OpenAntigravity-x86_64.AppImage",
-  "sha256_windows": "a29dbd467b81b89551ddc6d76d060437c147bc011fddcd9003e18bd10feb9299",
-  "sha256_linux": "1b3fe93ca7511d683b6f1e67ecf0d186c6c938e39ad40e469a4d0e3194d8b8cb",
-  "sha256_appimage": "bb3d8451e9387d15877d6eefe6fd0f7fcf1342b4fd08017df56620082143b520"
+  "version": "1.6.11",
+  "notes": "Open Antigravity v1.6.11",
+  "page": "https://github.com/keelbismark/OpenAntigravity/releases/tag/v1.6.11",
+  "url_windows": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.6.11/OpenAntigravity_windows_v1.6.11_portable.zip",
+  "url_windows_setup": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.6.11/OpenAntigravity_windows_v1.6.11_setup.exe",
+  "url_windows_portable": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.6.11/OpenAntigravity_windows_v1.6.11_portable.zip",
+  "url_linux": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.6.11/OpenAntigravity_linux_v1.6.11.tar.gz",
+  "url_appimage": "https://github.com/keelbismark/OpenAntigravity/releases/download/v1.6.11/OpenAntigravity-x86_64.AppImage",
+  "sha256_windows": "0dbcb3827758d8e2249a0d927cef1bbd1b1ebee1568afd428d5c82c6ed00d01d",
+  "sha256_linux": "f65ecc28748563832123c34656c74face5f96a975e2bffb15b6cf040f0f7b5ab",
+  "sha256_appimage": "7733a2b3ef04999ff07058c52e7a109ff6b6bf3d2a6524cbd789877886203a80"
 }
