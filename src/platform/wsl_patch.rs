@@ -12,27 +12,83 @@
 //! byte-exact rewrite identical to the Windows patcher. Discovery uses the same
 //! share (reading works). Best-effort: no WSL, no folder, no python must never
 //! fail the Windows patch flow.
+//!
+//! Besides the binary rewrite, the private proxy variable is planted where a
+//! non-systemd session actually picks it up: `~/.config/environment.d` plus an
+//! idempotent sourcing block in `~/.profile` and `~/.bashrc` (the same approach
+//! the upstream project shipped). `environment.d` alone is read only by the
+//! systemd user manager; a shell-started language server never sees it.
 
 use std::path::{Path, PathBuf};
 
-/// The byte-exact rewrites, identical to `patcher::binary`: the eligibility
-/// rename and the private proxy variable, both same-length so the PE/ELF layout
-/// is preserved.
-const PATCH_SCRIPT: &str = r#"
-import sys
-p = sys.argv[1]
-with open(p, "rb") as f:
-    d = f.read()
+/// The proxy URL handed to the patched language server inside WSL. Mirrored
+/// networking shares 127.0.0.1 with Windows, where the relay's proxy listens.
+const PROXY_URL: &str = "http://127.0.0.1:53129";
+
+/// Runs inside WSL: byte-exact binary rewrites (identical to `patcher::binary`,
+/// same-length so the ELF layout is preserved) plus the proxy env drop-in and
+/// idempotent shell hooks. `sys.argv`: language-server path, HOME path.
+const PATCH_SCRIPT: &str = r##"
+import sys, os
+p, home = sys.argv[1], sys.argv[2]
+url = sys.argv[3]
+changed = False
+
+# 1) byte-exact binary rewrites
+d = open(p, "rb").read()
 orig = d
-# Same two renames the Windows patcher applies.
-d = d.replace("ineligible".encode(), "inexigible".encode())
-d = d.replace("https_proxy".encode(), "OAG_GATEWAY".encode())
-d = d.replace("oag_prev_gateway".encode(), "OAG_GATEWAY".encode())
+d = d.replace(b"ineligible", b"inexigible")
+d = d.replace(b"https_proxy", b"OAG_GATEWAY")
+d = d.replace(b"oag_prev_gateway", b"OAG_GATEWAY")
 if d != orig:
-    with open(p, "wb") as f:
+    mode = os.stat(p).st_mode
+    tmp = p + ".oag_tmp"
+    with open(tmp, "wb") as f:
         f.write(d)
-print("changed" if d != orig else "noop")
-"#;
+    os.chmod(tmp, mode)
+    os.replace(tmp, p)   # atomic: works even while the old binary is mapped
+    changed = True
+
+# 2) the drop-in environment.d reads, and the shells source
+conf_dir = os.path.join(home, ".config", "environment.d")
+conf = os.path.join(conf_dir, "open-antigravity.conf")
+body = "OAG_GATEWAY=" + url + "\n"
+try:
+    os.makedirs(conf_dir, exist_ok=True)
+    if not (os.path.exists(conf) and open(conf).read() == body):
+        with open(conf, "w") as f:
+            f.write(body)
+        changed = True
+except OSError:
+    pass
+
+# 3) idempotent sourcing block in .profile (create) and .bashrc (only if present)
+BEGIN, END = "# >>> oag-gateway >>>", "# <<< oag-gateway <<<"
+block = BEGIN + "\n[ -r '" + conf + "' ] && { set -a; . '" + conf + "'; set +a; }\n" + END + "\n"
+for name, create in ((".profile", True), (".bashrc", False)):
+    fp = os.path.join(home, name)
+    try:
+        text = open(fp).read()
+    except OSError:
+        if not create or os.path.exists(fp):
+            continue
+        text = ""
+    b, e = text.find(BEGIN), text.find(END)
+    if b >= 0 and e > b:
+        stop = e + len(END)
+        if text[stop:stop + 1] == "\n":
+            stop += 1
+        new = text[:b] + block + text[stop:]
+    else:
+        sep = "" if (not text or text.endswith("\n")) else "\n"
+        new = text + sep + block
+    if new != text:
+        with open(fp, "w") as f:
+            f.write(new)
+        changed = True
+
+print("changed" if changed else "noop")
+"##;
 
 /// Finds (distro, Linux path) for every Antigravity language server in a
 /// running WSL distro. Discovery reads through `\\wsl$`, which is readable.
@@ -74,8 +130,15 @@ pub fn wsl_language_servers() -> Vec<(String, String)> {
 pub fn patch_all_wsl() -> usize {
     let mut changed = 0;
     for (distro, path) in wsl_language_servers() {
+        // Derive the user's home from the language-server path:
+        // /home/<user>/.antigravity-server/bin/<ver>/language_server.
+        let home = path
+            .strip_prefix("/home/")
+            .and_then(|rest| rest.split('/').next())
+            .map(|user| format!("/home/{user}"))
+            .unwrap_or_else(|| "/root".to_string());
         let mut child = match std::process::Command::new("wsl.exe")
-            .args(["-d", &distro, "--", "python3", "-", &path])
+            .args(["-d", &distro, "--", "python3", "-", &path, &home, PROXY_URL])
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
@@ -164,11 +227,28 @@ mod tests {
     }
 
     #[test]
-    fn patch_script_renames_both_signatures() {
-        // The script is data; assert it carries the exact three rewrites.
+    fn patch_script_renames_signatures_and_plants_shell_env() {
+        // The script is data; assert it carries the exact rewrites plus the
+        // non-systemd shell hooks that make the proxy var reach a shell-launched
+        // language server.
         assert!(PATCH_SCRIPT.contains("ineligible"));
         assert!(PATCH_SCRIPT.contains("inexigible"));
         assert!(PATCH_SCRIPT.contains("https_proxy"));
         assert!(PATCH_SCRIPT.contains("OAG_GATEWAY"));
+        assert!(PATCH_SCRIPT.contains("environment.d"));
+        assert!(PATCH_SCRIPT.contains(".profile"));
+        assert!(PATCH_SCRIPT.contains(".bashrc"));
+        assert!(PATCH_SCRIPT.contains("set -a"));
+    }
+
+    #[test]
+    fn home_is_derived_from_language_server_path() {
+        let path = "/home/keel/.antigravity-server/bin/2.33.0/language_server";
+        let home = path
+            .strip_prefix("/home/")
+            .and_then(|rest| rest.split('/').next())
+            .map(|user| format!("/home/{user}"))
+            .unwrap_or_else(|| "/root".to_string());
+        assert_eq!(home, "/home/keel");
     }
 }
