@@ -1,5 +1,15 @@
     use super::*;
 
+    /// AICode config (sign-in/voice) is region-gated too; it must take the
+    /// bypass like the CloudCode hosts, not dial Google from a blocked region.
+    #[test]
+    fn aicode_is_a_gate_host() {
+        assert!(is_gate_host("aicode.googleapis.com"));
+        assert!(is_gate_host("AICODE.GOOGLEAPIS.COM."));
+        assert!(!is_gate_host("storage.googleapis.com"));
+        assert!(!is_gate_host("aicode.googleapis.com.evil.example"));
+    }
+
     /// Live: what the direct route would dial for each gate host - on Linux the
     /// provider pool's substituted address, never the system resolver's Google.
     ///

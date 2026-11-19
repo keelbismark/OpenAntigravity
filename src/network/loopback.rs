@@ -40,9 +40,11 @@ use std::time::{Duration, Instant};
 /// A single listener serves both hosts: the client's TLS ClientHello carries the
 /// real SNI end-to-end (the door never terminates TLS), so the upstream proxy
 /// reaches the correct Google endpoint regardless of which name we CONNECT with.
-pub const HOSTS: [(&str, Ipv4Addr); 2] = [
+pub const HOSTS: [(&str, Ipv4Addr); 3] = [
     ("cloudcode-pa.googleapis.com", Ipv4Addr::LOCALHOST),
     ("daily-cloudcode-pa.googleapis.com", Ipv4Addr::LOCALHOST),
+    // AICode config at sign-in/voice, gated with 403 from a blocked region.
+    ("aicode.googleapis.com", Ipv4Addr::LOCALHOST),
 ];
 
 const PORT: u16 = 443;

@@ -477,16 +477,23 @@ fn is_local_host(host: &str) -> bool {
     }
 }
 
-/// The two region-gated CloudCode endpoints - the only names that ever need a
-/// route other than a plain direct tunnel. Everything else reaches genuine
-/// Google unaided, so it is never sent through anybody's proxy.
+/// The region-gated Google endpoints - the only names that ever need a route
+/// other than a plain direct tunnel. Everything else reaches genuine Google
+/// unaided, so it is never sent through anybody's proxy.
+///
+/// `aicode.googleapis.com` is the AICode config endpoint Antigravity calls at
+/// sign-in (`v1internal:loadCodeAssist`) and for voice sessions. Google answers
+/// `403 LOCATION_NOT_ELIGIBLE` when it is dialled from a blocked region, so it
+/// must take the same bypass as the CloudCode hosts.
 ///
 /// Lives here rather than in the private relay module because it is policy, not
 /// method: every route has to agree on which hosts it applies to, and a second
 /// copy of a list like this drifts.
 pub fn is_gate_host(host: &str) -> bool {
     let h = host.trim_end_matches('.').to_ascii_lowercase();
-    h == "cloudcode-pa.googleapis.com" || h == "daily-cloudcode-pa.googleapis.com"
+    h == "cloudcode-pa.googleapis.com"
+        || h == "daily-cloudcode-pa.googleapis.com"
+        || h == "aicode.googleapis.com"
 }
 
 /// Sends a gate host through the user's own proxy, when they gave us one and it

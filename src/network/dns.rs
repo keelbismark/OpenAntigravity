@@ -57,6 +57,8 @@ const NRPT_LEGACY_TAGS: &[&str] = &crate::platform::legacy::NRPT_TAGS;
 const NRPT_CORE: &[&str] = &[
     "cloudcode-pa.googleapis.com",
     "daily-cloudcode-pa.googleapis.com",
+    // AICode config at sign-in/voice; gated with 403 from a blocked region.
+    "aicode.googleapis.com",
 ];
 
 /// The names an NRPT rule always points at the relay - and therefore the ones

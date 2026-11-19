@@ -141,6 +141,7 @@ pub(super) const PREFERRED_GRACE: Duration = Duration::from_millis(500);
 pub(super) const PREFERRED_NAMES: &[&str] = &[
     "cloudcode-pa.googleapis.com",
     "daily-cloudcode-pa.googleapis.com",
+    "aicode.googleapis.com",
 ];
 
 pub const ANSWER_TTL: Duration = Duration::from_secs(30);
