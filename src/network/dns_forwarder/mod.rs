@@ -1144,6 +1144,20 @@ pub fn run() -> Result<(), String> {
     // TTL, so one slow startup is felt for minutes.
     log(&format!("egress: if{}", isp_interface()));
     record_version();
+    // Antigravity re-downloads and updates its WSL language server on its own
+    // (2.32.2 -> 2.33.0 was seen live): each new version directory is stock and
+    // unpatched, which breaks account sign-in. Patch every WSL language server
+    // on relay startup so an Antigravity update cannot undo the bypass.
+    // Best-effort and on its own thread — WSL may be absent or still booting.
+    #[cfg(target_os = "windows")]
+    {
+        let ctx = crate::platform::wsl_patch::wsl_language_servers();
+        if !ctx.is_empty() {
+            thread::spawn(|| {
+                crate::platform::wsl_patch::patch_all_wsl();
+            });
+        }
+    }
     // Before any listener is tried: from here on the window can tell this
     // process from its own watchdog by the age of what it writes (P54).
     gate::note_started();
